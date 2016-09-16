@@ -394,19 +394,35 @@ static void probeSensors(void) {
 	// Probe all sensors
 	cout << " Probing BMP180 ...  "; cout.flush();
     BMP180 bmp(i2c_device);
-    cout << (probeSensor(bmp)?"OK":"Error") << endl;
+    if(probeSensor(bmp)) {
+    	cout << "OK (" << bmp.temperature() << " deg. C; " << bmp.pressure() << " hPa, " << bmp.altitude() << " m)" << endl;
+    } else {
+    	cout << "Error" << endl;
+    }
     
     cout << " Probing HTU21DF ... "; cout.flush();
     HTU21DF htu21df(i2c_device);
-    cout << (probeSensor(htu21df)?"OK":"Error") << endl;
+    if(probeSensor(htu21df)) {
+    	cout << "OK (" << htu21df.temperature() << " deg. C; " << htu21df.humidity() << " % rel.)" << endl;
+    } else {
+    	cout << "Error" << endl;
+    }
     
     cout << " Probing MCP9808 ... "; cout.flush();
     MCP9808 mcp9808(i2c_device);
-    cout << (probeSensor(mcp9808)?"OK":"Error") << endl;
+    if(probeSensor(mcp9808)) {
+    	cout << "OK (" << mcp9808.temperature() << " deg. C)" << endl;
+    } else {
+    	cout << "Error" << endl;
+    }
     
     cout << " Probing TSL2561 ... "; cout.flush();
     TSL2561 tsl2561(i2c_device);
-    cout << (probeSensor(tsl2561)?"OK":"Error") << endl;
+    if(probeSensor(tsl2561)) {
+    	cout << "OK (" << tsl2561.visible() << " visible; " << tsl2561.ir() << " infrared)" << endl;
+    } else {
+    	cout << "Error" << endl;
+    }
 }
 
 static void printHelp(const char* progname) {

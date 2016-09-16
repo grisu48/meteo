@@ -31,7 +31,6 @@ SOFTWARE.
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
-#include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include "htu21dflib.h"
 
@@ -78,8 +77,7 @@ int i2c_open(const char *i2cdevname_caller)
     if ((i2cdevname == NULL) || (*i2cdevname == '\0')) return -1;
 
     if ((i2cfd = open(i2cdevname, O_RDWR)) < 0) {
-        printf("%s:Failed to open the i2c bus %d/%d\n", __func__, i2cfd,
-                errno);
+//        printf("%s:Failed to open the i2c bus %d/%d\n", __func__, i2cfd, errno);
         return i2cfd;
     }
     return i2cfd;
@@ -96,11 +94,11 @@ int htu21df_init(int i2cfd, uint8_t i2caddr)
     int rc;             // return code
     struct i2c_rdwr_ioctl_data msgbuf;
     struct i2c_msg reset[1] = {
-        {i2caddr, 0, 1, &HTU21DF_RESET},
+        {i2caddr, 0, 1, (char*)&HTU21DF_RESET},
     };
     struct i2c_msg read_user_reg[2] = {
-        {i2caddr, 0, 1, &HTU21DF_READREG},
-        {i2caddr, I2C_M_RD, 1, buf}
+        {i2caddr, 0, 1, (char*)&HTU21DF_READREG},
+        {i2caddr, I2C_M_RD, 1, (char*)buf}
     };
 
     I2Caddr = i2caddr;
@@ -108,7 +106,7 @@ int htu21df_init(int i2cfd, uint8_t i2caddr)
     msgbuf.msgs = reset;
     rc = ioctl(i2cfd, I2C_RDWR, &msgbuf);
     if (rc < 0) {
-        printf("%s:htu21df I2C_RDWR failed %d/%d\n", __func__, rc, errno);
+//        printf("%s:htu21df I2C_RDWR failed %d/%d\n", __func__, rc, errno);
         return rc;
     }
     sleepms(MAX_RESET_DELAY);
@@ -117,12 +115,12 @@ int htu21df_init(int i2cfd, uint8_t i2caddr)
     msgbuf.msgs = read_user_reg;
     rc = ioctl(i2cfd, I2C_RDWR, &msgbuf);
     if (rc < 0) {
-        printf("%s:htu21df I2C_RDWR failed %d/%d\n", __func__, rc, errno);
+//        printf("%s:htu21df I2C_RDWR failed %d/%d\n", __func__, rc, errno);
         return rc;
     }
 
     if (buf[0] != 0x02) {
-        printf("%s:htu21df did not reset\n", __func__);
+//        printf("%s:htu21df did not reset\n", __func__);
         return -1;
     }
     return 0;
@@ -135,11 +133,11 @@ int htu21df_read_temperature(int i2cfd, float *temperature)
     uint16_t rawtemp;   // raw temperature reading
     struct i2c_rdwr_ioctl_data msgbuf;
     struct i2c_msg read_temp[2] = {
-        {I2Caddr, 0, 1, &HTU21DF_READTEMP_NH},
-        {I2Caddr, I2C_M_RD, 3, buf}
+        {I2Caddr, 0, 1, (char*)&HTU21DF_READTEMP_NH},
+        {I2Caddr, I2C_M_RD, 3, (char*)buf}
     };
     struct i2c_msg read_temp3[1] = {
-        {I2Caddr, I2C_M_RD, 3, buf}
+        {I2Caddr, I2C_M_RD, 3, (char*)buf}
     };
 
     msgbuf.nmsgs = 2;
@@ -152,13 +150,13 @@ int htu21df_read_temperature(int i2cfd, float *temperature)
         msgbuf.msgs = read_temp3;
         rc = ioctl(i2cfd, I2C_RDWR, &msgbuf);
         if (rc < 0) {
-            printf("%s:I2C_RDWR %d/%d\n", __func__, rc, errno);
+//            printf("%s:I2C_RDWR %d/%d\n", __func__, rc, errno);
             return rc;
         }
     }
     //printf("READTEMP = 0x%x 0x%x 0x%x\n", buf[0], buf[1], buf[2]);
     if (calc_crc8(buf, 3) != 0) {
-        printf("%s:Bad CRC\n", __func__);
+//        printf("%s:Bad CRC\n", __func__);
         return -1;
     }
     // Remove low 2 bits because they are status
@@ -175,11 +173,11 @@ int htu21df_read_humidity(int i2cfd, float *humidity)
     int rc;             // return code
     struct i2c_rdwr_ioctl_data msgbuf;
     struct i2c_msg read_humi[2] = {
-        {I2Caddr, 0, 1, &HTU21DF_READHUMI_NH},
-        {I2Caddr, I2C_M_RD, 3, buf}
+        {I2Caddr, 0, 1, (char*)&HTU21DF_READHUMI_NH},
+        {I2Caddr, I2C_M_RD, 3, (char*)buf}
     };
     struct i2c_msg read_temp3[1] = {
-        {I2Caddr, I2C_M_RD, 3, buf}
+        {I2Caddr, I2C_M_RD, 3, (char*)buf}
     };
 
     msgbuf.nmsgs = 2;
@@ -192,13 +190,13 @@ int htu21df_read_humidity(int i2cfd, float *humidity)
         msgbuf.msgs = read_temp3;
         rc = ioctl(i2cfd, I2C_RDWR, &msgbuf);
         if (rc < 0) {
-            printf("%s:I2C_RDWR %d/%d\n", __func__, rc, errno);
+//            printf("%s:I2C_RDWR %d/%d\n", __func__, rc, errno);
             return rc;
         }
     }
     //printf("READHUM= 0x%x 0x%x 0x%x\n", buf[0], buf[1], buf[2]);
     if (calc_crc8(buf, 3) != 0) {
-        printf("%s:Bad CRC\n", __func__);
+//        printf("%s:Bad CRC\n", __func__);
         return -1;
     }
     // Remove low 2 bits because they are status

@@ -17,6 +17,7 @@
 
 #include "serial.hpp"
 #include "string.hpp"
+#include "udp.cpp"
 
 using namespace std;
 using io::Serial;
@@ -24,6 +25,7 @@ using flex::String;
 
 #define VERSION "0.1"
 #define DEVICE "/dev/ttyUSB0"
+#define DEFAULT_PORT 5232
 
 class Packet {
 private:
@@ -190,7 +192,7 @@ static void sig_handler(int sig_no);
 
 static MySQL *mysql;
 static volatile bool running = true;
-
+static vector<DatagramSocket*> udpBroadcasts;
 
 
 int main(int argc, char** argv) {
@@ -235,6 +237,27 @@ int main(int argc, char** argv) {
 					if(dbDatabase.isEmpty()) throw "Missing database name";
 					if(dbUsername.isEmpty()) throw "Missing database username";
 					useDatabase = true;
+				} else if(arg == "--udp") {
+					if(isLast) throw "Missing argument: Udp endpoint";
+					arg = String(argv[++i]);
+					string remote = arg;
+					int port = DEFAULT_PORT;
+					size_t index = arg.find(":");
+				    if(index == string::npos) {
+				        remote = arg;
+				        port = DEFAULT_PORT;
+				    } else {
+				        remote = arg.substr(0, index);
+				        port = atoi(arg.substr(index+1).c_str());
+				    }
+				    
+				    DatagramSocket *socket = new DatagramSocket(remote, port);
+				    socket->enableBroadcast();
+				    socket->send("# START");
+				    udpBroadcasts.push_back(socket);
+				    
+				    cout << " Added UDP broadcast: " << remote << ":" << port << endl;
+				    
 				}
 			} else {
 				cerr << "Illegal argument " << i << ": " << arg << endl;
@@ -333,12 +356,42 @@ static void packetReceived(const Packet &packet) {
 		cerr << "Error " << mysql->errono() << " while inserting packet: " << mysql->error_str() << endl;
 	}
 
+    DatagramSocket bcast("127.0.0.1", 5252);
+    bcast.enableBroadcast();
+    bcast.send(packet.toString());
+    bcast.close();
+    
+    
+    
+    // Build udp packet
+    if(udpBroadcasts.size() > 0) {
+        stringstream ss;
+        
+        ss << "ROOM " << packet.stationId() << " " << packet.light() << " " << packet.humidity() << " " << packet.temperature() << " ";
+        ss << (packet.isBatteryOk()?"0":"1");
+        
+        string udpPacket = ss.str();
+	    for(vector<DatagramSocket*>::iterator it = udpBroadcasts.begin(); it != udpBroadcasts.end(); ++it) {
+	        DatagramSocket *socket = *it;
+	        socket->send(udpPacket);
+	    }
+	}
+    
 	cout << packet.toString() << endl;
 }
 
 
 static void cleanup(void) {
 	if(mysql != NULL) delete mysql;
+	
+	// Close all udp broadcasts
+	vector<DatagramSocket*> bCasts(udpBroadcasts);
+	udpBroadcasts.clear();
+	for(vector<DatagramSocket*>::iterator it = bCasts.begin(); it != bCasts.end(); ++it) {
+	    DatagramSocket *socket = *it;
+	    socket->close();
+	    delete socket;
+	}
 }
 
 
@@ -370,4 +423,6 @@ static void printHelp(const char* progname) {
 	cout << "  --mysql REMOTE" << endl;
 	cout << "  --database REMOTE             Set database to REMOTE. REMOTE is in the following format:" << endl;
 	cout << "                                user:password@hostname/database" << endl;
+	cout << "  --udp SERVER:PORT             Add SERVER:PORT as udp broadcast" << endl;
+	cout << "                                Multiple definitions are possible" << endl;
 }

@@ -25,7 +25,7 @@ using namespace std;
 using io::Serial;
 using flex::String;
 
-#define VERSION "0.2"
+#define VERSION "0.2a"
 #define DEVICE "/dev/ttyUSB0"
 #define DEFAULT_PORT 5232
 
@@ -195,6 +195,8 @@ static void packetReceived(const Packet &packet);
 static void cleanup(void);
 static void printHelp(const char* progname);
 static void sig_handler(int sig_no);
+/** Fork as a daemon */
+static void fork_daemon(void);
 
 static MySQL *mysql;
 static volatile bool running = true;
@@ -203,10 +205,10 @@ static vector<TcpServer*> tcpServers;
 
 
 
-
 int main(int argc, char** argv) {
 	string device = DEVICE;
 	bool useDatabase = false;
+	bool isDaemon = false;
 	String dbHostname = "localhost";
 	String dbDatabase = "meteo";
 	String dbUsername = "meteo";
@@ -275,6 +277,8 @@ int main(int argc, char** argv) {
 					TcpServer *server = new TcpServer(port);
 					server->start();
 					
+				} else if(arg == "--daemon" || arg == "--background") {
+					isDaemon = true;
 				}
 			} else {
 				cerr << "Illegal argument " << i << ": " << arg << endl;
@@ -288,8 +292,12 @@ int main(int argc, char** argv) {
 		return EXIT_FAILURE;
 	}
 
-	cout << "meteoLink -- 2016, Felix Niederwanger" << endl;
-	cout << "  Version " << VERSION << endl;
+	if(isDaemon) {
+		fork_daemon();
+	} else {
+		cout << "meteoLink -- 2016, Felix Niederwanger" << endl;
+		cout << "  Version " << VERSION << endl;
+	}
 
 	atexit(cleanup);
 	signal(SIGINT, sig_handler);
@@ -467,6 +475,31 @@ static void printHelp(const char* progname) {
 	cout << "                                Multiple definitions are possible" << endl;
 	cout << "  --tcp PORT                    Add PORT as tcp server" << endl;
 	cout << "                                Multiple definitions are possible" << endl;
+	cout << "  --daemon                      Run as daemon" << endl;
 }
 
+
+
+/** Fork as a daemon */
+static void fork_daemon(void) {
+	pid_t pid = fork();
+	if(pid < 0) {
+		cerr << "Fork daemon failed" << endl;
+		exit(EXIT_FAILURE);
+	} else if(pid > 0) {
+		// Success. The parent leaves here
+		exit(EXIT_SUCCESS);
+	}
+	
+	/* Fork off for the second time */
+	/* This is needed to detach the deamon from a terminal */
+	pid = fork();
+	if(pid < 0) {
+		cerr << "Fork daemon failed (step two)" << endl;
+		exit(EXIT_FAILURE);
+	} else if(pid > 0) {
+		// Success. The parent again leaves here
+		exit(EXIT_SUCCESS);
+	}
+}
 

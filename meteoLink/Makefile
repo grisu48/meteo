@@ -4,10 +4,10 @@ CXX=g++
 CXX_FLAGS=$(O_FLAGS) -std=c++11
 
 INCLUDE=-I/usr/include/mysql
-LIBS=-lmysqlclient 
+LIBS=-lmysqlclient -pthread
 
 
-OBJS=serial.o string.o
+OBJS=serial.o string.o tcp.o udp.o
 
 
 default:	all

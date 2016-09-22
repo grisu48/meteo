@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <map>
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -17,13 +18,14 @@
 
 #include "serial.hpp"
 #include "string.hpp"
-#include "udp.cpp"
+#include "udp.hpp"
+#include "tcp.hpp"
 
 using namespace std;
 using io::Serial;
 using flex::String;
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 #define DEVICE "/dev/ttyUSB0"
 #define DEFAULT_PORT 5232
 
@@ -185,6 +187,10 @@ public:
 	}
 };
 
+
+
+
+
 static void packetReceived(const Packet &packet);
 static void cleanup(void);
 static void printHelp(const char* progname);
@@ -193,6 +199,9 @@ static void sig_handler(int sig_no);
 static MySQL *mysql;
 static volatile bool running = true;
 static vector<DatagramSocket*> udpBroadcasts;
+static vector<TcpServer*> tcpServers;
+
+
 
 
 int main(int argc, char** argv) {
@@ -258,6 +267,14 @@ int main(int argc, char** argv) {
 				    
 				    cout << " Added UDP broadcast: " << remote << ":" << port << endl;
 				    
+				} else if(arg == "--tcp") {
+					if(isLast) throw "Missing argument: TCP server port";
+					
+					const int port = atoi(argv[++i]);
+					
+					TcpServer *server = new TcpServer(port);
+					server->start();
+					
 				}
 			} else {
 				cerr << "Illegal argument " << i << ": " << arg << endl;
@@ -362,20 +379,36 @@ static void packetReceived(const Packet &packet) {
     bcast.close();
     
     
-    
-    // Build udp packet
-    if(udpBroadcasts.size() > 0) {
-        stringstream ss;
-        
-        ss << "ROOM " << packet.stationId() << " " << packet.light() << " " << packet.humidity() << " " << packet.temperature() << " ";
-        ss << (packet.isBatteryOk()?"0":"1");
-        
-        string udpPacket = ss.str();
-	    for(vector<DatagramSocket*>::iterator it = udpBroadcasts.begin(); it != udpBroadcasts.end(); ++it) {
-	        DatagramSocket *socket = *it;
-	        socket->send(udpPacket);
-	    }
-	}
+    const size_t nReceivers = udpBroadcasts.size() + tcpServers.size();
+    if(nReceivers > 0) {
+		// Build packet string
+		string udpPacket;
+		{
+		    stringstream ss;
+		    
+		    ss << "ROOM " << packet.stationId() << " " << packet.light() << " " << packet.humidity() << " " << packet.temperature() << " ";
+		    ss << (packet.isBatteryOk()?"0":"1");
+		    
+		    udpPacket = ss.str();
+		}
+		
+		
+		
+		if(udpBroadcasts.size() > 0) {
+			for(vector<DatagramSocket*>::iterator it = udpBroadcasts.begin(); it != udpBroadcasts.end(); ++it) {
+			    DatagramSocket *socket = *it;
+			    socket->send(udpPacket);
+			}
+		}
+		
+		if(tcpServers.size() > 0 ) {
+			for(vector<TcpServer*>::iterator it = tcpServers.begin(); it != tcpServers.end(); ++it) {
+				TcpServer *srv = *it;
+				srv->broadcast(udpPacket);
+			}
+		}
+		
+    }
     
 	cout << packet.toString() << endl;
 }
@@ -383,7 +416,14 @@ static void packetReceived(const Packet &packet) {
 
 static void cleanup(void) {
 	if(mysql != NULL) delete mysql;
-	
+		
+	// Close all tcp server instances
+	for(vector<TcpServer*>::iterator it = tcpServers.begin(); it != tcpServers.end(); ++it) {
+	    (*it)->close();
+	    delete *it;
+	}
+	tcpServers.clear();
+		
 	// Close all udp broadcasts
 	vector<DatagramSocket*> bCasts(udpBroadcasts);
 	udpBroadcasts.clear();
@@ -425,4 +465,8 @@ static void printHelp(const char* progname) {
 	cout << "                                user:password@hostname/database" << endl;
 	cout << "  --udp SERVER:PORT             Add SERVER:PORT as udp broadcast" << endl;
 	cout << "                                Multiple definitions are possible" << endl;
+	cout << "  --tcp PORT                    Add PORT as tcp server" << endl;
+	cout << "                                Multiple definitions are possible" << endl;
 }
+
+

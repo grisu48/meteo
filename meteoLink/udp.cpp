@@ -17,31 +17,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include <string.h>
+#include <errno.h>
 
-class DatagramSocket {
-private:
-	int fd;
-	struct sockaddr_in dest_addr;
-	int port;
-	std::string remote;
-	
-public:
-	DatagramSocket(std::string remote, int port);
-	virtual ~DatagramSocket();
-	
-	std::string getRemoteHost(void) const { return this->remote; }
-	int getPort(void) { return this->port; }
-	
-	/** Enable broadcast for this socket*/
-	void enableBroadcast(void);
-	
-	/** Close this broadcast instance */
-	void close(void);
-	/** Send the given message */
-	ssize_t send(const char* msg, size_t size);
-	/** Send the given message */
-	ssize_t send(std::string msg);
-};
+#include "udp.hpp"
 
 
 DatagramSocket::DatagramSocket(std::string remote, int port) {

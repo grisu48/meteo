@@ -1,8 +1,12 @@
-/*
- * main.cpp
- *
- *  Created on: 15 Sep 2016
- *      Author: phoenix
+/* =============================================================================
+ * 
+ * Title:         meteoLink Server
+ * Author:        Felix Niederwanger
+ * License:       Copyright (c), 2016 Felix Niederwanger
+ *                MIT license (http://opensource.org/licenses/MIT)
+ * Description:   Server for different meteo devices
+ * 
+ * =============================================================================
  */
 
 #include <iostream>
@@ -20,14 +24,13 @@
 #include "string.hpp"
 #include "udp.hpp"
 #include "tcp.hpp"
+#include "main.hpp"
 
 using namespace std;
 using io::Serial;
 using flex::String;
 
 #define VERSION "0.2a"
-#define DEVICE "/dev/ttyUSB0"
-#define DEFAULT_PORT 5232
 
 class Packet {
 private:
@@ -473,7 +476,7 @@ static void printHelp(const char* progname) {
 	cout << "                                user:password@hostname/database" << endl;
 	cout << "  --udp SERVER:PORT             Add SERVER:PORT as udp broadcast" << endl;
 	cout << "                                Multiple definitions are possible" << endl;
-	cout << "  --tcp PORT                    Add PORT as tcp server" << endl;
+	cout << "  --tcp PORT                    Add PORT as tcp server (Recommended: " << DEFAULT_PORT << ")" << endl;
 	cout << "                                Multiple definitions are possible" << endl;
 	cout << "  --daemon                      Run as daemon" << endl;
 }

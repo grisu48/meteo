@@ -11,13 +11,17 @@ OBJS=serial.o string.o tcp.o udp.o
 
 
 default:	all
-all:	main $(OBJS)
+all:	main client
 clean:
 	rm -rf *.o
 
 
 main:	main.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o meteo $< $(OBJS) $(INCLUDE) $(LIBS) 
+
+client:	client.cpp $(OBJS)
+	$(CXX) $(CXX_FLAGS) -o client $< $(OBJS) $(INCLUDE) $(LIBS) 
+
 
 %.o:	%.cpp %.hpp
 	$(CXX) $(CXX_FLAGS) -c -o $@ $<

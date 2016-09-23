@@ -22,7 +22,7 @@
 
 #include "tcp.hpp"
 
-#define MAX_CONNECTIONS 10
+#define MAX_CONNECTIONS 5
 
 
 using namespace std;
@@ -72,7 +72,22 @@ void TcpServer::serverMainLoop(void) {
 			// XXX: Error handling
 			cerr << "Error accepting socket: " << strerror(errno) << endl;
 		} else {
-			this->_clients.push_back(sock);		// Client accepted
+			// Get endpoint
+			char ipAddress[INET_ADDRSTRLEN];
+			inet_ntop(AF_INET, &m_addr.sin_addr, ipAddress, INET_ADDRSTRLEN);
+			string endpoint = string(ipAddress);
+			
+			
+			
+			
+			string welcomeMessage = "# Welcome to meteoLink\n";
+			if(::send(sock, welcomeMessage.c_str(), welcomeMessage.size() * sizeof(char), 0) < 0) {
+				cerr << "Connection failed: " << endpoint << ":" << m_addr.sin_port << ": " << strerror(errno) << endl;
+				::close(sock);
+			} else {
+				cout << "Connected: " << endpoint << ":" << m_addr.sin_port << endl;
+				this->_clients.push_back(sock);		// Client accepted
+			}
 		}
 		
 		

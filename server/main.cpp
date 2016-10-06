@@ -48,7 +48,7 @@ static void recvCallback(std::string, std::map<std::string, double>);
 static void sig_handler(int signo);
 long getSystemTime(void);
 static void sleep(long millis, long micros);
-
+static int pthread_terminate(pthread_t tid);
 
 class Instance {
 protected:
@@ -120,7 +120,12 @@ public:
 		for(vector<UdpReceiver*>::iterator it = udpReceivers.begin(); it != udpReceivers.end(); ++it)
 			delete *it;
 		
-		
+		// Close alive thread
+		if(this->tid_alive > 0) {
+			pthread_t tid = this->tid_alive;
+			this->tid_alive = 0;
+			pthread_terminate(tid);
+		}
 	}
 	
 	/** Clean all nodes that are not marked alive. Marks all alive nodes as not alive
@@ -202,8 +207,9 @@ int main(int argc, char** argv) {
 					recv->start();
 					cout << "ok" << endl;
 				} catch (const char *msg) {
-					cout << "failed: " << msg << endl; cout.flush();
-					cerr << strerror(errno) << endl; cerr.flush();
+					cout << "failed: " << msg << "." << endl; cout.flush();
+					cerr << "Socketerror: " << strerror(errno) << endl; cerr.flush();
+					exit(EXIT_FAILURE);
 				}
 				
 				
@@ -224,38 +230,44 @@ int main(int argc, char** argv) {
 		cout << "> "; cout.flush();
 		if(!getline(cin, line)) break;
 		if(line.size() == 0) continue;
-		if (line == "exit" || line == "quit") break;
-		else if(line == "list") {
-			// List all nodes
-			vector<Node> nodes = instance.nodes();
-			if (nodes.size() == 0) {
-				cout << "No nodes present" << endl;
-			} else {
-				for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); it++) {
-					cout << "Node[" << (*it).name() << "]";
-					map<string, double> values = (*it).values();
-					if(values.size() == 0) {
-						cout << " Empty";
-					} else {
-						for(map<string,double>::iterator jt = values.begin(); jt != values.end(); jt++)
-							cout << " " << jt->first << " = " << jt->second;
+		
+		try {
+			if (line == "exit" || line == "quit") break;
+			else if(line == "list") {
+				// List all nodes
+				vector<Node> nodes = instance.nodes();
+				if (nodes.size() == 0) {
+					cout << "No nodes present" << endl;
+				} else {
+					for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); it++) {
+						cout << "Node[" << (*it).name() << "]";
+						map<string, double> values = (*it).values();
+						if(values.size() == 0) {
+							cout << " Empty";
+						} else {
+							for(map<string,double>::iterator jt = values.begin(); jt != values.end(); jt++)
+								cout << " " << jt->first << " = " << jt->second;
+						}
+						cout << endl;
 					}
-					cout << endl;
+				}
+			} else if(line == "help") {
+				cout << "METEO server instance" << endl;
+				cout << "Use 'exit' or 'quit' to leave or input a test packet." << endl;
+			} else {
+				// Try to parse
+				if(parser.parse(line)) {
+					recvCallback(parser.node(), parser.values());
+					parser.clear();
+				} else {
+					cerr << "Input parse failed" << endl; cerr.flush();
 				}
 			}
-		} else if(line == "help") {
-			cout << "METEO server instance" << endl;
-			cout << "Use 'exit' or 'quit' to leave or input a test packet." << endl;
-		} else {
-			// Try to parse
-			if(parser.parse(line)) {
-				recvCallback(parser.node(), parser.values());
-				parser.clear();
-			} else {
-				cerr << "Input parse failed" << endl; cerr.flush();
-			}
+		} catch(const char* msg) {
+			cout.flush();
+			cerr << "Error: " << msg << endl;
+			cerr.flush();
 		}
-		
 		
 	}
 	
@@ -268,6 +280,11 @@ int main(int argc, char** argv) {
 
 static void alive_thread(void* arg) {
 	(void)arg;
+	
+	// Thread is cancellable immediately
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	
 	instance.runAliveThread();
 }
 
@@ -288,17 +305,23 @@ Instance::~Instance() {
 
 void Instance::runAliveThread(void) {
 	while(this->tid_alive > 0) {
-		long sleeptime = getSystemTime();
-		int counter = this->tidyDead();
-		if(counter > 0) {
-			cout << "Cleanup: " << counter << " nodes" << endl;
-		}
-		this->writeToDB();
-		sleeptime -= getSystemTime() - ALIVE_CYCLE;
+		try {
+			long sleeptime = getSystemTime();
+			int counter = this->tidyDead();
+			if(counter > 0) {
+				cout << "Cleanup: " << counter << " nodes" << endl;
+			}
+			this->writeToDB();
+			sleeptime -= getSystemTime() - ALIVE_CYCLE;
 		
-		if(sleeptime > 0) {
-			// cout << sleeptime << " ms" << endl;
-			sleep(sleeptime, 0);
+			if(sleeptime > 0) {
+				// cout << sleeptime << " ms" << endl;
+				sleep(sleeptime, 0);
+			}
+		} catch (const char* msg) {
+			cout.flush();
+			cerr << "Error: " << msg << endl;
+			cerr.flush();
 		}
 	}
 }
@@ -352,4 +375,19 @@ static void sleep(long millis, long micros) {
 			throw "Illegal value";
 		}
 	}
+}
+
+static int pthread_terminate(pthread_t tid) {
+	if(tid == 0) return -1;
+	int ret;
+	
+	ret = pthread_cancel(tid);
+	if(ret < 0) {
+		// Kill thread
+		ret = pthread_kill(tid, SIGTERM);
+		if(ret < 0) return ret;
+	}
+	pthread_join(tid, NULL);
+	return ret;
+	
 }

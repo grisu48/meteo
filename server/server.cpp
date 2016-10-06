@@ -31,6 +31,25 @@
 using namespace std;
 using flex::String;
 
+
+
+
+static int pthread_terminate(pthread_t tid) {
+	if(tid == 0) return -1;
+	int ret;
+	
+	ret = pthread_cancel(tid);
+	if(ret < 0) {
+		// Kill thread
+		ret = pthread_kill(tid, SIGTERM);
+		if(ret < 0) return ret;
+	}
+	pthread_join(tid, NULL);
+	return ret;
+	
+}
+
+
 UdpReceiver::UdpReceiver() {
 	this->fd = 0;
 	this->port = 0;
@@ -43,6 +62,7 @@ UdpReceiver::UdpReceiver(int port) {
 	this->tid = 0;
 	this->port = port;
 	this->recvCallback = NULL;
+	this->setupSocket(port);
 }
 	
 UdpReceiver::~UdpReceiver() {
@@ -68,12 +88,23 @@ void UdpReceiver::setReceiveCallback( void (*recvCallback)(std::string, std::map
 	this->recvCallback = recvCallback;
 }
 
+
 static void *udpReceiver_thread(void *arg) {
+	// Thread is cancellable immediately
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	
 	UdpReceiver *recv = (UdpReceiver*)arg;
 	if(recv == NULL) return NULL;
 	
-	recv->run();
-	recv->close();
+	try {
+		recv->run();
+		recv->close();
+	} catch (const char* msg) {
+		cout.flush();
+		cerr << msg << ": " << strerror(errno) << endl;
+		cerr.flush();
+	}
 	
 	return NULL;
 }
@@ -94,7 +125,9 @@ void UdpReceiver::start(void) {
 	this->tid = tid;
 }
 
-void UdpReceiver::run(void) {
+void UdpReceiver::setupSocket(int port) {
+	this->port = port;
+	
 	if(this->fd > 0) ::close(this->fd);
 	
 	// Setup receiver socket
@@ -110,24 +143,26 @@ void UdpReceiver::run(void) {
 	dest_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	//dest_addr.sin_addr.s_addr = inet_addr("0.0.0.0");
 	
+	
 	// Bind socket
-	
-	
 	if(::bind(this->fd, (struct sockaddr*)&dest_addr, sizeof(dest_addr)) < 0) {
 		::close(this->fd);
 		this->fd = 0;
 		throw "Error binding socket";
 	}
-	
-	
+}
+
+void UdpReceiver::run(void) {
+	if(this->fd == 0) this->setupSocket(this->port);
 	
 	// Start receiving
 	char buf[RECV_BUF_SIZE+1];
 	int flags = 0;
 	while(this->fd > 0) {
 		// XXX: Replace this with recvfrom
-		memset(buf, '\0', RECV_BUF_SIZE+1);
+		memset(buf, '\0', RECV_BUF_SIZE);
 		const ssize_t len = ::recv(this->fd, buf, RECV_BUF_SIZE * sizeof(char), flags);
+		buf[RECV_BUF_SIZE] = '\0';
 		if(len < 0) break;
 		
 		// Received message
@@ -142,7 +177,7 @@ void UdpReceiver::run(void) {
 void UdpReceiver::close(void) {
 	if(this->tid > 0) {
 		// Abort thread
-		pthread_kill(this->tid, SIGTERM);
+		pthread_terminate(this->tid);
 		this->tid = 0;
 	}
 	if(this->fd> 0) {

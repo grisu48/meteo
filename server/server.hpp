@@ -39,6 +39,7 @@ private:
 	/** Received callback */
 	void (*recvCallback)(std::string, std::map<std::string, double>);
 	
+	void setupSocket(int port);
 public:
 	/** Creates new empty receiver */
 	UdpReceiver();

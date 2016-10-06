@@ -32,6 +32,7 @@
 #include "string.hpp"
 #include "node.hpp"
 #include "parser.hpp"
+#include "database.hpp"
 
 
 // Alive check cycle in seconds
@@ -41,6 +42,7 @@
 
 
 using namespace std;
+using flex::String;
 
 
 
@@ -49,6 +51,7 @@ static void sig_handler(int signo);
 long getSystemTime(void);
 static void sleep(long millis, long micros);
 static int pthread_terminate(pthread_t tid);
+static void printHelp(const char* progname);
 
 class Instance {
 protected:
@@ -60,6 +63,9 @@ protected:
 	
 	/** Timer thread for checking thread alive */
 	pthread_t tid_alive = 0;
+	
+	/** Database instance, if set */
+	MySQL *db = NULL;
 public:
 	Instance();
 	virtual ~Instance();
@@ -76,6 +82,9 @@ public:
 		udpReceivers.push_back(recv);
 		return recv;
 	}
+	
+	/** Assign database */
+	void setDatabase(MySQL *db) { this->db = db; }
 	
 	/** Receive data from a node */
 	void receive(string name, map<string, double> values) {
@@ -166,6 +175,7 @@ int main(int argc, char** argv) {
 	{
 		vector<int> tcp_ports;
 		vector<int> udp_ports;
+		MySQL *db = NULL;
 		
 		// Parse program arguments
 		try {
@@ -179,6 +189,38 @@ int main(int argc, char** argv) {
 					if(arg == "--udp") {
 						if(isLast) throw "Missing argument: udp port";
 						udp_ports.push_back(atoi(argv[++i]));
+					} else if(arg == "--mysql" || arg == "--db") {
+						// "user:password@hostname/database"
+						arg = String(argv[++i]);
+						size_t index = arg.find(":");
+						if(index == string::npos) throw "Illegal database format";
+						String dbUsername = arg.substr(0, index);
+						arg = arg.substr(index+1);
+						index = arg.find("@");
+						if(index == string::npos) throw "Illegal database format";
+						String dbPassword = arg.substr(0, index);
+						arg = arg.substr(index+1);
+						index = arg.find("/");
+						if(index == string::npos) throw "Illegal database format";
+						String dbHostname = arg.substr(0, index);
+						String dbDatabase = arg.substr(index+1);
+
+						if(dbHostname.isEmpty()) throw "Missing database hostname";
+						if(dbDatabase.isEmpty()) throw "Missing database name";
+						if(dbUsername.isEmpty()) throw "Missing database username";
+						
+						try {
+							db = new MySQL(dbHostname, dbUsername, dbPassword, dbDatabase);
+							db->connect();
+							db->close();
+						} catch (const char* msg) {
+							cerr << "Error connecting to database: " << msg << endl;
+							return EXIT_FAILURE;
+						}
+						
+					} else if(arg == "--help") {
+						printHelp(argv[0]);
+						return EXIT_SUCCESS;
 					} else {
 						cerr << "Illegal argument: " << arg << endl;
 						return EXIT_FAILURE;
@@ -214,6 +256,13 @@ int main(int argc, char** argv) {
 				
 				
 			}
+		}
+		
+		if(db != NULL) {
+			instance.setDatabase(db);
+			db->connect();
+			cout << "Database: " << db->getDBMSVersion() << endl;
+			db->close();
 		}
 	}
 	
@@ -300,6 +349,7 @@ Instance::Instance() {
 
 Instance::~Instance() {
 	this->close();
+	if(this->db != NULL) delete this->db;
 }
 
 
@@ -327,7 +377,9 @@ void Instance::runAliveThread(void) {
 }
 
 void Instance::writeToDB(void) {
-
+	if(this->db == NULL) return;		// No database
+	
+	
 }
 
 static void recvCallback(std::string node, std::map<std::string, double> values) {
@@ -390,4 +442,20 @@ static int pthread_terminate(pthread_t tid) {
 	pthread_join(tid, NULL);
 	return ret;
 	
+}
+
+static void printHelp(const char* progname) {
+	// user:password@hostname/database
+	
+	cout << "Meteo Server Instance" << endl;
+	cout << "  2016, Felix Niederwanger <felix@feldspaten.org>" << endl;
+	cout << endl;
+	
+	cout << "Usage: " << progname << " [OPTIONS]" << endl;
+	cout << "OPTIONS" << endl;
+	cout << "  -h   --help                      Print this help message" << endl;
+	cout << "  --udp PORT                       Listen on PORT for udp messages. Multiple definitions allowed" << endl;
+	cout << "  --mysql REMOTE                   Set REMOTE as MySQL database instance." << endl;
+	cout << "          REMOTE is in the form: user:password@hostname/database" << endl;
+	cout << endl;
 }

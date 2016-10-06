@@ -7,7 +7,7 @@ INCLUDE=-I/usr/include/mysql
 LIBS=-lmysqlclient -pthread
 
 
-OBJS=string.o tcp.o udp.o node.o server.o parser.o
+OBJS=string.o tcp.o udp.o node.o server.o parser.o serial.o database.o
 
 
 default:	all
@@ -21,3 +21,6 @@ main:	main.cpp $(OBJS)
 
 %.o:	%.cpp %.hpp
 	$(CXX) $(CXX_FLAGS) -c -o $@ $<
+	
+database.o:	database.cpp database.hpp
+	$(CXX) $(CXX_FLAGS) -c -o $@ $< -I/usr/include/mysql

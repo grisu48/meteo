@@ -16,6 +16,9 @@
 #include <vector>
 #include <map>
 
+class Node;
+class RoomNode;
+
 
 /** METEO Node that collects data */
 class Node {
@@ -57,6 +60,41 @@ public:
 	/** Set alive status of this node */
 	void setAlive(bool alive = true) { this->_alive = alive; }
 	bool isAlive(void) const { return this->_alive; }
+};
+
+
+/** RoomNode packet*/
+class RoomNode {
+private:
+	/** ID of the station */
+	int _id;
+	/** Light (value from 0 .. 255) */
+	float _light;
+	/** Humditiy in rel. %*/
+	float _humidity;
+	/** Temperature in degree celcius*/
+	float _temperature;
+	/** Battery status - 0 = good, 1 = low voltage */
+	int _battery;
+
+public:
+	RoomNode(int id, float light, float humidity, float temperature, int battery) {
+		this->_id = id;
+		this->_light = light;
+		this->_humidity = humidity;
+		this->_temperature = temperature;
+		this->_battery = battery;
+	}
+
+	int stationId(void) const { return this->_id; }
+	float light(void) const { return this->_light; }
+	float lightPercent(void) const { return this->_light/2.55; }
+	float humidity(void) const { return this->_humidity; }
+	float temperature(void) const { return this->_temperature; }
+	int battery(void) const { return this->_battery; }
+	bool isBatteryOk(void) const { return this->_battery == 0; }
+
+	std::string toString(void) const;
 };
 
 #endif

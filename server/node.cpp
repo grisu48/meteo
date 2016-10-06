@@ -9,6 +9,8 @@
  * =============================================================================
  */
  
+#include <sstream>
+ 
 #include "node.hpp"
 
 using namespace std;
@@ -52,5 +54,16 @@ map<string, double> Node::values(void) {
 	for(map<string, double>::iterator it = this->data.begin(); it != this->data.end(); it++) 
 		ret[it->first] = it->second;
 	return ret;
+}
+
+
+string RoomNode::toString(void) const {
+	stringstream ss;
+
+	ss << "Room[" << stationId() << "] -- " << lightPercent() << "% ligth; " << humidity() << " %. rel humidity at ";
+	ss << temperature() << " degree Celcius";
+	if (!isBatteryOk()) ss << "  -- Low battery!" << endl;
+
+	return ss.str();
 }
 

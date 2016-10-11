@@ -11,6 +11,7 @@
  
  
 #include <iostream>
+#include <fstream>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -66,6 +67,9 @@ protected:
 	
 	/** Database instance, if set */
 	MySQL *db = NULL;
+	
+	/** File where the current readings are written to */
+	string outFile;
 public:
 	Instance();
 	virtual ~Instance();
@@ -85,6 +89,10 @@ public:
 	
 	/** Assign database */
 	void setDatabase(MySQL *db) { this->db = db; }
+	
+	void setOutputFile(string filename) {
+		this->outFile = filename;
+	}
 	
 	/** Receive data from a node */
 	void receive(string name, map<string, double> values) {
@@ -221,6 +229,9 @@ int main(int argc, char** argv) {
 					} else if(arg == "--help") {
 						printHelp(argv[0]);
 						return EXIT_SUCCESS;
+					} else if(arg == "-f") {
+						if(isLast) throw "Missing argument: Filename";
+						instance.setOutputFile(string(argv[++i]));
 					} else {
 						cerr << "Illegal argument: " << arg << endl;
 						return EXIT_FAILURE;
@@ -377,7 +388,37 @@ void Instance::runAliveThread(void) {
 }
 
 void Instance::writeToDB(void) {
-	if(this->db == NULL) return;		// No database
+	// Write to file
+	if(this->outFile.size() > 0) {
+		ofstream fout(this->outFile);
+		if(fout.is_open()) {
+			
+			// Write all nodes
+			
+			for(map<string, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
+				string key = it->first;
+				Node &node = it->second;
+				
+				
+				map<string, double> values = node.values();
+				string name = node.name();
+				fout << name;
+				for(map<string, double>::iterator jt = values.begin(); jt != values.end(); jt++)
+					fout << ' ' << jt->first << " = " << jt->second;
+				fout << endl;
+			}
+			
+			fout.close();
+		}
+	}
+
+	if(this->db != NULL) {
+		this->db->connect();
+		// TODO: Write to database
+		
+		
+		this->db->close();
+	}
 	
 	
 }

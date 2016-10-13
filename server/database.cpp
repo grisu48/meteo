@@ -11,6 +11,8 @@
 
 #include <sstream>
 
+#include <string.h>
+
 #include "database.hpp"
 
 using namespace std;
@@ -47,7 +49,10 @@ void MySQL::connect(void) {
 }
 
 void MySQL::close(void) {
-	mysql_close(this->conn);
+	if(this->conn != NULL) {
+		mysql_close(this->conn);
+		this->conn = NULL;
+	}
 }
 
 
@@ -59,6 +64,55 @@ void MySQL::push(const RoomNode &node) {
 	
 	
 	this->execute(sql.str());
+}
+
+std::string MySQL::escape(const char* str) {
+	// unsigned long mysql_real_escape_string(MYSQL *mysql, char *to, const char *from, unsigned long length);
+	
+	if(this->conn == NULL) return string(str);
+	
+	size_t len = strlen(str);
+	char* res = new char[len*2+1];
+	memset(res, '\0', len*2+1);
+	size_t ret_len = mysql_real_escape_string(this->conn, res, str, len);
+	res[ret_len] = '\0';
+	res[len*2] = '\0';		// Make sure it is escaped
+	string ret = string(str);
+	delete[] res;
+	return ret;
+}
+
+void MySQL::push(const Node &node) {
+	stringstream sql;
+	
+	string name = escape(node.name());
+
+	map<string, double> val = node.values();
+		
+	// Create table statement
+	this->createNodeTable(node);
+	
+	// Insert values statement
+	{
+		stringstream columns;
+		stringstream values;
+
+		columns << "`timestamp`";
+		values << "CURRENT_TIMESTAMP";
+
+		for(map<string, double>::iterator it = val.begin(); it != val.end(); ++it) {
+			string valName = it->first;
+			const double value = it->second;
+	
+			columns << ", `" << valName << "`";
+			values << ", " << value;
+		}
+
+		sql << "INSERT INTO `" << this->database << "`.`Node_" << name << "` (" << columns.str() << ") VALUES (" << values.str() << ");";
+
+
+		this->execute(sql.str());
+	}
 }
 
 string MySQL::getDBMSVersion(void) {
@@ -80,10 +134,26 @@ string MySQL::getDBMSVersion(void) {
 	return version;
 }
 
+void MySQL::createNodeTable(const Node &node) {
+	stringstream ss;
+	
+	string name = escape(node.name());
+	
+	ss << "CREATE TABLE IF NOT EXISTS `" << this->database << "`.`Node_" << name << "` ( `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP";
+	
+	map<string, double> val = node.values();
+	for(map<string, double>::iterator it = val.begin(); it != val.end(); ++it) {
+		string valName = it->first;
+		ss << ", `" << valName << "` FLOAT NOT NULL";
+	}
+	
+	ss << ", PRIMARY KEY (`timestamp`)) ENGINE = InnoDB CHARSET=utf8 COLLATE utf8_general_ci COMMENT = 'Station " << name << " table';";
+	execute(ss.str());	
+}
 
 void MySQL::createRoomNodeTable(const int stationId) {
 	stringstream ss;
-	ss << "CREATE TABLE IF NOT EXISTS `meteo`.`RoomNode_" << stationId << "` ( `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP , `light` FLOAT NOT NULL , `humidity` FLOAT NOT NULL , `temperature` FLOAT NOT NULL , PRIMARY KEY (`timestamp`)) ENGINE = InnoDB CHARSET=utf8 COLLATE utf8_general_ci COMMENT = 'Station " << stationId << " table';";
+	ss << "CREATE TABLE IF NOT EXISTS `" << this->database << "`.`RoomNode_" << stationId << "` ( `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP , `light` FLOAT NOT NULL , `humidity` FLOAT NOT NULL , `temperature` FLOAT NOT NULL , PRIMARY KEY (`timestamp`)) ENGINE = InnoDB CHARSET=utf8 COLLATE utf8_general_ci COMMENT = 'Station " << stationId << " table';";
 	execute(ss.str());
 }
 
@@ -101,5 +171,10 @@ void MySQL::execute(const char* sql, size_t len) {
 		if(error == NULL) throw "Unknown error";
 		else throw error;
 	}
+}
+
+void MySQL::Finalize(void) {
+	mysql_thread_end();
+	mysql_library_end();
 }
 

@@ -49,12 +49,26 @@ void Node::clear(void) {
 	this->data.clear();
 }
 
-map<string, double> Node::values(void) {
-	map<string, double> ret;
-	for(map<string, double>::iterator it = this->data.begin(); it != this->data.end(); it++) 
-		ret[it->first] = it->second;
+map<string, double> Node::values(void) const {
+	map<string, double> ret(this->data);
+//	for(map<string, double>::iterator it = this->data.begin(); it != this->data.end(); it++) 
+//		ret[it->first] = it->second;
 	return ret;
 }
+
+double Node::get(const char* column) const {
+	if(column == NULL) return 0;
+	// Search for item
+	string sColumn(column);
+	if(this->data.find(sColumn) == this->data.end()) 
+		return 0;
+	else
+		return this->data.at(sColumn);
+}
+
+
+double Node::operator[](const char* column) const { return this->get(column); }
+
 
 
 string RoomNode::toString(void) const {
@@ -67,3 +81,9 @@ string RoomNode::toString(void) const {
 	return ss.str();
 }
 
+
+void RoomNode::setName(int id) {
+	stringstream ss;
+	ss << id;
+	this->_name = ss.str();
+}

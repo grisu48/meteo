@@ -53,6 +53,7 @@ long getSystemTime(void);
 static void sleep(long millis, long micros);
 static int pthread_terminate(pthread_t tid);
 static void printHelp(const char* progname);
+static void cleanup(void);
 
 class Instance {
 protected:
@@ -70,6 +71,11 @@ protected:
 	
 	/** File where the current readings are written to */
 	string outFile;
+	
+	
+	/** Delay when to write to database in milliseconds. Default : 2 Minutes*/
+	//long writeDBDelay = 2L * 60L * 1000L;
+	long writeDBDelay = 2L * 1000L;
 public:
 	Instance();
 	virtual ~Instance();
@@ -108,7 +114,6 @@ public:
 			cout << "RECEIVED ";
 
 		Node& node = _nodes[name];
-		node.setAlive();
 		node.setTimestamp(getSystemTime());
 		
 		cout << node.name();
@@ -280,6 +285,7 @@ int main(int argc, char** argv) {
 	// Register signals
 	signal(SIGTERM, sig_handler);
 	signal(SIGINT, sig_handler);
+	atexit(cleanup);
 	
 	
 	// Read input
@@ -332,8 +338,7 @@ int main(int argc, char** argv) {
 	}
 	
 	
-	// instance.close();			-- Will happen automatically
-	exit(EXIT_SUCCESS);
+	instance.close();			// Will happen automatically
     return EXIT_SUCCESS;
 }
 
@@ -365,14 +370,27 @@ Instance::~Instance() {
 
 
 void Instance::runAliveThread(void) {
+	
+	long lastWriteTimestamp = getSystemTime();		// Timestamp when the last write occurred
+	
 	while(this->tid_alive > 0) {
 		try {
-			long sleeptime = getSystemTime();
+			const long sysTime = getSystemTime();
+			long sleeptime = sysTime;
 			int counter = this->tidyDead();
 			if(counter > 0) {
 				cout << "Cleanup: " << counter << " nodes" << endl;
 			}
-			this->writeToDB();
+			
+			// Check if we need to write the stuff to the database
+			
+			if (sysTime - lastWriteTimestamp > writeDBDelay) {
+				this->writeToDB();
+				lastWriteTimestamp = sysTime;
+			}
+			
+			
+			
 			sleeptime -= getSystemTime() - ALIVE_CYCLE;
 		
 			if(sleeptime > 0) {
@@ -394,7 +412,6 @@ void Instance::writeToDB(void) {
 		if(fout.is_open()) {
 			
 			// Write all nodes
-			
 			for(map<string, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
 				string key = it->first;
 				Node &node = it->second;
@@ -414,8 +431,24 @@ void Instance::writeToDB(void) {
 
 	if(this->db != NULL) {
 		this->db->connect();
-		// TODO: Write to database
+		long errors = 0;
 		
+		// Write all nodes
+		for(map<string, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
+			string key = it->first;
+			Node &node = it->second;
+			
+			try {
+				this->db->push(node);
+			} catch (const char* msg) {
+				cerr << "Error writing node " << key << " to database: " << msg << endl;
+				errors++;
+			}
+		}
+		
+		if(errors > 0) {
+			cerr << errors << " error(s) occurred while writing to database" << endl;
+		}
 		
 		this->db->close();
 	}
@@ -499,4 +532,8 @@ static void printHelp(const char* progname) {
 	cout << "  --mysql REMOTE                   Set REMOTE as MySQL database instance." << endl;
 	cout << "          REMOTE is in the form: user:password@hostname/database" << endl;
 	cout << endl;
+}
+
+static void cleanup(void) {
+	MySQL::Finalize();
 }

@@ -22,7 +22,7 @@ class RoomNode;
 
 /** METEO Node that collects data */
 class Node {
-private:
+protected:
 	/** Name of the station */
 	std::string _name;
 	
@@ -31,9 +31,6 @@ private:
 	
 	/** Data of the node */
 	std::map<std::string, double> data;
-	
-	/** Alive flag */
-	bool _alive;
 	
 public:
 	Node();
@@ -52,47 +49,60 @@ public:
 	void clear(void);
 
 	/** List of all data of the node */
-	std::map<std::string, double> values(void);
+	std::map<std::string, double> values(void) const;
 	
 	long timestamp(void) const { return this->_timestamp; }
 	void setTimestamp(long timestamp) { this->_timestamp = timestamp; }
 	
-	/** Set alive status of this node */
-	void setAlive(bool alive = true) { this->_alive = alive; }
-	bool isAlive(void) const { return this->_alive; }
+	/** Get column contents or 0, if not found */
+	double get(const char* column) const;
+	
+	/** Get column contents or 0, if not found */
+	double operator[](const char* column) const;
 };
 
 
 /** RoomNode packet*/
-class RoomNode {
+class RoomNode : public Node {
 private:
 	/** ID of the station */
 	int _id;
-	/** Light (value from 0 .. 255) */
-	float _light;
-	/** Humditiy in rel. %*/
-	float _humidity;
-	/** Temperature in degree celcius*/
-	float _temperature;
-	/** Battery status - 0 = good, 1 = low voltage */
-	int _battery;
-
+	
+	void setName(int id);
 public:
 	RoomNode(int id, float light, float humidity, float temperature, int battery) {
 		this->_id = id;
-		this->_light = light;
-		this->_humidity = humidity;
-		this->_temperature = temperature;
-		this->_battery = battery;
+		this->setName(id);
+		this->data["light"] = light;
+		this->data["humidity"] = humidity;
+		this->data["temperature"] = temperature;
+		this->data["battery"] = battery;
+		
+	}
+	RoomNode(int id) {
+		this->_id = id;
+		this->setName(id);
+		this->data["light"] = 0;
+		this->data["humidity"] = 0;
+		this->data["temperature"] = 0;
+		this->data["battery"] = 0;
 	}
 
+	/** The ID of the station */
 	int stationId(void) const { return this->_id; }
-	float light(void) const { return this->_light; }
-	float lightPercent(void) const { return this->_light/2.55; }
-	float humidity(void) const { return this->_humidity; }
-	float temperature(void) const { return this->_temperature; }
-	int battery(void) const { return this->_battery; }
-	bool isBatteryOk(void) const { return this->_battery == 0; }
+	
+	/** Light (value from 0 .. 255) */
+	float light(void) const { return (float)this->get("light"); }
+	/** Light value in percent (0..100) */
+	float lightPercent(void) const { return this->light()/2.55; }
+	/** Humditiy in rel. % */
+	float humidity(void) const { return (float)this->get("humidity"); }
+	/** Temperature in degree celcius*/
+	float temperature(void) const { return (float)this->get("temperature"); }
+	/** Battery status - 0 = good, 1 = low voltage */
+	int battery(void) const { return (int)this->get("battery"); }
+	/** Battery status - 0 = good, 1 = low voltage */
+	bool isBatteryOk(void) const { return this->battery() == 0; }
 
 	std::string toString(void) const;
 };

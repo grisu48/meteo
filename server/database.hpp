@@ -31,6 +31,12 @@ protected:
 	
 	
 	MYSQL *conn = NULL;
+	
+	std::string escape(std::string str) { return this->escape(str.c_str()); }
+	std::string escape(const char* str);
+	
+	void createRoomNodeTable(const int stationId);
+	void createNodeTable(const Node &node);
 public:
 	MySQL(std::string remote, std::string username, std::string password, std::string database);
 	virtual ~MySQL();
@@ -41,12 +47,16 @@ public:
 	/** Push the given roomnode instance */
 	void push(const RoomNode &node);
 	
-	void createRoomNodeTable(const int stationId);
+	/** Push the given node */
+	void push(const Node &node);
 	
 	std::string getDBMSVersion(void);
 	
 	void execute(std::string sql);
 	void execute(const char* sql, size_t len);
+	
+	/** Finalize mysql connection */
+	static void Finalize(void);
 };
 
 #endif

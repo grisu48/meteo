@@ -31,20 +31,15 @@
 #include "server.hpp"
 #include "udp.hpp"
 #include "string.hpp"
+#include "serial.hpp"
 #include "node.hpp"
 #include "parser.hpp"
 #include "database.hpp"
 
 
-// Alive check cycle in seconds
-#define ALIVE_CYCLE 500
-// Alive tolerance in seconds
-#define ALIVE_TOLERANCE 15
-
-
 using namespace std;
 using flex::String;
-
+using io::Serial;
 
 
 static void recvCallback(std::string, std::map<std::string, double>);
@@ -54,6 +49,8 @@ static void sleep(long millis, long micros);
 static int pthread_terminate(pthread_t tid);
 static void printHelp(const char* progname);
 static void cleanup(void);
+/** Setup serial device for reading. Returns thread id */
+static pthread_t  setup_serial(const char* dev);
 
 class Instance {
 protected:
@@ -76,6 +73,14 @@ protected:
 	/** Delay when to write to database in milliseconds. Default : 2 Minutes*/
 	//long writeDBDelay = 2L * 60L * 1000L;
 	long writeDBDelay = 2L * 1000L;
+	
+	/** Period interval in milliseconds */
+	long period_ms = 1000L;
+	
+	/** Milliseconds that is considered as ALIVe.
+	  * If a node doesn't respond within this amount of time, then it's considered dead
+      */
+	long alive_period = 15L * 1000L;
 public:
 	Instance();
 	virtual ~Instance();
@@ -98,6 +103,13 @@ public:
 	
 	void setOutputFile(string filename) {
 		this->outFile = filename;
+	}
+	
+	/** Set database write delay in milliseconds. Ignored if < 0 */
+	void setDBWriteDelay(long delay) {
+	    if(delay < 0) return;
+	    else
+	        this->writeDBDelay = delay;
 	}
 	
 	/** Receive data from a node */
@@ -158,7 +170,7 @@ public:
 		int counter = 0;
 		while(it != this->_nodes.end()) {
 			const long timestamp = getSystemTime();
-			const long tolerance = timestamp - ALIVE_TOLERANCE * 1000L;
+			const long tolerance = timestamp - this->alive_period;
 			Node &node = it->second;
 			if(node.timestamp() < tolerance) {
 				cout << "Node[" << node.name() << "] dead. Inactive for ";
@@ -178,6 +190,9 @@ public:
 
 /** Singleton instance*/
 static Instance instance;
+
+
+
 
 
 /* ==== MAIN ENTRANCE POINT ================================================= */
@@ -231,6 +246,29 @@ int main(int argc, char** argv) {
 							return EXIT_FAILURE;
 						}
 						
+					} else if(arg == "--db-write-delay") {
+					    if(isLast) throw "Missing argument: Database write delay";
+					    // Write delay in milliseconds
+					    long delay = atol(argv[++i]);
+					    if(delay < 0) throw "Illegal argument: Database write delay must be positive";
+					    instance.setDBWriteDelay(delay);
+					    cout << "Set database write delay to " << delay << " ms";
+					    
+				    } else if(arg == "--serial") {
+				        if(isLast) throw "Missing argument: Serial device file";
+				        
+				        try {
+				            // pthread_t tid = 
+				            setup_serial(argv[++i]);
+				            // XXX: Add to cleanup?
+				            
+				        } catch (const char* msg) {
+				            cerr << "Warning: Error setting up serial: " << msg << endl;
+				            // return EXIT_FAILURE;
+				        }
+				        
+				        
+					    
 					} else if(arg == "--help") {
 						printHelp(argv[0]);
 						return EXIT_SUCCESS;
@@ -391,7 +429,7 @@ void Instance::runAliveThread(void) {
 			
 			
 			
-			sleeptime -= getSystemTime() - ALIVE_CYCLE;
+			sleeptime -= getSystemTime() - period_ms;
 		
 			if(sleeptime > 0) {
 				// cout << sleeptime << " ms" << endl;
@@ -531,9 +569,55 @@ static void printHelp(const char* progname) {
 	cout << "  --udp PORT                       Listen on PORT for udp messages. Multiple definitions allowed" << endl;
 	cout << "  --mysql REMOTE                   Set REMOTE as MySQL database instance." << endl;
 	cout << "          REMOTE is in the form: user:password@hostname/database" << endl;
+	cout << "  --db-write-delay MILLIS          Set the delay for database writes in milliseconds" << endl;
+	cout << "  -f FILE                          Periodically write the current settings to FILE" << endl;
+	cout << "  --serial FILE                    Open FILE as serial device file and read contents from it" << endl;
 	cout << endl;
 }
 
 static void cleanup(void) {
 	MySQL::Finalize();
 }
+
+/** Thread for setting up serial */
+static void* serial_thread(void* arg) {
+    const char* dev = (char*)arg;
+    
+    
+	// Thread is cancellable immediately
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    
+    
+    try {
+        Serial serial(dev);
+        Parser parser;
+        while(!serial.eof()) {
+            string line = serial.readLine();
+            
+            // Parse line
+		    if(parser.parse(line)) {
+			    recvCallback(parser.node(), parser.values());
+			    parser.clear();
+		    }
+        }
+    } catch (const char* msg) {
+        cerr << "Error in Serial " << dev << ": " << msg << endl;
+        cerr << "Reading failure from serial " << dev << ". Closing instance" << endl;
+    }
+    
+    return NULL;
+}
+
+static pthread_t setup_serial(const char* dev) {
+    // Create thread
+    pthread_t tid;
+    
+	int ret;
+	ret = pthread_create(&tid, NULL, serial_thread, (void*)dev);
+	if(ret < 0) throw "Error creating serial thread";
+	return tid;
+}
+
+
+

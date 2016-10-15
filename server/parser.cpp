@@ -46,7 +46,7 @@ bool Parser::parse(std::string input) {
 		
 		light = atoi(split[2].c_str());
 		humidity = atof(split[3].c_str());
-		temperature = atof(split[4].c_str());
+		temperature = atof(split[4].c_str()) / 10.0F;
 		battery = atoi(split[5].c_str());
 		
 		this->_values["light"] = light;

@@ -59,6 +59,9 @@ public:
 	
 	/** Get column contents or 0, if not found */
 	double operator[](const char* column) const;
+	
+	/** Get XML of the node */
+	std::string xml(void) const;
 };
 
 

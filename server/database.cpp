@@ -174,7 +174,7 @@ void MySQL::execute(const char* sql, size_t len) {
 }
 
 void MySQL::Finalize(void) {
-	mysql_thread_end();
+	// mysql_thread_end();
 	mysql_library_end();
 }
 

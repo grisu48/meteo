@@ -70,6 +70,24 @@ double Node::get(const char* column) const {
 double Node::operator[](const char* column) const { return this->get(column); }
 
 
+string Node::xml(void) const {
+    stringstream ss;
+    
+    ss << "<Node name=\"" << this->_name << "\">";
+    
+    map<string, double> data(this->data);
+    for(map<string, double>::iterator it = data.begin(); it != data.end(); ++it) {
+        string name = it->first;
+        const double value = it->second;
+        
+        ss << "<" << name << ">" << value << "</" << name << ">";
+    }
+    
+    ss << "</Node>";
+    
+    
+    return ss.str();
+}
 
 string RoomNode::toString(void) const {
 	stringstream ss;

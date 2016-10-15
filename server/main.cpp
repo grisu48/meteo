@@ -51,6 +51,8 @@ static void printHelp(const char* progname);
 static void cleanup(void);
 /** Setup serial device for reading. Returns thread id */
 static pthread_t  setup_serial(const char* dev);
+/** Rung program as deamon */
+static void deamonize();
 
 class Instance {
 protected:
@@ -59,6 +61,9 @@ protected:
 	
 	/** Udp receivers */
 	vector<UdpReceiver*> udpReceivers;
+	
+	/** TCP broadcast servers */
+	vector<TcpBroadcastServer*> tcpBroadcasts;
 	
 	/** Timer thread for checking thread alive */
 	pthread_t tid_alive = 0;
@@ -71,16 +76,20 @@ protected:
 	
 	
 	/** Delay when to write to database in milliseconds. Default : 2 Minutes*/
-	//long writeDBDelay = 2L * 60L * 1000L;
-	long writeDBDelay = 2L * 1000L;
+	long writeDBDelay = 2L * 60L * 1000L;
 	
 	/** Period interval in milliseconds */
 	long period_ms = 1000L;
 	
-	/** Milliseconds that is considered as ALIVe.
+	/** Milliseconds that is considered as ALIVE.
 	  * If a node doesn't respond within this amount of time, then it's considered dead
       */
-	long alive_period = 15L * 1000L;
+	long alive_period = 60L * 1000L;
+	
+	volatile bool running = true;
+	
+	/** Threads */
+	vector<pthread_t> threads;
 public:
 	Instance();
 	virtual ~Instance();
@@ -104,6 +113,23 @@ public:
 	void setOutputFile(string filename) {
 		this->outFile = filename;
 	}
+	
+	bool addTcpBroadcastServer(const int port) {
+	    try {
+    	    TcpBroadcastServer *server = new TcpBroadcastServer(port);
+    	    server->start();
+    	    tcpBroadcasts.push_back(server);
+	        return true;
+	    } catch (const char* msg) {
+	        cerr << "Error setting up tcp broadcast server on port " << port << ": " << msg << endl;
+	        cerr << strerror(errno) << endl;
+	        return false;
+	    }
+	}
+	
+	bool isRunning(void) const { return this->running; }
+	
+	void addThread(pthread_t tid) { this->threads.push_back(tid); }
 	
 	/** Set database write delay in milliseconds. Ignored if < 0 */
 	void setDBWriteDelay(long delay) {
@@ -134,6 +160,14 @@ public:
 			cout << " " << it->first << " = " << it->second;
 		}
 		cout << endl;
+		
+		// Broadcast node
+		if(tcpBroadcasts.size() > 0) {
+		    string xml = node.xml();
+		    for(vector<TcpBroadcastServer*>::iterator it = tcpBroadcasts.begin(); it != tcpBroadcasts.end(); ++it) {
+		        (*it)->broadcast(xml);
+		    }
+		}
 	}
 
 	vector<Node> nodes(void) {
@@ -147,12 +181,20 @@ public:
 	
 	/** Close everything */
 	void close(void) {
-		cout << "Closing .. " << endl;
+		this->running = false;
 		// Close udp receivers
 		vector<UdpReceiver*> udpReceivers(this->udpReceivers);
 		this->udpReceivers.clear();
 		for(vector<UdpReceiver*>::iterator it = udpReceivers.begin(); it != udpReceivers.end(); ++it)
 			delete *it;
+		
+		// Close tcp broadcasts
+		vector<TcpBroadcastServer*> tcpBroadcasts(this->tcpBroadcasts);
+		this->tcpBroadcasts.clear();
+		for(vector<TcpBroadcastServer*>::iterator it = tcpBroadcasts.begin(); it != tcpBroadcasts.end(); ++it) {
+		    delete *it;
+		}
+		
 		
 		// Close alive thread
 		if(this->tid_alive > 0) {
@@ -160,6 +202,12 @@ public:
 			this->tid_alive = 0;
 			pthread_terminate(tid);
 		}
+		
+		// Close other threads
+		for(vector<pthread_t>::iterator it = threads.begin(); it != threads.end(); ++it) {
+		    pthread_terminate(*it);
+		}
+		threads.clear();
 	}
 	
 	/** Clean all nodes that are not marked alive. Marks all alive nodes as not alive
@@ -199,10 +247,11 @@ static Instance instance;
 
 
 int main(int argc, char** argv) {
-
+    bool daemon = false;
 	{
 		vector<int> tcp_ports;
 		vector<int> udp_ports;
+		vector<int> tcp_broadcasts;
 		MySQL *db = NULL;
 		
 		// Parse program arguments
@@ -217,6 +266,9 @@ int main(int argc, char** argv) {
 					if(arg == "--udp") {
 						if(isLast) throw "Missing argument: udp port";
 						udp_ports.push_back(atoi(argv[++i]));
+					} else if(arg == "--tcp") {
+						if(isLast) throw "Missing argument: tcp port";
+						tcp_broadcasts.push_back(atoi(argv[++i]));
 					} else if(arg == "--mysql" || arg == "--db") {
 						// "user:password@hostname/database"
 						arg = String(argv[++i]);
@@ -252,22 +304,26 @@ int main(int argc, char** argv) {
 					    long delay = atol(argv[++i]);
 					    if(delay < 0) throw "Illegal argument: Database write delay must be positive";
 					    instance.setDBWriteDelay(delay);
-					    cout << "Set database write delay to " << delay << " ms";
+					    cout << "Set database write delay to " << delay << " ms" << endl;
 					    
 				    } else if(arg == "--serial") {
 				        if(isLast) throw "Missing argument: Serial device file";
 				        
 				        try {
-				            // pthread_t tid = 
-				            setup_serial(argv[++i]);
-				            // XXX: Add to cleanup?
+				            pthread_t tid = setup_serial(argv[++i]);
+				            instance.addThread(tid);
 				            
 				        } catch (const char* msg) {
 				            cerr << "Warning: Error setting up serial: " << msg << endl;
 				            // return EXIT_FAILURE;
 				        }
 				        
-				        
+				    } else if(arg == "-d" || arg == "--daemon") {
+				        // Must be first argument!
+				        if(i != 1) throw "Daemon must be the first argument";
+				        deamonize();
+				        daemon = true;
+				        cout << "Running as daemon now" << endl;
 					    
 					} else if(arg == "--help") {
 						printHelp(argv[0]);
@@ -312,6 +368,21 @@ int main(int argc, char** argv) {
 			}
 		}
 		
+		// Setup tcp broadcasts
+		if(tcp_broadcasts.size() > 0) {
+		    cout << "Setting up " << tcp_broadcasts.size() << " tcp broadcast(s):" << endl;
+			for(vector<int>::iterator it = tcp_broadcasts.begin(); it != tcp_broadcasts.end(); it++) {
+			    const int port = *it;
+			    cout << "  Port " << port << " ... "; cout.flush();
+			    if(instance.addTcpBroadcastServer(port))
+			        cout << "ok" << endl;
+			    else {
+			        cout << "failed" << endl;
+			        exit(EXIT_FAILURE);
+			    }
+			}
+		}
+		
 		if(db != NULL) {
 			instance.setDatabase(db);
 			db->connect();
@@ -327,56 +398,60 @@ int main(int argc, char** argv) {
 	
 	
 	// Read input
-	string line;
-	Parser parser;
-	cout << "Server setup completed." << endl;
-	while(true) {
-		cout << "> "; cout.flush();
-		if(!getline(cin, line)) break;
-		if(line.size() == 0) continue;
+	if(daemon) {
+	    // Wait until the end of time
+	    while(instance.isRunning()) 
+	        sleep(3600);
+	} else {
+	    string line;
+	    Parser parser;
+	    cout << "Server setup completed." << endl;
+	    while(true) {
+		    // cout << "> "; cout.flush();
+		    if(!getline(cin, line)) break;
+		    if(line.size() == 0) continue;
 		
-		try {
-			if (line == "exit" || line == "quit") break;
-			else if(line == "list") {
-				// List all nodes
-				vector<Node> nodes = instance.nodes();
-				if (nodes.size() == 0) {
-					cout << "No nodes present" << endl;
-				} else {
-					for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); it++) {
-						cout << "Node[" << (*it).name() << "]";
-						map<string, double> values = (*it).values();
-						if(values.size() == 0) {
-							cout << " Empty";
-						} else {
-							for(map<string,double>::iterator jt = values.begin(); jt != values.end(); jt++)
-								cout << " " << jt->first << " = " << jt->second;
-						}
-						cout << endl;
-					}
-				}
-			} else if(line == "help") {
-				cout << "METEO server instance" << endl;
-				cout << "Use 'exit' or 'quit' to leave or input a test packet." << endl;
-			} else {
-				// Try to parse
-				if(parser.parse(line)) {
-					recvCallback(parser.node(), parser.values());
-					parser.clear();
-				} else {
-					cerr << "Input parse failed" << endl; cerr.flush();
-				}
-			}
-		} catch(const char* msg) {
-			cout.flush();
-			cerr << "Error: " << msg << endl;
-			cerr.flush();
-		}
+		    try {
+			    if (line == "exit" || line == "quit") break;
+			    else if(line == "list") {
+				    // List all nodes
+				    vector<Node> nodes = instance.nodes();
+				    if (nodes.size() == 0) {
+					    cout << "No nodes present" << endl;
+				    } else {
+					    for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); it++) {
+						    cout << "Node[" << (*it).name() << "]";
+						    map<string, double> values = (*it).values();
+						    if(values.size() == 0) {
+							    cout << " Empty";
+						    } else {
+							    for(map<string,double>::iterator jt = values.begin(); jt != values.end(); jt++)
+								    cout << " " << jt->first << " = " << jt->second;
+						    }
+						    cout << endl;
+					    }
+				    }
+			    } else if(line == "help") {
+				    cout << "METEO server instance" << endl;
+				    cout << "Use 'exit' or 'quit' to leave or input a test packet." << endl;
+			    } else {
+				    // Try to parse
+				    if(parser.parse(line)) {
+					    recvCallback(parser.node(), parser.values());
+					    parser.clear();
+				    } else {
+					    cerr << "Input parse failed" << endl; cerr.flush();
+				    }
+			    }
+		    } catch(const char* msg) {
+			    cout.flush();
+			    cerr << "Error: " << msg << endl;
+			    cerr.flush();
+		    }
 		
+	    }
+	    cout << "Exiting instance." << endl;
 	}
-	
-	
-	instance.close();			// Will happen automatically
     return EXIT_SUCCESS;
 }
 
@@ -423,8 +498,11 @@ void Instance::runAliveThread(void) {
 			// Check if we need to write the stuff to the database
 			
 			if (sysTime - lastWriteTimestamp > writeDBDelay) {
+			    //long writeDBDelay = -getSystemTime();
 				this->writeToDB();
 				lastWriteTimestamp = sysTime;
+				//writeDBDelay += getSystemTime();
+				//cout << "Written to database (" << writeDBDelay << " ms)" << endl;
 			}
 			
 			
@@ -495,7 +573,7 @@ void Instance::writeToDB(void) {
 }
 
 static void recvCallback(std::string node, std::map<std::string, double> values) {
-	cout << "Recevied: " << node << " with " << values.size() << " values" << endl;
+//	cout << "Recevied: " << node << " with " << values.size() << " values" << endl;
 	instance.receive(node, values);
 }
 
@@ -504,7 +582,7 @@ static void sig_handler(int signo) {
 		case SIGINT:
 		case SIGTERM:
 			cerr << "Terminating ... " << endl;
-			// instance.close();
+			instance.close();
 			exit(EXIT_FAILURE);
 			break;
 	}
@@ -567,11 +645,13 @@ static void printHelp(const char* progname) {
 	cout << "OPTIONS" << endl;
 	cout << "  -h   --help                      Print this help message" << endl;
 	cout << "  --udp PORT                       Listen on PORT for udp messages. Multiple definitions allowed" << endl;
+	cout << "  --tcp PORT                       Listen on PORT for tcp broadcast clients. Multiple definitions allowed" << endl;
 	cout << "  --mysql REMOTE                   Set REMOTE as MySQL database instance." << endl;
 	cout << "          REMOTE is in the form: user:password@hostname/database" << endl;
 	cout << "  --db-write-delay MILLIS          Set the delay for database writes in milliseconds" << endl;
 	cout << "  -f FILE                          Periodically write the current settings to FILE" << endl;
 	cout << "  --serial FILE                    Open FILE as serial device file and read contents from it" << endl;
+	cout << "  -d  --daemon                     Run as daemon" << endl;
 	cout << endl;
 }
 
@@ -592,8 +672,12 @@ static void* serial_thread(void* arg) {
     try {
         Serial serial(dev);
         Parser parser;
+        cout << "Serial reader at device " << dev << " started" << endl;
         while(!serial.eof()) {
             string line = serial.readLine();
+            if(line.size() == 0 || line.at(0) == '#') continue;
+            
+            // cout << "# [" << dev << "] " << line << endl;
             
             // Parse line
 		    if(parser.parse(line)) {
@@ -616,8 +700,28 @@ static pthread_t setup_serial(const char* dev) {
 	int ret;
 	ret = pthread_create(&tid, NULL, serial_thread, (void*)dev);
 	if(ret < 0) throw "Error creating serial thread";
+	if(pthread_detach(tid) != 0) throw "Error detaching serial thread";
 	return tid;
 }
 
+static void deamonize(void) {
+    pid_t pid = fork();
+    if(pid < 0) {
+	    cerr << "Fork daemon failed" << endl;
+	    exit(EXIT_FAILURE);
+    } else if(pid > 0) {
+	    // Success. The parent leaves here
+	    exit(EXIT_SUCCESS);
+    }
 
-
+    /* Fork off for the second time */
+    /* This is needed to detach the deamon from a terminal */
+    pid = fork();
+    if(pid < 0) {
+	    cerr << "Fork daemon failed (step two)" << endl;
+	    exit(EXIT_FAILURE);
+    } else if(pid > 0) {
+	    // Success. The parent again leaves here
+	    exit(EXIT_SUCCESS);
+    }
+}

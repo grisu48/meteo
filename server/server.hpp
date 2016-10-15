@@ -66,4 +66,36 @@ public:
 };
 
 
+class TcpBroadcastServer {
+private:
+    /** Server FD */
+    volatile int fd;
+    
+    /** Port */
+    int port;
+    
+    /** Attached client sockets */
+    std::vector<int> clients;
+    
+	/** Server thread ID */
+	volatile pthread_t tid = 0;
+public:
+    TcpBroadcastServer(int port);
+    virtual ~TcpBroadcastServer();
+    
+    /** Closes server and all clients */
+    void close(void);
+    
+    /** Start the server */
+    void start(void);
+    
+	/** Receiver loop.
+	  * This call should be executed by the Thread. You should call start() from external, unless you know what you are doing
+	  */
+    void run(void);
+    
+    void broadcast(std::string msg) { this->broadcast(msg.c_str(), msg.size()); }
+    void broadcast(const char* msg, size_t len);
+};
+
 #endif

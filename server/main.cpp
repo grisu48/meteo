@@ -214,6 +214,7 @@ public:
 	  * @returns Number of elements deleted
 	  */
 	int tidyDead(void) {
+	#if 0
 		map<string, Node>::iterator it = this->_nodes.begin();
 		int counter = 0;
 		while(it != this->_nodes.end()) {
@@ -231,6 +232,8 @@ public:
 			}
 		}
 		return counter;
+	#endif
+	    return 0;
 	}
 	
 	void writeToDB(void);
@@ -547,6 +550,8 @@ void Instance::writeToDB(void) {
 		ofstream fout(this->outFile);
 		if(fout.is_open()) {
 			
+			fout << "# Name, Timestamp, [NAME=VALUE]" << endl;
+			
 			// Write all nodes
 			for(map<string, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
 				string key = it->first;
@@ -555,9 +560,9 @@ void Instance::writeToDB(void) {
 				
 				map<string, double> values = node.values();
 				string name = node.name();
-				fout << name;
+				fout << name << "," << node.timestamp();
 				for(map<string, double>::iterator jt = values.begin(); jt != values.end(); jt++)
-					fout << ' ' << jt->first << " = " << jt->second;
+					fout << "; " << jt->first << " = " << jt->second;
 				fout << endl;
 			}
 			
@@ -565,20 +570,27 @@ void Instance::writeToDB(void) {
 		}
 	}
 
-	if(this->db != NULL) {
+	if(this->db != NULL && this->_nodes.size() > 0) {
 		this->db->connect();
 		long errors = 0;
 		
-		// Write all nodes
+		const long t_max = getSystemTime() - alive_period;
+		
+		// Write all nodes, that are fresh
 		for(map<string, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
 			string key = it->first;
 			Node &node = it->second;
 			
-			try {
-				this->db->push(node);
-			} catch (const char* msg) {
-				cerr << "Error writing node " << key << " to database: " << msg << endl;
-				errors++;
+			long timestamp = node.timestamp();
+			if(timestamp > t_max) {
+			    
+			    try {
+				    this->db->push(node);
+			    } catch (const char* msg) {
+				    cerr << "Error writing node " << key << " to database: " << msg << endl;
+				    errors++;
+			    }
+			
 			}
 		}
 		

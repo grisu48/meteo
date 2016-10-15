@@ -163,7 +163,7 @@ public:
 		
 		// Broadcast node
 		if(tcpBroadcasts.size() > 0) {
-		    string xml = node.xml();
+		    string xml = node.xml() + "\n";
 		    for(vector<TcpBroadcastServer*>::iterator it = tcpBroadcasts.begin(); it != tcpBroadcasts.end(); ++it) {
 		        (*it)->broadcast(xml);
 		    }
@@ -245,6 +245,14 @@ static Instance instance;
 
 /* ==== MAIN ENTRANCE POINT ================================================= */
 
+struct {
+    bool enabled = false;
+    string hostname;
+    string username;
+    string password;
+    string database;
+    int port = 3306;
+} typedef db_t;
 
 int main(int argc, char** argv) {
     bool daemon = false;
@@ -252,7 +260,8 @@ int main(int argc, char** argv) {
 		vector<int> tcp_ports;
 		vector<int> udp_ports;
 		vector<int> tcp_broadcasts;
-		MySQL *db = NULL;
+		vector<string> serials;
+		db_t db;
 		
 		// Parse program arguments
 		try {
@@ -289,14 +298,11 @@ int main(int argc, char** argv) {
 						if(dbDatabase.isEmpty()) throw "Missing database name";
 						if(dbUsername.isEmpty()) throw "Missing database username";
 						
-						try {
-							db = new MySQL(dbHostname, dbUsername, dbPassword, dbDatabase);
-							db->connect();
-							db->close();
-						} catch (const char* msg) {
-							cerr << "Error connecting to database: " << msg << endl;
-							return EXIT_FAILURE;
-						}
+						db.enabled = true;
+						db.hostname = dbHostname;
+						db.database = dbDatabase;
+						db.username = dbUsername;
+						db.password = dbPassword;
 						
 					} else if(arg == "--db-write-delay") {
 					    if(isLast) throw "Missing argument: Database write delay";
@@ -308,22 +314,10 @@ int main(int argc, char** argv) {
 					    
 				    } else if(arg == "--serial") {
 				        if(isLast) throw "Missing argument: Serial device file";
-				        
-				        try {
-				            pthread_t tid = setup_serial(argv[++i]);
-				            instance.addThread(tid);
-				            
-				        } catch (const char* msg) {
-				            cerr << "Warning: Error setting up serial: " << msg << endl;
-				            // return EXIT_FAILURE;
-				        }
+				        serials.push_back(string(argv[++i]));
 				        
 				    } else if(arg == "-d" || arg == "--daemon") {
-				        // Must be first argument!
-				        if(i != 1) throw "Daemon must be the first argument";
-				        deamonize();
 				        daemon = true;
-				        cout << "Running as daemon now" << endl;
 					    
 					} else if(arg == "--help") {
 						printHelp(argv[0]);
@@ -346,6 +340,12 @@ int main(int argc, char** argv) {
 			return EXIT_FAILURE;
 		}
 		
+		
+		
+		if(daemon) {
+            deamonize();
+            cout << "Running as daemon now" << endl;
+        }
 		
 		// Setup udp ports first
 		if(udp_ports.size() > 0) {
@@ -383,11 +383,31 @@ int main(int argc, char** argv) {
 			}
 		}
 		
-		if(db != NULL) {
-			instance.setDatabase(db);
-			db->connect();
-			cout << "Database: " << db->getDBMSVersion() << endl;
-			db->close();
+		// Setup serial ports
+		for(vector<string>::iterator it = serials.begin(); it != serials.end(); ++it) {
+    		string serial = *it;
+	        try {
+	            pthread_t tid = setup_serial(serial.c_str());
+	            instance.addThread(tid);
+	            
+	        } catch (const char* msg) {
+	            cerr << "Warning: Error setting up serial: " << msg << endl;
+	            // return EXIT_FAILURE;
+	        }
+		}
+		
+		if(db.enabled) {
+			try {
+				MySQL *mysql= new MySQL(db.hostname, db.username, db.password, db.database);
+				mysql->connect();
+    			cout << "Database: " << mysql->getDBMSVersion() << endl;
+				mysql->close();
+				
+				instance.setDatabase(mysql);
+			} catch (const char* msg) {
+				cerr << "Error connecting to database: " << msg << endl;
+				return EXIT_FAILURE;
+			}
 		}
 	}
 	
@@ -498,11 +518,11 @@ void Instance::runAliveThread(void) {
 			// Check if we need to write the stuff to the database
 			
 			if (sysTime - lastWriteTimestamp > writeDBDelay) {
-			    //long writeDBDelay = -getSystemTime();
+			    long writeDBDelay = -getSystemTime();
 				this->writeToDB();
 				lastWriteTimestamp = sysTime;
-				//writeDBDelay += getSystemTime();
-				//cout << "Written to database (" << writeDBDelay << " ms)" << endl;
+				writeDBDelay += getSystemTime();
+				cout << "Data written to database (" << writeDBDelay << " ms)" << endl;
 			}
 			
 			

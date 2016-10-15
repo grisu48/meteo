@@ -17,7 +17,7 @@ clean:
 
 
 main:	main.cpp $(OBJS)
-	$(CXX) $(CXX_FLAGS) -o server $< $(OBJS) $(INCLUDE) $(LIBS) 
+	$(CXX) $(CXX_FLAGS) -o meteo $< $(OBJS) $(INCLUDE) $(LIBS) 
 
 %.o:	%.cpp %.hpp
 	$(CXX) $(CXX_FLAGS) -c -o $@ $<

@@ -42,7 +42,7 @@ using flex::String;
 using io::Serial;
 
 
-static void recvCallback(std::string, std::map<std::string, double>);
+static void recvCallback(Node &node);
 static void sig_handler(int signo);
 long getSystemTime(void);
 static void sleep(long millis, long micros);
@@ -57,7 +57,7 @@ static void deamonize();
 class Instance {
 protected:
 	/** Meteo nodes */
-	map<string, Node> _nodes;
+	map<long, Node> _nodes;
 	
 	/** Udp receivers */
 	vector<UdpReceiver*> udpReceivers;
@@ -139,27 +139,20 @@ public:
 	}
 	
 	/** Receive data from a node */
-	void receive(string name, map<string, double> values) {
-		if(name.size() == 0) return;
+	void receive(Node &node) {
+		const long id = node.id();
+		if(id <= 0) return;
+		map<string, double> values = node.values();
 		if(values.size() == 0) return;
 		
+		node.setTimestamp(getSystemTime());
 		// Insert node if not yet existing
-		if (_nodes.find(name) == _nodes.end()) {
-			Node node(name);
-			_nodes[name] = node;
+		if (_nodes.find(id) == _nodes.end()) {
+			_nodes[id] = node;
 			cout << "APPEARED ";
 		} else 
 			cout << "RECEIVED ";
-
-		Node& node = _nodes[name];
-		node.setTimestamp(getSystemTime());
-		
-		cout << node.name();
-		for(map<string, double>::iterator it = values.begin(); it != values.end(); it++) {
-			node.pushData(it->first, it->second);
-			cout << " " << it->first << " = " << it->second;
-		}
-		cout << endl;
+		cout << node.toString() << endl;
 		
 		// Broadcast node
 		if(tcpBroadcasts.size() > 0) {
@@ -172,7 +165,7 @@ public:
 
 	vector<Node> nodes(void) {
 		vector<Node> res;
-		for(map<string, Node>::iterator it = _nodes.begin(); it != _nodes.end(); it++) {
+		for(map<long, Node>::iterator it = _nodes.begin(); it != _nodes.end(); it++) {
 			res.push_back(it->second);
 		}
 		return res;
@@ -214,25 +207,6 @@ public:
 	  * @returns Number of elements deleted
 	  */
 	int tidyDead(void) {
-	#if 0
-		map<string, Node>::iterator it = this->_nodes.begin();
-		int counter = 0;
-		while(it != this->_nodes.end()) {
-			const long timestamp = getSystemTime();
-			const long tolerance = timestamp - this->alive_period;
-			Node &node = it->second;
-			if(node.timestamp() < tolerance) {
-				cout << "Node[" << node.name() << "] dead. Inactive for ";
-				cout << (timestamp - node.timestamp()) << " ms" << endl;
-				it = this->_nodes.erase(it);
-				counter++;
-				continue;
-			} else {
-				++it;
-			}
-		}
-		return counter;
-	#endif
 	    return 0;
 	}
 	
@@ -457,10 +431,23 @@ int main(int argc, char** argv) {
 			    } else if(line == "help") {
 				    cout << "METEO server instance" << endl;
 				    cout << "Use 'exit' or 'quit' to leave or input a test packet." << endl;
+				    cout << "  list     - List all nodes" << endl;
+				    cout << "  xml      - Print all nodes as XML line" << endl;
+		   		} else if(line == "xml") {
+		   			// List all nodes as xml
+				    vector<Node> nodes = instance.nodes();
+				    if (nodes.size() == 0) {
+					    cout << "No nodes present" << endl;
+				    } else {
+					    for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); it++) {
+						    cout << (*it).xml() << endl;
+					    }
+				    }
 			    } else {
 				    // Try to parse
 				    if(parser.parse(line)) {
-					    recvCallback(parser.node(), parser.values());
+				    	Node node = parser.node();
+					    recvCallback(node);
 					    parser.clear();
 				    } else {
 					    cerr << "Input parse failed" << endl; cerr.flush();
@@ -553,8 +540,8 @@ void Instance::writeToDB(void) {
 			fout << "# Name, Timestamp, [NAME=VALUE]" << endl;
 			
 			// Write all nodes
-			for(map<string, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
-				string key = it->first;
+			for(map<long, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
+				//long id = it->first;
 				Node &node = it->second;
 				
 				
@@ -577,8 +564,8 @@ void Instance::writeToDB(void) {
 		const long t_max = getSystemTime() - alive_period;
 		
 		// Write all nodes, that are fresh
-		for(map<string, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
-			string key = it->first;
+		for(map<long, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
+			const long id = it->first;
 			Node &node = it->second;
 			
 			long timestamp = node.timestamp();
@@ -587,7 +574,7 @@ void Instance::writeToDB(void) {
 			    try {
 				    this->db->push(node);
 			    } catch (const char* msg) {
-				    cerr << "Error writing node " << key << " to database: " << msg << endl;
+				    cerr << "Error writing node " << id << " to database: " << msg << endl;
 				    errors++;
 			    }
 			
@@ -604,9 +591,8 @@ void Instance::writeToDB(void) {
 	
 }
 
-static void recvCallback(std::string node, std::map<std::string, double> values) {
-//	cout << "Recevied: " << node << " with " << values.size() << " values" << endl;
-	instance.receive(node, values);
+static void recvCallback(Node &node) {
+	instance.receive(node);
 }
 
 static void sig_handler(int signo) {
@@ -713,7 +699,8 @@ static void* serial_thread(void* arg) {
             
             // Parse line
 		    if(parser.parse(line)) {
-			    recvCallback(parser.node(), parser.values());
+		    	Node node = parser.node();
+			    recvCallback(node);
 			    parser.clear();
 		    }
         }

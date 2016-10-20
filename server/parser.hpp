@@ -17,11 +17,15 @@
 #include <map>
 
 #include "string.hpp"
+#include "node.hpp"
  
 class Parser {
 private:
 	/** Name of the node */
-	std::string _node;
+	std::string _name;
+	
+	/** ID of the node */
+	long _id;
 	
 	/** Values of the node */
 	std::map<std::string, double> _values;
@@ -35,12 +39,16 @@ public:
 	  */
 	bool parse(std::string input);
 	
-	std::string node(void) const { return this->_node; }
+	std::string name(void) const { return this->_name; }
+	long id(void) const { return this->_id; }
 	std::map<std::string, double> values(void) const {
 		// Return copy of values
 		std::map<std::string, double> ret(this->_values);
 		return ret;
 	}
+	
+	/** Extract a node out of the parsed values */
+	Node node(void);
 	
 	void clear(void);
 	

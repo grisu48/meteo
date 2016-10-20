@@ -26,6 +26,9 @@ protected:
 	/** Name of the station */
 	std::string _name;
 	
+	/** ID of the station */
+	long _id;
+	
 	/** Timestamp of the last data push */
 	long _timestamp;
 	
@@ -35,15 +38,24 @@ protected:
 public:
 	Node();
 	Node(std::string name);
+	Node(long id, std::string name);
+	/** Copy constructor */
+	Node(const Node &node);
+	/** Move constructor */
+	Node(Node &&node);
 	virtual ~Node();
 	
 	/** Get the name of the node */
 	std::string name(void) const;
+	/** Get the ID of the node */
+	long id(void) const;
 	/** Set the name of the node */
 	void setName(std::string name);
 	
 	/** Push data for the given column*/
 	double pushData(std::string column, const double value, const double alpha_avg = 0.9);
+	
+	void addValues(std::map<std::string, double> &map);
 	
 	/** Clears all data */
 	void clear(void);
@@ -60,20 +72,22 @@ public:
 	/** Get column contents or 0, if not found */
 	double operator[](const char* column) const;
 	
+	/** Assign operator */
+	Node& operator=(const Node &node);
+	
 	/** Get XML of the node */
 	std::string xml(void) const;
+	
+	std::string toString(void) const;
 };
 
 
 /** RoomNode packet*/
 class RoomNode : public Node {
 private:
-	/** ID of the station */
-	int _id;
-	
 	void setName(int id);
 public:
-	RoomNode(int id, float light, float humidity, float temperature, int battery) {
+	RoomNode(long id, float light, float humidity, float temperature, int battery) {
 		this->_id = id;
 		this->setName(id);
 		this->data["light"] = light;
@@ -82,7 +96,7 @@ public:
 		this->data["battery"] = battery;
 		
 	}
-	RoomNode(int id) {
+	RoomNode(long id) {
 		this->_id = id;
 		this->setName(id);
 		this->data["light"] = 0;
@@ -90,9 +104,6 @@ public:
 		this->data["temperature"] = 0;
 		this->data["battery"] = 0;
 	}
-
-	/** The ID of the station */
-	int stationId(void) const { return this->_id; }
 	
 	/** Light (value from 0 .. 255) */
 	float light(void) const { return (float)this->get("light"); }

@@ -23,6 +23,9 @@ Parser::Parser() {}
 Parser::~Parser() {}
 
 bool Parser::parse(std::string input) {
+	this->clear();
+	
+	
 	String msg(input);
 	if(msg.isEmpty()) return false;
 	
@@ -35,7 +38,8 @@ bool Parser::parse(std::string input) {
 		if(split.size() < 5) return false;
 		
 		// Clear items
-		this->_node = split[1];		// ID of the node
+		this->_id = atol(split[1].c_str());		// ID of the node
+		this->_name = "ROOM " + ::to_string(this->_id);
 		this->_values.clear();
 		
 		// Read ROOM items
@@ -62,6 +66,13 @@ bool Parser::parse(std::string input) {
 }
 
 void Parser::clear(void) {
-	this->_node = "";
+	this->_name = "";
+	this->_id = 0L;
 	this->_values.clear();
+}
+
+Node Parser::node(void) {
+	Node result(this->_id, this->_name);
+	result.addValues(this->_values);
+	return result;
 }

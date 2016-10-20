@@ -69,22 +69,12 @@ UdpReceiver::~UdpReceiver() {
 	this->close();
 }
 
-void UdpReceiver::received(string node, map<string, double> values) {
-	cout << node;
-	for(map<string, double>::iterator it = values.begin(); it != values.end(); it++) {
-		string name = it->first;
-		const double value = it->second;
-		
-		cout << " " << name << " = " << value;
-	}
-	cout << endl;
-	
-	if(this->recvCallback != NULL) {
-		this->recvCallback(node, values);
-	}
+void UdpReceiver::received(Node &node) {
+	if(this->recvCallback != NULL)
+		this->recvCallback(node);
 }
 
-void UdpReceiver::setReceiveCallback( void (*recvCallback)(std::string, std::map<std::string, double>) ) {
+void UdpReceiver::setReceiveCallback( void (*recvCallback)(Node &node) ) {
 	this->recvCallback = recvCallback;
 }
 
@@ -192,7 +182,8 @@ void UdpReceiver::onReceived(string msg) {
 	
 	Parser parser;
 	if(parser.parse(msg)) {
-		this->received(parser.node(), parser.values());
+		Node node = parser.node();
+		this->received(node);
 	} else {
 		cerr << "Received illegal packet: " << msg << endl;
 		cerr.flush();

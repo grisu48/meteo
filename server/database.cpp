@@ -59,7 +59,7 @@ void MySQL::close(void) {
 void MySQL::push(const RoomNode &node) {
 	stringstream sql;
 	
-	sql << "INSERT INTO `RoomNode_" << node.stationId() << "` (`timestamp`, `light`, `humidity`, `temperature`) ";
+	sql << "INSERT INTO `RoomNode_" << node.id() << "` (`timestamp`, `light`, `humidity`, `temperature`) ";
 	sql << "VALUES (CURRENT_TIMESTAMP, '" << node.light() << "', '" << node.humidity() << "', '" << node.temperature() << "');";
 	
 	

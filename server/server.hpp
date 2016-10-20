@@ -21,6 +21,7 @@
 
 #include "udp.hpp"
 #include "parser.hpp"
+#include "node.hpp"
 
 
 class UdpReceiver {
@@ -37,7 +38,7 @@ private:
 	void onReceived(std::string msg);
 	
 	/** Received callback */
-	void (*recvCallback)(std::string, std::map<std::string, double>);
+	void (*recvCallback)(Node &node);
 	
 	void setupSocket(int port);
 public:
@@ -48,10 +49,10 @@ public:
 	virtual ~UdpReceiver();
 	
 	/** Virtual method when new data has been received */
-	virtual void received(std::string node, std::map<std::string, double> values);
+	virtual void received(Node &node);
 	
 	/** Sets the receive callback */
-	void setReceiveCallback( void (*recvCallback)(std::string, std::map<std::string, double>) );
+	void setReceiveCallback( void (*recvCallback)(Node &node) );
 	
 	/** Starts the receiver thread */
 	void start(void);

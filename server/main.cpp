@@ -90,6 +90,9 @@ protected:
 	
 	/** Threads */
 	vector<pthread_t> threads;
+	
+	/** Write to database mutex */
+	pthread_mutex_t db_mutex;
 public:
 	Instance();
 	virtual ~Instance();
@@ -211,6 +214,8 @@ public:
 	}
 	
 	void writeToDB(void);
+	
+	void clearNodes(void);
 };
 
 /** Singleton instance*/
@@ -233,6 +238,9 @@ struct {
 
 int main(int argc, char** argv) {
     bool daemon = false;
+    bool noStdIn = false;
+    
+    const long startupTime = getSystemTime();
 	{
 		vector<int> tcp_ports;
 		vector<int> udp_ports;
@@ -302,6 +310,8 @@ int main(int argc, char** argv) {
 					} else if(arg == "-f") {
 						if(isLast) throw "Missing argument: Filename";
 						instance.setOutputFile(string(argv[++i]));
+					} else if(arg == "--nostdin") {
+						noStdIn = true;
 					} else {
 						cerr << "Illegal argument: " << arg << endl;
 						return EXIT_FAILURE;
@@ -318,11 +328,14 @@ int main(int argc, char** argv) {
 		}
 		
 		
-		
+		// Deamonize, if necessary. This MUST BE THE FIRST ACTION, otherwise
+		// the fork will lose information
 		if(daemon) {
             deamonize();
-            cout << "Running as daemon now" << endl;
+            cout << "Running as daemon" << endl;
         }
+        
+        
 		
 		// Setup udp ports first
 		if(udp_ports.size() > 0) {
@@ -373,6 +386,7 @@ int main(int argc, char** argv) {
 	        }
 		}
 		
+		// Setup database
 		if(db.enabled) {
 			try {
 				MySQL *mysql= new MySQL(db.hostname, db.username, db.password, db.database);
@@ -385,7 +399,11 @@ int main(int argc, char** argv) {
 				cerr << "Error connecting to database: " << msg << endl;
 				return EXIT_FAILURE;
 			}
+		} else {
+			cout << "Database disabled" << endl;
 		}
+		
+		if(daemon) noStdIn = true;
 	}
 	
 	// Register signals
@@ -394,17 +412,23 @@ int main(int argc, char** argv) {
 	atexit(cleanup);
 	
 	
+    cout << "meteo Server is up an running";
+    cout << " (Startup: " << (getSystemTime() - startupTime) << " ms)" << endl;
+	const bool isTerminal = ::isatty(fileno(stdin));
 	// Read input
-	if(daemon) {
+	if(noStdIn) {
+		if(isTerminal)
+			cout << "  Terminal input disabled" << endl;
+	
 	    // Wait until the end of time
 	    while(instance.isRunning()) 
 	        sleep(3600);
 	} else {
+	
 	    string line;
 	    Parser parser;
-	    cout << "Server setup completed." << endl;
 	    while(true) {
-		    // cout << "> "; cout.flush();
+		    if(isTerminal) { cout << "> "; cout.flush(); }
 		    if(!getline(cin, line)) break;
 		    if(line.size() == 0) continue;
 		
@@ -433,6 +457,8 @@ int main(int argc, char** argv) {
 				    cout << "Use 'exit' or 'quit' to leave or input a test packet." << endl;
 				    cout << "  list     - List all nodes" << endl;
 				    cout << "  xml      - Print all nodes as XML line" << endl;
+				    cout << "  clear    - Clear all nodes (Use with caution!)" << endl;
+				    cout << "  write    - Trigger write cycle (Outside of normal cycle)" << endl;
 		   		} else if(line == "xml") {
 		   			// List all nodes as xml
 				    vector<Node> nodes = instance.nodes();
@@ -443,6 +469,14 @@ int main(int argc, char** argv) {
 						    cout << (*it).xml() << endl;
 					    }
 				    }
+		   		} else if(line == "clear") {
+		   			instance.clearNodes();
+		   			cout << "Nodes cleared" << endl;
+		   		} else if(line == "write") {
+		   			long runtime = -getSystemTime();
+		   			instance.writeToDB();
+		   			runtime += getSystemTime();
+		   			cout << "Write completed (" << runtime << " ms)" << endl;
 			    } else {
 				    // Try to parse
 				    if(parser.parse(line)) {
@@ -457,6 +491,10 @@ int main(int argc, char** argv) {
 			    cout.flush();
 			    cerr << "Error: " << msg << endl;
 			    cerr.flush();
+		    } catch (...) {
+		    	cout.flush();
+		    	cerr << "Unknown error occurred" << endl;
+		    	cerr.flush();
 		    }
 		
 	    }
@@ -484,11 +522,17 @@ Instance::Instance() {
 	if(ret < 0) {
 		cerr << "Error creating alive thread" << endl;
 	}
+	ret = pthread_mutex_init(&db_mutex, NULL);
+	if(ret != 0) {
+		cerr << "Error creating db mutex" << endl;
+		exit(EXIT_FAILURE);
+	}
 }
 
 Instance::~Instance() {
 	this->close();
 	if(this->db != NULL) delete this->db;
+	pthread_mutex_destroy(&db_mutex);
 }
 
 
@@ -532,64 +576,79 @@ void Instance::runAliveThread(void) {
 }
 
 void Instance::writeToDB(void) {
-	// Write to file
-	if(this->outFile.size() > 0) {
-		ofstream fout(this->outFile);
-		if(fout.is_open()) {
+	pthread_mutex_lock(&db_mutex);
+	
+	try {
+	
+		// Write to file
+		if(this->outFile.size() > 0) {
+			ofstream fout(this->outFile);
+			if(fout.is_open()) {
 			
-			fout << "# Name, Timestamp, [NAME=VALUE]" << endl;
+				fout << "# Name, Timestamp, [NAME=VALUE]" << endl;
 			
-			// Write all nodes
-			for(map<long, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
-				//long id = it->first;
-				Node &node = it->second;
+				// Write all nodes
+				for(map<long, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
+					//long id = it->first;
+					Node &node = it->second;
 				
 				
-				map<string, double> values = node.values();
-				string name = node.name();
-				fout << name << "," << node.timestamp();
-				for(map<string, double>::iterator jt = values.begin(); jt != values.end(); jt++)
-					fout << "; " << jt->first << " = " << jt->second;
-				fout << endl;
+					map<string, double> values = node.values();
+					string name = node.name();
+					fout << name << "," << node.timestamp();
+					for(map<string, double>::iterator jt = values.begin(); jt != values.end(); jt++)
+						fout << "; " << jt->first << " = " << jt->second;
+					fout << endl;
+				}
+			
+				fout.close();
 			}
-			
-			fout.close();
 		}
-	}
 
-	if(this->db != NULL && this->_nodes.size() > 0) {
-		this->db->connect();
-		long errors = 0;
+		if(this->db != NULL && this->_nodes.size() > 0) {
+			this->db->connect();
+			long errors = 0;
 		
-		const long t_max = getSystemTime() - alive_period;
+			const long t_max = getSystemTime() - alive_period;
 		
-		// Write all nodes, that are fresh
-		for(map<long, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
-			const long id = it->first;
-			Node &node = it->second;
+			// Write all nodes, that are fresh
+			for(map<long, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
+				const long id = it->first;
+				Node &node = it->second;
 			
-			long timestamp = node.timestamp();
-			if(timestamp > t_max) {
-			    
-			    try {
-				    this->db->push(node);
-			    } catch (const char* msg) {
-				    cerr << "Error writing node " << id << " to database: " << msg << endl;
-				    errors++;
-			    }
+				long timestamp = node.timestamp();
+				if(timestamp > t_max) {
+					
+					try {
+						this->db->push(node);
+					} catch (const char* msg) {
+						cerr << "Error writing node " << id << " to database: " << msg << endl;
+						errors++;
+					}
 			
+				}
 			}
-		}
 		
-		if(errors > 0) {
-			cerr << errors << " error(s) occurred while writing to database" << endl;
-		}
+			if(errors > 0) {
+				cerr << errors << " error(s) occurred while writing to database" << endl;
+			}
 		
-		this->db->close();
+			this->db->close();
+		}
+	} catch (...) {
+		// Just to be sure - Unlock mutex
+		pthread_mutex_unlock(&db_mutex);
 	}
 	
-	
+	pthread_mutex_unlock(&db_mutex);
 }
+
+void Instance::clearNodes(void) {
+	this->_nodes.clear();
+}
+
+
+
 
 static void recvCallback(Node &node) {
 	instance.receive(node);
@@ -705,7 +764,7 @@ static void* serial_thread(void* arg) {
 		    }
         }
     } catch (const char* msg) {
-        cerr << "Error in Serial " << dev << ": " << msg << endl;
+        cerr << "Error in serial " << dev << ": " << msg << endl;
         cerr << "Reading failure from serial " << dev << ". Closing instance" << endl;
     }
     

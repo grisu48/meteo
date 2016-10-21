@@ -1,13 +1,20 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
+#include <iostream>
+
+using std::cerr;
+using std::cout;
+using std::endl;
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
 
-    qRegisterMetaType<QMap<QString,double>>("QMap<QString,double>");
+    qRegisterMetaType<QMap<QString,double> >("QMap<QString,double>");
+    qRegisterMetaType<QString>("QString");
 
     // Try to connect to patatoe.wg
     this->connectStation("patatoe.wg", 8888);
@@ -104,18 +111,24 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
 
 
     if(station == 8) {      // Living room
+        cout << "ROOM 8";
         if(values.contains("temperature")) {
-            double temperature = values["temperature"];
+            const double temperature = values["temperature"];
             ui->txtLivingRoomTemperature->setText(QString::number(temperature) + " degree C");
+            cout << " temperature = " << temperature;
         }
         if(values.contains("humidity")) {
             const double hum = values["humidity"];
             ui->txtLivingRoomHumidity->setText(QString::number(hum) + " % relative");
+            cout << " humidity = " << hum;
         }
         if(values.contains("light")) {
             const float light = (float)values["light"];
             ui->txtLivingRoomLight->setText(QString::number(light) + " / 255");
+            cout << " light = " << light;
         }
+
+        cout << endl;
 
         QDateTime now = QDateTime::currentDateTime();
         ui->lblLivingRoomRefreshed->setText("Last refreshed: " + now.toString());
@@ -128,6 +141,7 @@ void MainWindow::receiver_error(int socketError, const QString &message) {
 
 void MainWindow::receiver_parseError(QString &message, QString &packet) {
     ui->lblStatus->setText("Parse error: " + message);
+    cerr << packet.toStdString() << endl;
 }
 
 void MainWindow::on_actionClose_triggered()

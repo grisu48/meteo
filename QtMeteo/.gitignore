@@ -1,2 +1,6 @@
 # User file
 QtMeteo.pro.user
+
+# Building files
+build/*
+

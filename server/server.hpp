@@ -23,6 +23,10 @@
 #include "parser.hpp"
 #include "node.hpp"
 
+class TcpBroadcastClient;
+class TcpBroadcastServer;
+class UdpReceiver;
+
 
 class UdpReceiver {
 private:
@@ -67,6 +71,55 @@ public:
 };
 
 
+/** A client instance for the TcpBroadcastServer */
+class TcpBroadcastClient {
+private:
+	/** Parent server instance */
+	TcpBroadcastServer *server = NULL;
+	
+	/** Callback for received messages */
+	void (*receivedCallback)(TcpBroadcastClient *client, std::string) = NULL;
+protected:
+	/** Client socket */
+	volatile int sock;
+	
+	/** Receiver thread ID */
+	pthread_t tid = 0;
+	
+	/** Remote host */
+	std::string remote;
+	
+	/** Local port */
+	int localPort;
+	
+	/** Handle a command, the client has sent */
+	virtual void receivedCommand(std::string cmd);
+public:
+	/** Initialize new broadcast client*/
+	TcpBroadcastClient(const int fd, TcpBroadcastServer *server);
+	
+	virtual ~TcpBroadcastClient();
+	
+	/** This call is intended to be executed by the thread */
+	void run(void);
+	
+	
+    /** Broadcast an update of a given node */
+    int broadcast(Node &noe);
+    
+    void close(void);
+    
+    ssize_t send(const char* msg, size_t len);
+    ssize_t send(std::string msg) { return this->send(msg.c_str(), msg.size()); }
+    
+    void setReceivedCallback(void (*callback)(TcpBroadcastClient *client, std::string msg)) { this->receivedCallback = callback; }
+    
+    /** Get the remote host of the connection */
+    std::string getRemoteHost(void) const { return remote; }
+    int getLocalPort(void) const { return localPort; }
+};
+
+
 class TcpBroadcastServer {
 private:
     /** Server FD */
@@ -76,10 +129,24 @@ private:
     int port;
     
     /** Attached client sockets */
-    std::vector<int> clients;
+    std::vector<TcpBroadcastClient*> clients;
     
+	/** Mutex for access to client vector */
+	pthread_mutex_t client_mutex;
+	
 	/** Server thread ID */
 	volatile pthread_t tid = 0;
+	
+	/** Callback when a client closes in order to dispose it from the list */
+	void onClientDeleted(TcpBroadcastClient* client);
+	
+	/** Connected callback */
+	void (*connectCallback)(TcpBroadcastClient *client) = NULL;
+	void (*closedCallback)(TcpBroadcastClient *client) = NULL;
+	
+protected:
+	virtual void onClientConnected(TcpBroadcastClient *client);
+	virtual void onClientClosed(TcpBroadcastClient *client);
 public:
     TcpBroadcastServer(int port);
     virtual ~TcpBroadcastServer();
@@ -95,8 +162,13 @@ public:
 	  */
     void run(void);
     
-    void broadcast(std::string msg) { this->broadcast(msg.c_str(), msg.size()); }
-    void broadcast(const char* msg, size_t len);
+    void setConnectedCallback(void (*callback)(TcpBroadcastClient *client)) { this->connectCallback = callback; }
+    void setClosedCallback(void (*callback)(TcpBroadcastClient *client)) { this->closedCallback = callback; }
+    
+    /** Broadcast an update of a given node */
+    void broadcast(Node &node);
+    
+    friend class TcpBroadcastClient;
 };
 
 #endif

@@ -43,6 +43,9 @@ using io::Serial;
 
 
 static void recvCallback(Node &node);
+static void clientConnectedCallback(TcpBroadcastClient *client);
+static void clientClosedCallback(TcpBroadcastClient *client);
+static void clientReceivedCallback(TcpBroadcastClient *client, string cmd);
 static void sig_handler(int signo);
 long getSystemTime(void);
 static void sleep(long millis, long micros);
@@ -121,6 +124,8 @@ public:
 	    try {
     	    TcpBroadcastServer *server = new TcpBroadcastServer(port);
     	    server->start();
+    	    server->setConnectedCallback(clientConnectedCallback);
+    	    server->setClosedCallback(clientClosedCallback);
     	    tcpBroadcasts.push_back(server);
 	        return true;
 	    } catch (const char* msg) {
@@ -159,9 +164,8 @@ public:
 		
 		// Broadcast node
 		if(tcpBroadcasts.size() > 0) {
-		    string xml = node.xml() + "\n";
 		    for(vector<TcpBroadcastServer*>::iterator it = tcpBroadcasts.begin(); it != tcpBroadcasts.end(); ++it) {
-		        (*it)->broadcast(xml);
+		        (*it)->broadcast(node);
 		    }
 		}
 	}
@@ -654,6 +658,8 @@ static void recvCallback(Node &node) {
 	instance.receive(node);
 }
 
+
+
 static void sig_handler(int signo) {
 	switch(signo) {
 		case SIGINT:
@@ -802,4 +808,30 @@ static void deamonize(void) {
 	    // Success. The parent again leaves here
 	    exit(EXIT_SUCCESS);
     }
+}
+
+static void clientConnectedCallback(TcpBroadcastClient *client) {
+	cout << "Client " << client->getRemoteHost() << ":" << client->getLocalPort() << " connected" << endl;
+	client->setReceivedCallback(clientReceivedCallback);
+}
+
+static void clientClosedCallback(TcpBroadcastClient *client) {
+	cout << "Client " << client->getRemoteHost() << ":" << client->getLocalPort() << " closed" << endl;
+}
+
+static void clientReceivedCallback(TcpBroadcastClient *client, string in) {
+	String cmd(in);
+	cmd = cmd.trim();
+	if(cmd.size() == 0 || cmd.size() > 1500) return;		// Safety check - Maximum 1 MTU
+
+	if(cmd == "close") {
+		client->close();
+	} else if(cmd == "list") {
+		// Push all nodes to client
+		vector<Node> nodes = instance.nodes();
+		for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); ++it)
+			client->broadcast(*it);
+	} else {
+		cerr << "Client " << client->getRemoteHost() << ":" << client->getLocalPort() << " illegal command: " << cmd << endl;
+	}
 }

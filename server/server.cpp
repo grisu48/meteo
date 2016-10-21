@@ -11,13 +11,16 @@
  
  
 #include <iostream>
+#include <sstream>
 #include <string>
+#include <algorithm>
 
 #include <unistd.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <string.h>
 
 #include "server.hpp"
@@ -34,7 +37,7 @@ using flex::String;
 
 
 
-static int pthread_terminate(pthread_t tid) {
+static int pthread_terminate(const pthread_t tid, const bool join = true) {
 	if(tid == 0) return -1;
 	int ret;
 	
@@ -44,7 +47,8 @@ static int pthread_terminate(pthread_t tid) {
 		ret = pthread_kill(tid, SIGTERM);
 		if(ret < 0) return ret;
 	}
-	pthread_join(tid, NULL);
+	if(join)
+		pthread_join(tid, NULL);
 	return ret;
 	
 }
@@ -165,15 +169,15 @@ void UdpReceiver::run(void) {
 }
 
 void UdpReceiver::close(void) {
-	if(this->tid > 0) {
-		// Abort thread
-		pthread_terminate(this->tid);
-		this->tid = 0;
-	}
 	if(this->fd> 0) {
 		int fd = this->fd;
 		this->fd = 0;
 		::close(fd);
+	}
+	if(this->tid > 0) {
+		// Wait until thread is closed
+		pthread_join(this->tid, NULL);
+		this->tid = 0;
 	}
 }
 
@@ -194,30 +198,193 @@ void UdpReceiver::onReceived(string msg) {
 
 
 
+
+
+static void* tcpClient_thread(void *arg) {
+	// Thread is cancellable immediately
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	
+	
+	TcpBroadcastClient *client = (TcpBroadcastClient*)(arg);
+	client->run();
+	return NULL;
+}
+
+TcpBroadcastClient::TcpBroadcastClient(const int sock, TcpBroadcastServer *server) {
+	if(sock <= 0) throw "Illegal socket fd";
+	if(server == NULL) throw "Illegal server instance";
+	
+	this->sock = sock;
+	this->server = server;
+	
+	// Retrieve socket information
+	
+	socklen_t len;
+	struct sockaddr_storage addr;
+	char ipstr[INET6_ADDRSTRLEN];
+	int port;
+
+	len = sizeof addr;
+	getpeername(sock, (struct sockaddr*)&addr, &len);
+
+	// deal with both IPv4 and IPv6:
+	if (addr.ss_family == AF_INET) {
+		struct sockaddr_in *s = (struct sockaddr_in *)&addr;
+		port = ntohs(s->sin_port);
+		inet_ntop(AF_INET, &s->sin_addr, ipstr, sizeof ipstr);
+	} else { // AF_INET6
+		struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
+		port = ntohs(s->sin6_port);
+		inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof ipstr);
+	}
+
+	this->remote = string(ipstr);
+	this->localPort = port;
+	
+	
+	// Start receiver thread
+	int ret;
+	ret = pthread_create(&tid, NULL, &tcpClient_thread, (void*)this);
+	if(ret != 0) {
+		::close(sock);
+		throw "Error creating client thread";
+	} else {
+		// Detach thread
+		if(pthread_detach(tid) != 0)
+			cerr << "WARNING: Error detaching client thread" << endl;
+	}
+	
+}
+
+TcpBroadcastClient::~TcpBroadcastClient() {
+	this->close();
+	
+	if(server != NULL) {
+		this->server->onClientDeleted(this);
+	}
+}
+
+void TcpBroadcastClient::close() {
+	if(this->sock == 0 && this->tid == 0) return;		// Nothing to do here
+
+	// Close socket
+	if(this->sock > 0) {
+		::close(this->sock);
+		this->sock = 0;
+	}
+	
+	// Terminate thread
+	if(this->tid > 0) {
+		pthread_join(this->tid, NULL);
+		this->tid = 0;
+	}
+	
+	this->server->onClientClosed(this);
+}
+
+int TcpBroadcastClient::broadcast(Node &node) {
+	// Send it to the client
+	string xml = node.xml() + "\n";
+	return (int)this->send(xml);
+}
+
+ssize_t TcpBroadcastClient::send(const char* msg, size_t len) {
+	if(len <= 0) return 0;
+	if(this->sock < 0) return -1;		// Error - already closed
+	
+	const int flags = MSG_DONTWAIT;		// Nonblocking send
+	ssize_t ret = ::send(this->sock, msg, len, flags);
+	if(ret < 0)
+		this->close();
+	return ret;
+}
+
+void TcpBroadcastClient::receivedCommand(string cmd) {
+	if(receivedCallback != NULL)
+		this->receivedCallback(this, cmd);
+}
+
+void TcpBroadcastClient::run(void) {
+	// Wait for incoming commands
+	stringstream buffer;
+	char c;
+	
+	const int flags = 0;
+	
+	while(this->sock > 0) {
+		// XXX: Make this more efficient by increasing buffer size
+		const ssize_t len = ::recv(this->sock, &c, sizeof(char), flags);
+		if(len <= 0) break;
+		
+		if(c == '\n') {		// Command end
+			string line = buffer.str();
+			buffer.str("");
+			this->receivedCommand(line);
+		} else
+			buffer << c;
+	}
+	
+	// Close
+	this->close();
+}
+
+
+
+
+
+
 TcpBroadcastServer::TcpBroadcastServer(int port) {
     this->port = port;
+    
+    int ret;
+	ret = pthread_mutex_init(&client_mutex, NULL);
+	if(ret != 0)
+		throw "Error creating pthread mutex";
 }
 
 TcpBroadcastServer::~TcpBroadcastServer() {
     this->close();
+    pthread_mutex_destroy(&client_mutex);
 }
 
 void TcpBroadcastServer::close(void) {
+	if(this->fd>0) {
+		int fd = this->fd;
+		this->fd = 0;
+		::close(fd);
+	}
+	
 	if(this->tid > 0) {
 		// Abort thread
 		pthread_terminate(this->tid);
 		this->tid = 0;
 	}
-	if(this->fd> 0) {
-		int fd = this->fd;
-		this->fd = 0;
-		::close(fd);
-	}
 	// Close also clients
-	for(vector<int>::iterator it = this->clients.begin(); it != this->clients.end(); ++it) {
-	    ::close(*it);
-	}
+	
+	pthread_mutex_lock(&client_mutex);
+	vector<TcpBroadcastClient*> clients(this->clients);
+	pthread_mutex_unlock(&client_mutex);
+	
 	this->clients.clear();
+	for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ++it) {
+		TcpBroadcastClient *client = *it;
+	    client->close();
+	    delete client;
+	    
+	}
+}
+
+void TcpBroadcastServer::onClientDeleted(TcpBroadcastClient* client) {
+	if(this->fd == 0) return;		// Closing
+	pthread_mutex_lock(&client_mutex);
+	
+	// Remove from the list
+	vector<TcpBroadcastClient*>::iterator it = ::find(clients.begin(), clients.end(), client);
+	if(it != this->clients.end())
+		this->clients.erase(it);
+	
+	pthread_mutex_unlock(&client_mutex);
 }
 
 
@@ -277,30 +444,59 @@ void TcpBroadcastServer::run(void) {
     
     const int fd = this->fd;
     while(this->fd > 0) {
-        int client = ::accept(fd, NULL, NULL);
-        // XXX: Possible race condition!
-        this->clients.push_back(client);
+        const int sock = ::accept(fd, NULL, NULL);
+        if(sock <= 0) break;
+        
+        try {
+		    TcpBroadcastClient *client = new TcpBroadcastClient(sock, this);
+		    
+			pthread_mutex_lock(&client_mutex);
+		    this->clients.push_back(client);
+		    pthread_mutex_unlock(&client_mutex);
+		    
+		    this->onClientConnected(client);
+		} catch (const char* msg) {
+			cerr << "Error attaching new client: " << msg << endl;
+			break;
+		}
     }    
     
     // Done
     this->close();
 }
 
-void TcpBroadcastServer::broadcast(const char* msg, size_t len) {
-    if(len == 0) return;
+void TcpBroadcastServer::broadcast(Node &node) {
+    pthread_mutex_lock(&client_mutex);
+    if(clients.size() == 0) {
+    	pthread_mutex_unlock(&client_mutex);
+	    return;
+    }
     
-    const int flags = MSG_DONTWAIT;     // NONBLOCKING
-    
-    // XXX: Possible race condition
-    if(clients.size() == 0) return;
     // Broadcast to all clients
-    for(vector<int>::iterator it = clients.begin(); it != clients.end(); ) {
-        ssize_t ret = ::send(*it, msg, sizeof(char) * len, flags);
+    for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ) {
+	    TcpBroadcastClient* client = *it;
+	    int ret = client->broadcast(node);
         if(ret < 0) {
             // Socket closed
+            client->close();
+            delete client;
             it = clients.erase(it);
         } else {
             ++it;
         }
     }
+    
+    pthread_mutex_unlock(&client_mutex);
+}
+
+
+void TcpBroadcastServer::onClientConnected(TcpBroadcastClient *client) {
+	if(this->connectCallback != NULL)
+		this->connectCallback(client);
+}
+
+
+void TcpBroadcastServer::onClientClosed(TcpBroadcastClient *client) {
+	if(this->closedCallback != NULL)
+		this->closedCallback(client);
 }

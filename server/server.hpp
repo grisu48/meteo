@@ -105,7 +105,7 @@ public:
 	
 	
     /** Broadcast an update of a given node */
-    int broadcast(Node &noe);
+    int broadcast(Node &node);
     
     void close(void);
     
@@ -144,6 +144,9 @@ private:
 	void (*connectCallback)(TcpBroadcastClient *client) = NULL;
 	void (*closedCallback)(TcpBroadcastClient *client) = NULL;
 	
+	
+	void clients_lock(void);
+	void clients_unlock(void);
 protected:
 	virtual void onClientConnected(TcpBroadcastClient *client);
 	virtual void onClientClosed(TcpBroadcastClient *client);
@@ -156,6 +159,9 @@ public:
     
     /** Start the server */
     void start(void);
+    
+    /** Get all currently attached clients */
+    std::vector<TcpBroadcastClient*> getClients(void);
     
 	/** Receiver loop.
 	  * This call should be executed by the Thread. You should call start() from external, unless you know what you are doing

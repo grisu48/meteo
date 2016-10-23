@@ -113,6 +113,9 @@ public:
 		return recv;
 	}
 	
+	long getWriteDBDelay(void) const { return this->writeDBDelay; }
+	long getPeriodMs(void) const { return this->period_ms; }
+	
 	/** Assign database */
 	void setDatabase(MySQL *db) { this->db = db; }
 	
@@ -135,6 +138,8 @@ public:
 	    }
 	}
 	
+	/** Start the instance alive thread */
+	void start(void);
 	bool isRunning(void) const { return this->running; }
 	
 	void addThread(pthread_t tid) { this->threads.push_back(tid); }
@@ -395,8 +400,10 @@ int main(int argc, char** argv) {
 			try {
 				MySQL *mysql= new MySQL(db.hostname, db.username, db.password, db.database);
 				mysql->connect();
-    			cout << "Database: " << mysql->getDBMSVersion() << endl;
+    			cout << "Database: " << mysql->getDBMSVersion();
 				mysql->close();
+				
+				cout << " -- Write delay: " << instance.getWriteDBDelay() << " ms" << endl;
 				
 				instance.setDatabase(mysql);
 			} catch (const char* msg) {
@@ -416,7 +423,8 @@ int main(int argc, char** argv) {
 	atexit(cleanup);
 	
 	
-    cout << "meteo Server is up an running";
+	instance.start();
+    cout << "meteo Server instance started";
     cout << " (Startup: " << (getSystemTime() - startupTime) << " ms)" << endl;
 	const bool isTerminal = ::isatty(fileno(stdin));
 	// Read input
@@ -520,7 +528,15 @@ static void alive_thread(void* arg) {
 
 Instance::Instance() {
 	this->tid_alive = 0;
-	
+}
+
+Instance::~Instance() {
+	this->close();
+	if(this->db != NULL) delete this->db;
+	pthread_mutex_destroy(&db_mutex);
+}
+
+void Instance::start(void) {
 	int ret;
 	ret = pthread_create(&this->tid_alive, NULL, (void* (*)(void*))alive_thread, NULL);
 	if(ret < 0) {
@@ -532,13 +548,6 @@ Instance::Instance() {
 		exit(EXIT_FAILURE);
 	}
 }
-
-Instance::~Instance() {
-	this->close();
-	if(this->db != NULL) delete this->db;
-	pthread_mutex_destroy(&db_mutex);
-}
-
 
 void Instance::runAliveThread(void) {
 	

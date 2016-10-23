@@ -348,6 +348,41 @@ TcpBroadcastServer::~TcpBroadcastServer() {
     pthread_mutex_destroy(&client_mutex);
 }
 
+void TcpBroadcastServer::clients_lock(void) {
+	const pthread_t self_tid = pthread_self();
+	static pthread_t lock_tid = 0;
+    // Check if held
+    int ret = pthread_mutex_trylock(&client_mutex);
+    
+    switch(ret) {
+        case 0:				// Lock aquired successfully
+        	lock_tid = self_tid;
+            return;
+        case EDEADLK:		// Reentrant lock
+        	return;
+        case EBUSY:			// Now we must wait
+        	if(lock_tid == self_tid) {
+        		return;
+        	} else {
+	        	ret = pthread_mutex_lock(&client_mutex);
+	        	lock_tid = self_tid;
+	        }
+        default:
+        	throw "Error aquiring client mutex lock";
+    }
+}
+
+void TcpBroadcastServer::clients_unlock(void) {
+    pthread_mutex_unlock(&client_mutex);
+}
+
+vector<TcpBroadcastClient*> TcpBroadcastServer::getClients(void) {
+	this->clients_lock();
+	vector<TcpBroadcastClient*> ret(this->clients);
+	this->clients_unlock();
+	return ret;
+}
+
 void TcpBroadcastServer::close(void) {
 	if(this->fd>0) {
 		int fd = this->fd;
@@ -360,31 +395,29 @@ void TcpBroadcastServer::close(void) {
 		pthread_terminate(this->tid);
 		this->tid = 0;
 	}
+	
+	
 	// Close also clients
-	
-	pthread_mutex_lock(&client_mutex);
 	vector<TcpBroadcastClient*> clients(this->clients);
-	pthread_mutex_unlock(&client_mutex);
-	
 	this->clients.clear();
+
 	for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ++it) {
 		TcpBroadcastClient *client = *it;
 	    client->close();
 	    delete client;
-	    
 	}
 }
 
 void TcpBroadcastServer::onClientDeleted(TcpBroadcastClient* client) {
 	if(this->fd == 0) return;		// Closing
-	pthread_mutex_lock(&client_mutex);
+	this->clients_lock();
 	
 	// Remove from the list
 	vector<TcpBroadcastClient*>::iterator it = ::find(clients.begin(), clients.end(), client);
 	if(it != this->clients.end())
 		this->clients.erase(it);
 	
-	pthread_mutex_unlock(&client_mutex);
+	this->clients_unlock();
 }
 
 
@@ -450,9 +483,9 @@ void TcpBroadcastServer::run(void) {
         try {
 		    TcpBroadcastClient *client = new TcpBroadcastClient(sock, this);
 		    
-			pthread_mutex_lock(&client_mutex);
+			this->clients_lock();
 		    this->clients.push_back(client);
-		    pthread_mutex_unlock(&client_mutex);
+		    this->clients_unlock();
 		    
 		    this->onClientConnected(client);
 		} catch (const char* msg) {
@@ -466,9 +499,12 @@ void TcpBroadcastServer::run(void) {
 }
 
 void TcpBroadcastServer::broadcast(Node &node) {
-    pthread_mutex_lock(&client_mutex);
+    this->clients_lock();
+    this->clients_lock();
+    this->clients_lock();
+    
     if(clients.size() == 0) {
-    	pthread_mutex_unlock(&client_mutex);
+	   	this->clients_unlock();
 	    return;
     }
     
@@ -486,7 +522,7 @@ void TcpBroadcastServer::broadcast(Node &node) {
         }
     }
     
-    pthread_mutex_unlock(&client_mutex);
+    this->clients_unlock();
 }
 
 

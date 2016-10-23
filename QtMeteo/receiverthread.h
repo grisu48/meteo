@@ -17,6 +17,9 @@ class ReceiverThread : public QThread
 private:
     QTcpSocket socket;
 
+    QString remote;
+    int port;
+
     volatile bool running = true;
 
 
@@ -28,6 +31,10 @@ public:
     void run() Q_DECL_OVERRIDE;
     void close();
 
+    bool reconnect();
+
+    /** Query all nodes */
+    void queryNodes();
 signals:
     void newData(const long station, QMap<QString, double> values);
     void error(int socketError, const QString &message);

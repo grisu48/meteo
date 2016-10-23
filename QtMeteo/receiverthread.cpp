@@ -4,24 +4,40 @@
 
 using namespace std;
 
-#define RECV_BUFFER 256
+// Maximum receive buffer
+#define RECV_BUFFER 1024
 
 ReceiverThread::ReceiverThread(const QString &hostName, quint16 port, QObject *parent) : QThread(parent)
 {
     // Try to connect
-    this->socket.connectToHost(hostName, port);
-    if (!socket.waitForConnected())
+    this->remote = hostName;
+    this->port = port;
+    this->running = reconnect();
+    if(!this->running)
         throw "Connection failed";
-    this->running = true;
 }
 
 ReceiverThread::~ReceiverThread() {
     this->close();
 }
 
+bool ReceiverThread::reconnect() {
+    if(socket.isOpen()) return true;        // Already open
+    this->socket.connectToHost(this->remote, this->port);
+    if (!socket.waitForConnected())
+        return false;
+    return true;
+}
+
 void ReceiverThread::close() {
     this->socket.close();
     this->running = false;
+}
+
+
+void ReceiverThread::queryNodes() {
+    const char* data = "list\n";
+    this->socket.write(data, 5);
 }
 
 void ReceiverThread::packetReceived(QString &packet) {
@@ -85,25 +101,28 @@ void ReceiverThread::packetReceived(QString &packet) {
 }
 
 void ReceiverThread::run() {
-    QDataStream in(&socket);
     QString packet;
 
     while(running) {
         if(!socket.waitForReadyRead()) {
-            emit error(socket.error(), socket.errorString());
-            return;
+            if(!reconnect()) {
+                emit error(socket.error(), socket.errorString());
+                return;
+            } else
+                continue;
         }
 
-        // Receive data
-        while(!in.atEnd()) {
-            char c = '\0';
-            if(in.readRawData(&c, 1) < 1) break;
-            if(c == '\0') continue;
-            else if (c == '\n') {
-                this->packetReceived(packet);
-                packet = "";
-            } else {
-                packet += c;
+        QByteArray data = socket.readAll();
+        if(data.size() == 0) break;
+        else {
+            const int len = data.size();
+
+            for(int i=0;i<len;i++) {
+                const char c = data.at(i);
+                if(c == '\n')
+                    this->packetReceived(packet);
+                else
+                    packet += c;
             }
         }
     }

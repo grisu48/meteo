@@ -24,14 +24,13 @@ public:
 
 private slots:
     void on_actionQuit_triggered();
-
     void on_actionConnect_triggered();
+    void on_actionClose_triggered();
 
 
     void receiver_newData(const long station, QMap<QString, double> values);
     void receiver_error(int socketError, const QString &message);
     void receiver_parseError(QString &message, QString &packet);
-    void on_actionClose_triggered();
 
 private:
     Ui::MainWindow *ui;
@@ -40,6 +39,11 @@ private:
 
     void connectStation(QString remote, int port = 8888);
     void closeConnection(void);
+
+    /** Currently connected remote */
+    QString remote;
+    /** Currently connected port */
+    int port = 0;
 };
 
 #endif // MAINWINDOW_H

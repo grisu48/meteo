@@ -48,6 +48,9 @@ void MainWindow::connectStation(QString remote, int port) {
     try {
         ui->lblStatus->setText("Connecting to " + remote + ":" + QString::number(port) + " ... ");
 
+        this->remote = remote;
+        this->port = port;
+
         ReceiverThread *recv = NULL;
         try {
             recv = new ReceiverThread(remote, port, this);
@@ -58,12 +61,14 @@ void MainWindow::connectStation(QString remote, int port) {
             // Start thread
             ui->lblStatus->setText("Connected");
             recv->start();
+            recv->queryNodes();
             this->receiver = recv;
         } catch (...) {
             // Cleanup
             if(recv != NULL) delete recv;
             throw;
         }
+
 
 
     } catch (const char* msg) {
@@ -76,6 +81,12 @@ void MainWindow::on_actionConnect_triggered()
 
     QInputDialog qInput(this);
     qInput.setLabelText("Remote server");
+    QString text = "";
+    if(!remote.isEmpty()) {
+       text = remote;
+       if(port > 0) text += ":" + QString::number(port);
+    }
+    qInput.setTextValue(text);
     qInput.setCancelButtonText("Cancel");
     qInput.setOkButtonText("Connect");
     qInput.setToolTip("REMOTE[:PORT]");
@@ -88,11 +99,11 @@ void MainWindow::on_actionConnect_triggered()
         int port = 8888;
         if(remote.contains(":")) {
             const int pos = remote.indexOf(':');
-            QString sPort = remote.mid(pos);
+            QString sPort = remote.mid(pos+1);
             bool ok;
             port = sPort.toInt(&ok);
             if(!ok) throw "Illegal port";
-            remote = remote.left(pos-1);
+            remote = remote.left(pos);
             if(remote.isEmpty()) throw "No remote given";
 
         }

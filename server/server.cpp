@@ -509,18 +509,17 @@ void TcpBroadcastServer::broadcast(Node &node) {
     }
     
     // Broadcast to all clients
-    for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ) {
+    vector<TcpBroadcastClient*> deadClients;
+    for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); it++) {
 	    TcpBroadcastClient* client = *it;
 	    int ret = client->broadcast(node);
         if(ret < 0) {
-            // Socket closed
-            client->close();
-            delete client;
-            it = clients.erase(it);
-        } else {
-            ++it;
-        }
+            deadClients.push_back(client);
+        } 
     }
+    for(vector<TcpBroadcastClient*>::iterator it = deadClients.begin(); it != deadClients.end(); it++)
+        delete (*it);
+    
     
     this->clients_unlock();
 }

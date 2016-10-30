@@ -85,7 +85,10 @@ std::string MySQL::escape(const char* str) {
 void MySQL::push(const Node &node) {
 	stringstream sql;
 	
-	string name = escape(node.name());
+	const int id = node.id();
+	if(id <= 0) return;
+	
+	string name = "Node_" + ::to_string(id);
 
 	map<string, double> val = node.values();
 		

@@ -55,6 +55,9 @@ public:
 	/** Push data for the given column*/
 	double pushData(std::string column, const double value, const double alpha_avg = 0.9);
 	
+	/** Push the given values to the Node using pushData() */
+	void pushData(std::map<std::string, double> &map, const double alpha_avg = 0.9);
+	
 	void addValues(std::map<std::string, double> &map);
 	
 	/** Clears all data */

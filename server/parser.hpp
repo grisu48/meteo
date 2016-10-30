@@ -19,6 +19,7 @@
 #include "string.hpp"
 #include "node.hpp"
  
+ /** Try to parse input to a node */
 class Parser {
 private:
 	/** Name of the node */

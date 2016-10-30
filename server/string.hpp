@@ -456,7 +456,11 @@ public:
 	 * @return double parsed from this string
 	 */
 	bool toBoolean(void);
-
+	
+	/** Join the given array with the given separator.
+	  * |return String with the joined array */
+	static String join(std::vector<std::string> array, std::string separator = " ");
+	
 	/**
 	 * Convert the given number to a String
 	 * @return String instance from the double precision value

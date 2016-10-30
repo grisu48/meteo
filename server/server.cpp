@@ -107,7 +107,7 @@ void UdpReceiver::start(void) {
 	// Check if thread is already started
 	if(this->tid > 0) {
 		// XXX: Error handling: Already started
-		throw "TcpReceiver already started";
+		throw "UdpReceiver already started";
 	}
 	
 	// Create thread
@@ -153,8 +153,8 @@ void UdpReceiver::run(void) {
 	char buf[RECV_BUF_SIZE+1];
 	int flags = 0;
 	while(this->fd > 0) {
-		// XXX: Replace this with recvfrom
 		memset(buf, '\0', RECV_BUF_SIZE);
+		// XXX: Replace this with recvfrom
 		const ssize_t len = ::recv(this->fd, buf, RECV_BUF_SIZE * sizeof(char), flags);
 		buf[RECV_BUF_SIZE] = '\0';
 		if(len < 0) break;
@@ -199,6 +199,323 @@ void UdpReceiver::onReceived(string msg) {
 
 
 
+TcpReceiver::TcpReceiver() {
+	this->fd = 0;
+	this->port = 0;
+	this->tid = 0;
+	this->recvCallback = NULL;
+	
+	int ret;
+	ret = pthread_mutex_init(&threads_mutex, NULL);
+	if(ret != 0) throw "Error creating threads mutex";
+}
+
+TcpReceiver::TcpReceiver(int port) {
+	this->fd = 0;
+	this->tid = 0;
+	this->port = port;
+	this->recvCallback = NULL;
+	
+	int ret;
+	ret = pthread_mutex_init(&threads_mutex, NULL);
+	if(ret != 0) throw "Error creating threads mutex";
+	
+	this->setupSocket(port);
+}
+	
+TcpReceiver::~TcpReceiver() {
+	this->close();
+	pthread_mutex_destroy(&threads_mutex);
+}
+
+
+void TcpReceiver::addReceiverThread(TcpReceiverThread *thread) {
+	const int fd = thread->getFd();
+	if(pthread_mutex_lock(&this->threads_mutex) != 0) throw "Error aquiring mutex";
+	
+	this->threads[fd] = thread;
+	
+	if(pthread_mutex_unlock(&this->threads_mutex) != 0) throw "Error releasing mutex";
+}
+
+void TcpReceiver::removeReceiverThread(TcpReceiverThread *thread) {
+	const int fd = thread->getFd();
+	if(pthread_mutex_lock(&this->threads_mutex) != 0) throw "Error aquiring mutex";
+	
+	this->threads.erase(fd);
+	
+	if(pthread_mutex_unlock(&this->threads_mutex) != 0) throw "Error releasing mutex";
+}
+
+void TcpReceiver::received(Node &node) {
+	if(this->recvCallback != NULL)
+		this->recvCallback(node);
+}
+
+void TcpReceiver::setReceiveCallback( void (*recvCallback)(Node &node) ) {
+	this->recvCallback = recvCallback;
+}
+
+
+static void *tcpReceiver_thread(void *arg) {
+	// Thread is cancellable immediately
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	
+	TcpReceiver *recv = (TcpReceiver*)arg;
+	if(recv == NULL) return NULL;
+	
+	try {
+		recv->run();
+		recv->close();
+	} catch (const char* msg) {
+		cout.flush();
+		cerr << msg << ": " << strerror(errno) << endl;
+		cerr.flush();
+	}
+	
+	return NULL;
+}
+
+void TcpReceiver::start(void) {
+	// Check if thread is already started
+	if(this->tid > 0) {
+		// XXX: Error handling: Already started
+		throw "TcpReceiver already started";
+	}
+	
+	// Create thread
+	int ret;
+	
+	pthread_t tid;
+	ret = pthread_create(&tid, NULL, &tcpReceiver_thread, (void*)this);
+	if(ret < 0) throw "Error creating thread";
+	this->tid = tid;
+}
+
+void TcpReceiver::setupSocket(int port) {
+	this->port = port;
+	
+	if(this->fd > 0) ::close(this->fd);
+	
+	// Setup receiver socket
+	this->fd = socket(AF_INET, SOCK_STREAM, 0);
+	if(this->fd < 0) throw "Error setting up socket";
+
+	struct sockaddr_in dest_addr;
+	
+	// Setup destination address
+	memset(&dest_addr, '\0', sizeof(struct sockaddr_in));
+	dest_addr.sin_family = AF_INET;
+	dest_addr.sin_port = (in_port_t)htons(port);
+	dest_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	
+    // set REUSE
+    int enabled = 1;
+    if (setsockopt(this->fd, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(int)) < 0) {
+        ::close(this->fd);
+        throw "Error setting SO_RESUSEADDR";
+    }
+	
+	// Bind socket
+	if(::bind(this->fd, (struct sockaddr*)&dest_addr, sizeof(dest_addr)) < 0) {
+		::close(this->fd);
+		this->fd = 0;
+		throw "Error binding socket";
+	}
+	
+	// Listen
+	if(::listen(this->fd, 5) < 0) {
+		::close(this->fd);
+		this->fd = 0;
+		throw "Error listening on socket";
+	}
+}
+
+void TcpReceiver::run(void) {
+	if(this->fd == 0) this->setupSocket(this->port);
+	
+	while(this->fd > 0) {
+		const int fd = ::accept(this->fd, NULL, NULL);
+		if(fd < 0) break;			// Something went wrong
+		else if(fd == 0) break;		// Something went wrong
+		
+		// Create thread for new receiver
+		TcpReceiverThread *recv = new TcpReceiverThread(fd, this);
+		cout << "TcpReceiver (" << this->port << ") - Connected client " << recv->getRemoteHost() << endl;
+		this->addReceiverThread(recv);
+	}
+}
+
+void TcpReceiver::close(void) {
+	if(this->fd> 0) {
+		::close(this->fd);
+		this->fd = 0;
+	}
+	
+	// Close all clients
+	if(pthread_mutex_lock(&this->threads_mutex) != 0) cerr << "TcpReceiver (" << this->port << ") - Warning: Error aquiring mutex" << endl;
+	
+	for(map<int, TcpReceiverThread*>::iterator it = this->threads.begin(); it != this->threads.end(); it++) {
+		it->second->close();		// Also deletes them
+	}
+	
+	if(pthread_mutex_unlock(&this->threads_mutex) != 0) cerr << "TcpReceiver (" << this->port << ") - Warning: Error releasing mutex" << endl;
+	
+	if(this->tid > 0) {
+		// Cancel receiver thread
+		pthread_cancel(this->tid);
+		// Wait until thread is closed
+		pthread_join(this->tid, NULL);
+		this->tid = 0;
+	}
+}
+
+
+void TcpReceiver::onReceived(string msg) {
+	
+	Parser parser;
+	if(parser.parse(msg)) {
+		Node node = parser.node();
+		this->received(node);
+	} else {
+		cerr << "Received illegal packet: " << msg << endl;
+		cerr.flush();
+	}
+	
+}
+
+void TcpReceiver::onReceiverClosed(TcpReceiverThread *thread) {
+	if(isClosed()) {
+		// Just delete
+		delete thread;
+	} else {
+		// Remove from list
+		this->removeReceiverThread(thread);
+		cout << "TcpReceiver (" << this->port << ") - disconnected client " << thread->getRemoteHost() << endl;
+		delete thread;
+	}
+}
+
+bool TcpReceiver::isClosed(void) const { return this->fd == 0; }
+
+
+
+
+
+
+
+
+static void *tcp_receiver_client_thread(void *arg) {
+	TcpReceiverThread *recv = (TcpReceiverThread*)arg;
+    recv->run();
+	return NULL;
+}
+
+TcpReceiverThread::TcpReceiverThread(int fd, TcpReceiver *receiver) {
+	if(fd <= 0) throw "Illegal file descriptor";
+	if(receiver == NULL) throw "No receiver parent given";
+	
+    this->fd = fd;
+    this->receiver = receiver;
+    
+    // Create thread
+	int ret = pthread_create(&this->tid, NULL, &tcp_receiver_client_thread, (void*)this);
+	if(ret < 0) {
+		throw "Error creating client thread";
+	}
+    pthread_detach(tid);		// Best efford - If it doesn't succeed, still continue
+    
+    
+	// Retrieve socket information
+	socklen_t len;
+	struct sockaddr_storage addr;
+	char ipstr[INET6_ADDRSTRLEN];
+
+	len = sizeof addr;
+	getpeername(this->fd, (struct sockaddr*)&addr, &len);
+
+	// deal with both IPv4 and IPv6:
+	if (addr.ss_family == AF_INET) {
+		struct sockaddr_in *s = (struct sockaddr_in *)&addr;
+		//port = ntohs(s->sin_port);
+		inet_ntop(AF_INET, &s->sin_addr, ipstr, sizeof ipstr);
+	} else { // AF_INET6
+		struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
+		//port = ntohs(s->sin6_port);
+		inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof ipstr);
+	}
+
+	this->remote = string(ipstr);
+}
+
+TcpReceiverThread::~TcpReceiverThread() {
+    this->close();
+}
+
+void TcpReceiverThread::close(void) {
+	if(this->fd == 0) return;
+    if(this->fd > 0) ::close(this->fd);
+    this->fd = 0;
+    
+    // Wait for thread to close
+    if(this->tid > 0) {
+	    pthread_join(this->tid, NULL);
+	    this->tid = 0;
+    }
+    
+    this->receiver->onReceiverClosed(this);
+}
+
+void TcpReceiverThread::run(void) {
+    // Start receiving
+    int flags = 0;
+    stringstream ss;
+    while(this->fd > 0) {
+	    char c;
+	    const ssize_t len = ::recv(fd, &c, sizeof(char), flags);
+	    if(len <= 0) break;
+	    if(c == '\n') {
+		    string packet = ss.str();
+		    ss.str("");
+		    this->onReceived(packet);
+	    } else
+		    ss << c;
+    }
+}
+
+
+void TcpReceiverThread::onReceived(string &input) {
+	String packet(input);
+	packet = packet.trim();
+	
+	// Check for special commands
+    if(packet == "close") {
+    	this->close();
+    	return;
+    } else {
+    	// No special commands - 
+    	// Try to parse the packet
+		if(this->receiver == NULL) return;
+		
+		
+		// Parse packet
+		Parser parser;
+		
+		// 
+		if(parser.parse(packet)) {
+		    Node node = parser.node();
+		    
+		    this->receiver->received(node);
+		    
+		} else {
+		    cerr << "TcpReceiver (" << getRemoteHost() << ", fd = " << fd << ") - Illegal input: " << packet << endl;
+		}
+    }
+}
+
+
+
 
 static void* tcpClient_thread(void *arg) {
 	// Thread is cancellable immediately
@@ -219,7 +536,6 @@ TcpBroadcastClient::TcpBroadcastClient(const int sock, TcpBroadcastServer *serve
 	this->server = server;
 	
 	// Retrieve socket information
-	
 	socklen_t len;
 	struct sockaddr_storage addr;
 	char ipstr[INET6_ADDRSTRLEN];
@@ -348,41 +664,6 @@ TcpBroadcastServer::~TcpBroadcastServer() {
     pthread_mutex_destroy(&client_mutex);
 }
 
-void TcpBroadcastServer::clients_lock(void) {
-	const pthread_t self_tid = pthread_self();
-	static pthread_t lock_tid = 0;
-    // Check if held
-    int ret = pthread_mutex_trylock(&client_mutex);
-    
-    switch(ret) {
-        case 0:				// Lock aquired successfully
-        	lock_tid = self_tid;
-            return;
-        case EDEADLK:		// Reentrant lock
-        	return;
-        case EBUSY:			// Now we must wait
-        	if(lock_tid == self_tid) {
-        		return;
-        	} else {
-	        	ret = pthread_mutex_lock(&client_mutex);
-	        	lock_tid = self_tid;
-	        }
-        default:
-        	throw "Error aquiring client mutex lock";
-    }
-}
-
-void TcpBroadcastServer::clients_unlock(void) {
-    pthread_mutex_unlock(&client_mutex);
-}
-
-vector<TcpBroadcastClient*> TcpBroadcastServer::getClients(void) {
-	this->clients_lock();
-	vector<TcpBroadcastClient*> ret(this->clients);
-	this->clients_unlock();
-	return ret;
-}
-
 void TcpBroadcastServer::close(void) {
 	if(this->fd>0) {
 		int fd = this->fd;
@@ -395,29 +676,31 @@ void TcpBroadcastServer::close(void) {
 		pthread_terminate(this->tid);
 		this->tid = 0;
 	}
-	
-	
 	// Close also clients
+	
+	pthread_mutex_lock(&client_mutex);
 	vector<TcpBroadcastClient*> clients(this->clients);
+	pthread_mutex_unlock(&client_mutex);
+	
 	this->clients.clear();
-
 	for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ++it) {
 		TcpBroadcastClient *client = *it;
 	    client->close();
 	    delete client;
+	    
 	}
 }
 
 void TcpBroadcastServer::onClientDeleted(TcpBroadcastClient* client) {
 	if(this->fd == 0) return;		// Closing
-	this->clients_lock();
+	pthread_mutex_lock(&client_mutex);
 	
 	// Remove from the list
 	vector<TcpBroadcastClient*>::iterator it = ::find(clients.begin(), clients.end(), client);
 	if(it != this->clients.end())
 		this->clients.erase(it);
 	
-	this->clients_unlock();
+	pthread_mutex_unlock(&client_mutex);
 }
 
 
@@ -483,9 +766,9 @@ void TcpBroadcastServer::run(void) {
         try {
 		    TcpBroadcastClient *client = new TcpBroadcastClient(sock, this);
 		    
-			this->clients_lock();
+			pthread_mutex_lock(&client_mutex);
 		    this->clients.push_back(client);
-		    this->clients_unlock();
+		    pthread_mutex_unlock(&client_mutex);
 		    
 		    this->onClientConnected(client);
 		} catch (const char* msg) {
@@ -499,29 +782,27 @@ void TcpBroadcastServer::run(void) {
 }
 
 void TcpBroadcastServer::broadcast(Node &node) {
-    this->clients_lock();
-    this->clients_lock();
-    this->clients_lock();
-    
+    pthread_mutex_lock(&client_mutex);
     if(clients.size() == 0) {
-	   	this->clients_unlock();
+    	pthread_mutex_unlock(&client_mutex);
 	    return;
     }
     
     // Broadcast to all clients
-    vector<TcpBroadcastClient*> deadClients;
-    for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); it++) {
+    for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ) {
 	    TcpBroadcastClient* client = *it;
 	    int ret = client->broadcast(node);
         if(ret < 0) {
-            deadClients.push_back(client);
-        } 
+            // Socket closed
+            client->close();
+            delete client;
+            it = clients.erase(it);
+        } else {
+            ++it;
+        }
     }
-    for(vector<TcpBroadcastClient*>::iterator it = deadClients.begin(); it != deadClients.end(); it++)
-        delete (*it);
     
-    
-    this->clients_unlock();
+    pthread_mutex_unlock(&client_mutex);
 }
 
 

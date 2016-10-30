@@ -26,8 +26,10 @@
 class TcpBroadcastClient;
 class TcpBroadcastServer;
 class UdpReceiver;
+class TcpReceiver;
 
 
+/** Udp packet receiver instance */
 class UdpReceiver {
 private:
 	/** Socket for receiving */
@@ -71,6 +73,105 @@ public:
 };
 
 
+
+
+/** Internal receiver class */
+class TcpReceiverThread {
+private:
+    /** Socket file descriptor */
+    int fd;
+    
+    /** Thread id */
+    pthread_t tid;
+    
+    /** Parent receiver*/
+    TcpReceiver *receiver;
+    
+    std::string remote;
+    
+    void onReceived(std::string &packet);
+    
+public:
+    TcpReceiverThread(int fd, TcpReceiver *receiver);
+    virtual ~TcpReceiverThread();
+    
+    int getFd(void) const { return this->fd; }
+    
+    /** Close this thread */
+    void close(void);
+    
+    /** Receive loop */
+    void run(void);
+    
+    std::string getRemoteHost(void) const { return this->remote; }
+};
+
+
+/** Udp packet receiver instance */
+class TcpReceiver {
+private:
+	/** Socket for receiving */
+	volatile int fd;
+	
+	int port;
+	
+	/** Receiver thread ID */
+	volatile pthread_t tid;
+	
+	/** All active receiver threads. Map the file descriptor (fd) to TcpReceiverThread* instance */
+	std::map<int, TcpReceiverThread*> threads;
+	
+	/** Adds a receiver thread */
+	void addReceiverThread(TcpReceiverThread *thread);
+	/** Remove receiver thread */
+	void removeReceiverThread(TcpReceiverThread *thread);
+	
+	/** Mutex for access to threads vector */
+	pthread_mutex_t threads_mutex;
+	
+	/** When a message has been received */
+	void onReceived(std::string msg);
+	
+	/** Received callback */
+	void (*recvCallback)(Node &node);
+	
+	void setupSocket(int port);
+	
+	/** This method is called, when a thread is closed */
+	void onReceiverClosed(TcpReceiverThread *thread);
+public:
+	/** Creates new empty receiver */
+	TcpReceiver();
+	/** Creates new udp receiver on the given port */
+	TcpReceiver(int port);
+	virtual ~TcpReceiver();
+	
+	/** Virtual method when new data has been received */
+	virtual void received(Node &node);
+	
+	/** Sets the receive callback */
+	void setReceiveCallback( void (*recvCallback)(Node &node) );
+	
+	/** Starts the receiver thread */
+	void start(void);
+	
+	/** Receiver loop.
+	  * This call should be executed by the Thread. You should call start() from external, unless you know what you are doing
+	  */
+	void run(void);
+	
+	/** True if the instance has been closed or is about to be closed */
+	bool isClosed(void) const;
+	
+	/** Closes the receiver */
+	void close(void);
+	
+	friend class TcpReceiverThread;
+};
+
+
+
+
 /** A client instance for the TcpBroadcastServer */
 class TcpBroadcastClient {
 private:
@@ -105,7 +206,7 @@ public:
 	
 	
     /** Broadcast an update of a given node */
-    int broadcast(Node &node);
+    int broadcast(Node &noe);
     
     void close(void);
     
@@ -119,7 +220,7 @@ public:
     int getLocalPort(void) const { return localPort; }
 };
 
-
+/** Server for broadcasting data */
 class TcpBroadcastServer {
 private:
     /** Server FD */
@@ -144,9 +245,6 @@ private:
 	void (*connectCallback)(TcpBroadcastClient *client) = NULL;
 	void (*closedCallback)(TcpBroadcastClient *client) = NULL;
 	
-	
-	void clients_lock(void);
-	void clients_unlock(void);
 protected:
 	virtual void onClientConnected(TcpBroadcastClient *client);
 	virtual void onClientClosed(TcpBroadcastClient *client);
@@ -159,9 +257,6 @@ public:
     
     /** Start the server */
     void start(void);
-    
-    /** Get all currently attached clients */
-    std::vector<TcpBroadcastClient*> getClients(void);
     
 	/** Receiver loop.
 	  * This call should be executed by the Thread. You should call start() from external, unless you know what you are doing

@@ -75,6 +75,11 @@ double Node::pushData(std::string column, const double value, const double alpha
 	}
 }
 
+void Node::pushData(std::map<std::string, double> &values, const double alpha_avg) {
+	for(map<string, double>::iterator it = values.begin(); it != values.end(); ++it)
+		this->pushData(it->first, it->second, alpha_avg);
+}
+
 void Node::addValues(map<string, double> &values) {
 	for(map<string, double>::iterator it = values.begin(); it != values.end(); ++it) {
 		this->data[it->first] = it->second;

@@ -65,6 +65,9 @@ protected:
 	/** Udp receivers */
 	vector<UdpReceiver*> udpReceivers;
 	
+	/** Tcp receivers */
+	vector<TcpReceiver*> tcpReceivers;
+	
 	/** TCP broadcast servers */
 	vector<TcpBroadcastServer*> tcpBroadcasts;
 	
@@ -113,8 +116,18 @@ public:
 		return recv;
 	}
 	
-	long getWriteDBDelay(void) const { return this->writeDBDelay; }
-	long getPeriodMs(void) const { return this->period_ms; }
+	
+	/** Create new Udp receiver on the given port.
+	  * Creates and adds the given receiver. The receiver is NOT started
+	  @returns created instance
+	  */
+	TcpReceiver* createTcpReceiver(const int port) {
+		TcpReceiver *recv = new TcpReceiver(port);
+		recv->setReceiveCallback(recvCallback);
+		tcpReceivers.push_back(recv);
+		return recv;
+	}
+	
 	
 	/** Assign database */
 	void setDatabase(MySQL *db) { this->db = db; }
@@ -138,8 +151,6 @@ public:
 	    }
 	}
 	
-	/** Start the instance alive thread */
-	void start(void);
 	bool isRunning(void) const { return this->running; }
 	
 	void addThread(pthread_t tid) { this->threads.push_back(tid); }
@@ -163,8 +174,11 @@ public:
 		if (_nodes.find(id) == _nodes.end()) {
 			_nodes[id] = node;
 			cout << "APPEARED ";
-		} else 
+		} else {
 			cout << "RECEIVED ";
+			// Update values
+			_nodes[id].pushData(values);
+		}
 		cout << node.toString() << endl;
 		
 		// Broadcast node
@@ -191,6 +205,12 @@ public:
 		vector<UdpReceiver*> udpReceivers(this->udpReceivers);
 		this->udpReceivers.clear();
 		for(vector<UdpReceiver*>::iterator it = udpReceivers.begin(); it != udpReceivers.end(); ++it)
+			delete *it;
+			
+		// Close tcp receivers
+		vector<TcpReceiver*> tcpReceivers(this->tcpReceivers);
+		this->tcpReceivers.clear();
+		for(vector<TcpReceiver*>::iterator it = tcpReceivers.begin(); it != tcpReceivers.end(); ++it)
 			delete *it;
 		
 		// Close tcp broadcasts
@@ -270,6 +290,9 @@ int main(int argc, char** argv) {
 						if(isLast) throw "Missing argument: udp port";
 						udp_ports.push_back(atoi(argv[++i]));
 					} else if(arg == "--tcp") {
+						if(isLast) throw "Missing argument: tcp port";
+						tcp_ports.push_back(atoi(argv[++i]));
+					} else if(arg == "--broadcast") {
 						if(isLast) throw "Missing argument: tcp port";
 						tcp_broadcasts.push_back(atoi(argv[++i]));
 					} else if(arg == "--mysql" || arg == "--db") {
@@ -367,6 +390,27 @@ int main(int argc, char** argv) {
 			}
 		}
 		
+		// Setup tcp ports
+		if(tcp_ports.size() > 0) {
+			cout << "Setting up " << tcp_ports.size() << " tcp listener(s):" << endl;
+			for(vector<int>::iterator it = tcp_ports.begin(); it != tcp_ports.end(); it++) {
+				const int port = *it;
+				cout << "\t" << port << " ... ";
+				
+				try {
+					TcpReceiver *recv = instance.createTcpReceiver(port);
+					recv->start();
+					cout << "ok" << endl;
+				} catch (const char *msg) {
+					cout << "failed: " << msg << "." << endl; cout.flush();
+					cerr << "Socketerror: " << strerror(errno) << endl; cerr.flush();
+					exit(EXIT_FAILURE);
+				}
+				
+				
+			}
+		}
+		
 		// Setup tcp broadcasts
 		if(tcp_broadcasts.size() > 0) {
 		    cout << "Setting up " << tcp_broadcasts.size() << " tcp broadcast(s):" << endl;
@@ -400,10 +444,8 @@ int main(int argc, char** argv) {
 			try {
 				MySQL *mysql= new MySQL(db.hostname, db.username, db.password, db.database);
 				mysql->connect();
-    			cout << "Database: " << mysql->getDBMSVersion();
+    			cout << "Database: " << mysql->getDBMSVersion() << endl;
 				mysql->close();
-				
-				cout << " -- Write delay: " << instance.getWriteDBDelay() << " ms" << endl;
 				
 				instance.setDatabase(mysql);
 			} catch (const char* msg) {
@@ -423,8 +465,7 @@ int main(int argc, char** argv) {
 	atexit(cleanup);
 	
 	
-	instance.start();
-    cout << "meteo Server instance started";
+    cout << "meteo Server is up an running";
     cout << " (Startup: " << (getSystemTime() - startupTime) << " ms)" << endl;
 	const bool isTerminal = ::isatty(fileno(stdin));
 	// Read input
@@ -528,15 +569,7 @@ static void alive_thread(void* arg) {
 
 Instance::Instance() {
 	this->tid_alive = 0;
-}
-
-Instance::~Instance() {
-	this->close();
-	if(this->db != NULL) delete this->db;
-	pthread_mutex_destroy(&db_mutex);
-}
-
-void Instance::start(void) {
+	
 	int ret;
 	ret = pthread_create(&this->tid_alive, NULL, (void* (*)(void*))alive_thread, NULL);
 	if(ret < 0) {
@@ -548,6 +581,13 @@ void Instance::start(void) {
 		exit(EXIT_FAILURE);
 	}
 }
+
+Instance::~Instance() {
+	this->close();
+	if(this->db != NULL) delete this->db;
+	pthread_mutex_destroy(&db_mutex);
+}
+
 
 void Instance::runAliveThread(void) {
 	
@@ -737,7 +777,7 @@ static void printHelp(const char* progname) {
 	cout << "OPTIONS" << endl;
 	cout << "  -h   --help                      Print this help message" << endl;
 	cout << "  --udp PORT                       Listen on PORT for udp messages. Multiple definitions allowed" << endl;
-	cout << "  --tcp PORT                       Listen on PORT for tcp broadcast clients. Multiple definitions allowed" << endl;
+	cout << "  --broadcast PORT                 Listen on PORT for tcp broadcast clients. Multiple definitions allowed" << endl;
 	cout << "  --mysql REMOTE                   Set REMOTE as MySQL database instance." << endl;
 	cout << "          REMOTE is in the form: user:password@hostname/database" << endl;
 	cout << "  --db-write-delay MILLIS          Set the delay for database writes in milliseconds" << endl;

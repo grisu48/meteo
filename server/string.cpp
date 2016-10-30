@@ -489,4 +489,17 @@ String String::number(unsigned long x) {
 	return String(str);
 }
 
+String String::join(vector<string> array, std::string separator) {
+	stringstream ss;
+	
+	bool first = true;
+	for(vector<string>::iterator it = array.begin(); it != array.end(); ++it) {
+		if(first) first = false;
+		else ss << separator;
+		ss << *it;
+	}
+	
+	return String(ss.str());
+}
+
 }

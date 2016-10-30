@@ -664,6 +664,15 @@ TcpBroadcastServer::~TcpBroadcastServer() {
     pthread_mutex_destroy(&client_mutex);
 }
 
+std::vector<TcpBroadcastClient*> TcpBroadcastServer::getClients(void) const {
+    pthread_mutex_t client_mutex = this->client_mutex;
+    
+	pthread_mutex_lock(&client_mutex);
+	vector<TcpBroadcastClient*> ret(this->clients);
+	pthread_mutex_unlock(&client_mutex);
+	return ret;
+}
+
 void TcpBroadcastServer::close(void) {
 	if(this->fd>0) {
 		int fd = this->fd;
@@ -677,10 +686,7 @@ void TcpBroadcastServer::close(void) {
 		this->tid = 0;
 	}
 	// Close also clients
-	
-	pthread_mutex_lock(&client_mutex);
-	vector<TcpBroadcastClient*> clients(this->clients);
-	pthread_mutex_unlock(&client_mutex);
+	vector<TcpBroadcastClient*> clients = getClients();
 	
 	this->clients.clear();
 	for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ++it) {
@@ -692,7 +698,8 @@ void TcpBroadcastServer::close(void) {
 }
 
 void TcpBroadcastServer::onClientDeleted(TcpBroadcastClient* client) {
-	if(this->fd == 0) return;		// Closing
+	if(this->fd == 0) return;		// Closing - Do not remote from list
+	
 	pthread_mutex_lock(&client_mutex);
 	
 	// Remove from the list
@@ -782,27 +789,24 @@ void TcpBroadcastServer::run(void) {
 }
 
 void TcpBroadcastServer::broadcast(Node &node) {
-    pthread_mutex_lock(&client_mutex);
+    vector<TcpBroadcastClient*> clients = getClients();     // Get clients
+    vector<TcpBroadcastClient*> deadClients;                // Clients that need to be erased
+    
     if(clients.size() == 0) {
-    	pthread_mutex_unlock(&client_mutex);
 	    return;
     }
     
     // Broadcast to all clients
-    for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ) {
+    for(vector<TcpBroadcastClient*>::iterator it = clients.begin(); it != clients.end(); ++it) {
 	    TcpBroadcastClient* client = *it;
 	    int ret = client->broadcast(node);
-        if(ret < 0) {
-            // Socket closed
-            client->close();
-            delete client;
-            it = clients.erase(it);
-        } else {
-            ++it;
-        }
+        if(ret < 0)
+            deadClients.push_back(client);
     }
     
-    pthread_mutex_unlock(&client_mutex);
+    // Delete dead clients
+    for(vector<TcpBroadcastClient*>::iterator it = deadClients.begin(); it != deadClients.end(); ++it)
+        delete *it;
 }
 
 

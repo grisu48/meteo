@@ -229,6 +229,9 @@ private:
     /** Port */
     int port;
     
+    /** Flag indicating if we are currently broadcasting (prevent deadlock)*/
+    volatile bool broadcasting = false;
+    
     /** Attached client sockets */
     std::vector<TcpBroadcastClient*> clients;
     
@@ -265,6 +268,8 @@ public:
     
     void setConnectedCallback(void (*callback)(TcpBroadcastClient *client)) { this->connectCallback = callback; }
     void setClosedCallback(void (*callback)(TcpBroadcastClient *client)) { this->closedCallback = callback; }
+    
+    std::vector<TcpBroadcastClient*> getClients(void) const;
     
     /** Broadcast an update of a given node */
     void broadcast(Node &node);

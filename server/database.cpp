@@ -111,7 +111,7 @@ void MySQL::push(const Node &node) {
 			values << ", " << value;
 		}
 
-		sql << "INSERT INTO `" << this->database << "`.`Node_" << name << "` (" << columns.str() << ") VALUES (" << values.str() << ");";
+		sql << "INSERT INTO `" << this->database << "`.`" << name << "` (" << columns.str() << ") VALUES (" << values.str() << ");";
 
 
 		this->execute(sql.str());

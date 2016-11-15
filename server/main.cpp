@@ -658,39 +658,50 @@ void Instance::writeToDB(void) {
 			}
 		}
 
-		if(this->db != NULL && this->_nodes.size() > 0) {
-			this->db->connect();
-			long errors = 0;
+		try {
+			if(this->db != NULL && this->_nodes.size() > 0) {
+				this->db->connect();
+				long errors = 0;
 		
-			const long t_max = getSystemTime() - alive_period;
+				const long t_max = getSystemTime() - alive_period;
 		
-			// Write all nodes, that are fresh
-			for(map<long, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
-				const long id = it->first;
-				Node &node = it->second;
+				// Write all nodes, that are fresh
+				for(map<long, Node>::iterator it= this->_nodes.begin(); it != this->_nodes.end(); ++it) {
+					const long id = it->first;
+					Node &node = it->second;
 			
-				long timestamp = node.timestamp();
-				if(timestamp > t_max) {
+					long timestamp = node.timestamp();
+					if(timestamp > t_max) {
 					
-					try {
-						this->db->push(node);
-					} catch (const char* msg) {
-						cerr << "Error writing node " << id << " to database: " << msg << endl;
-						errors++;
-					}
+						try {
+							this->db->push(node);
+						} catch (const char* msg) {
+							cerr << "Error writing node " << id << " to database: " << msg << endl;
+							errors++;
+						}
 			
+					}
 				}
-			}
 		
-			if(errors > 0) {
-				cerr << errors << " error(s) occurred while writing to database" << endl;
-			}
+				if(errors > 0) {
+					cerr << errors << " error(s) occurred while writing to database" << endl;
+				}
 		
-			this->db->close();
+				this->db->close();
+			}
+		} catch (const char* msg) {
+			// MySQL database error
+			cerr << "MySQL error: " << msg << endl;
 		}
+	} catch (const char* msg) {
+		pthread_mutex_unlock(&db_mutex);
+		cerr << "Database error: " << msg << endl;
+		return;
 	} catch (...) {
 		// Just to be sure - Unlock mutex
 		pthread_mutex_unlock(&db_mutex);
+		throw;
+		return;
 	}
 	
 	pthread_mutex_unlock(&db_mutex);

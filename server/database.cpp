@@ -21,7 +21,7 @@ using namespace std;
 
 static void throwSqlError(MYSQL *conn) {	
 	const char* error = mysql_error(conn);
-	if(error == NULL) throw "Unknown error";
+	if(error == NULL) throw "Unknown database error";
 	else throw error;
 }
 

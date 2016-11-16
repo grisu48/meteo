@@ -98,6 +98,9 @@ protected:
 	
 	volatile bool running = true;
 	
+	/** Flag indicating if we only accept known nodes */
+	bool acceptOnlyKnown = true;
+	
 	/** Threads */
 	vector<pthread_t> threads;
 	
@@ -107,12 +110,26 @@ public:
 	Instance();
 	virtual ~Instance();
 	
+	void setAcceptOnlyKnownNodes(bool enabled = true) {
+		this->acceptOnlyKnown = enabled;
+	}
+	
 	void addNodeTemplate(DBNode &node) {
 		this->_nodeTemplates.push_back(node);
 	}
 	
 	vector<DBNode> nodeTemplates(void) const {
 		vector<DBNode> ret(this->_nodeTemplates);
+		return ret;
+	}
+	
+	map<int, DBNode> nodeTemplateMap(void) const {
+		const int nNodes = this->_nodeTemplates.size();
+		map<int, DBNode> ret;
+		for(int i=0;i<nNodes;i++) {
+			DBNode node = this->_nodeTemplates[i];
+			ret[node.id()] = node;
+		}
 		return ret;
 	}
 	
@@ -175,10 +192,29 @@ public:
 	        this->writeDBDelay = delay;
 	}
 	
+	/** Check if we accept this node (check if the node is in the known nodes list) */
+	bool acceptNode(const Node &node) {
+		return this->acceptNode(node.id());
+	}
+	
+	/** Check if we accept this node (check if the node is in the known nodes list) */
+	bool acceptNode(const int id) {
+		if(!this->acceptOnlyKnown) return true;		// Accept all?
+		
+		for(vector<DBNode>::iterator it = this->_nodeTemplates.begin(); it != this->_nodeTemplates.end(); it++) {
+			if( (*it).id() == id ) return true;
+		}
+		return false;		// Not found
+	}
+	
 	/** Receive data from a node */
 	void receive(Node &node) {
 		const long id = node.id();
 		if(id <= 0) return;
+		
+		if(!acceptNode(node)) return;
+		
+		
 		map<string, double> values = node.values();
 		if(values.size() == 0) return;
 		
@@ -522,24 +558,40 @@ int main(int argc, char** argv) {
 		
 		    try {
 			    if (line == "exit" || line == "quit") break;
-			    else if(line == "list") {
+			    else if(line == "list" || line == "nodes") {
 				    // List all nodes
 				    vector<Node> nodes = instance.nodes();
-				    if (nodes.size() == 0) {
-					    cout << "No nodes present" << endl;
-				    } else {
-					    for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); it++) {
-						    cout << "Node[" << (*it).name() << "]";
-						    map<string, double> values = (*it).values();
-						    if(values.size() == 0) {
-							    cout << " Empty";
-						    } else {
-							    for(map<string,double>::iterator jt = values.begin(); jt != values.end(); jt++)
-								    cout << " " << jt->first << " = " << jt->second;
-						    }
-						    cout << endl;
-					    }
-				    }
+				    map<int, DBNode> knownNodes = instance.nodeTemplateMap();
+						
+					if (nodes.size() == 0) {
+						cout << "No nodes present" << endl;
+					} else {
+						cout << nodes.size() << " node(s) present:" << endl;
+						for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); it++) {
+							Node &node = *it;
+							const int id = node.id();
+							DBNode &dbnode = knownNodes[id];
+							knownNodes.erase(knownNodes.find(id));
+							cout << "  [" << id << "] - " << dbnode.name() << " (" << dbnode.location() << ")";
+							map<string, double> values = (*it).values();
+							if(values.size() == 0) {
+								cout << " Empty";
+							} else {
+								for(map<string,double>::iterator jt = values.begin(); jt != values.end(); jt++)
+									cout << " " << jt->first << " = " << jt->second;
+							}
+							cout << endl;
+						}
+					}
+						
+					if(knownNodes.size() > 0) {
+						cout << knownNodes.size() << " node(s) known but not present:" << endl;
+						for(map<int, DBNode>::iterator it = knownNodes.begin(); it != knownNodes.end(); it++) {
+							DBNode &node = it->second;
+							
+							cout << "  [" << node.id() << "] - " << node.name() << " (" << node.location() << ") -- " << node.description() << endl;
+						}
+					}
 			    } else if(line == "help") {
 				    cout << "METEO server instance" << endl;
 				    cout << "Use 'exit' or 'quit' to leave or input a test packet." << endl;

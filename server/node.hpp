@@ -18,6 +18,7 @@
 
 class Node;
 class RoomNode;
+class DBNode;
 
 
 /** METEO Node that collects data */
@@ -122,6 +123,28 @@ public:
 	bool isBatteryOk(void) const { return this->battery() == 0; }
 
 	std::string toString(void) const;
+};
+
+/** Database node template */
+class DBNode {
+private:
+	int _id;
+	std::string _name;
+	std::string _location;
+	std::string _description;
+	
+public:
+	DBNode();
+	DBNode(const DBNode &node);
+	DBNode(int id, std::string name, std::string location, std::string description);
+	virtual ~DBNode();
+	
+	int id(void) const { return this->_id; }
+	std::string name(void) const { return this->_name; }
+	std::string location(void) const { return this->_location; }
+	std::string description(void) const { return this->_description; }
+	
+	
 };
 
 #endif

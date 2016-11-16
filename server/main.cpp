@@ -62,6 +62,9 @@ protected:
 	/** Meteo nodes */
 	map<long, Node> _nodes;
 	
+	/** Node templates */
+	vector<DBNode> _nodeTemplates;
+	
 	/** Udp receivers */
 	vector<UdpReceiver*> udpReceivers;
 	
@@ -102,6 +105,10 @@ protected:
 public:
 	Instance();
 	virtual ~Instance();
+	
+	void addNodeTemplate(DBNode &node) {
+		this->_nodeTemplates.push_back(node);
+	}
 	
 	void runAliveThread(void);
 	
@@ -441,17 +448,39 @@ int main(int argc, char** argv) {
 		
 		// Setup database
 		if(db.enabled) {
+			MySQL *mysql = NULL;
 			try {
-				MySQL *mysql= new MySQL(db.hostname, db.username, db.password, db.database);
+				mysql= new MySQL(db.hostname, db.username, db.password, db.database);
 				mysql->connect();
     			cout << "Database: " << mysql->getDBMSVersion() << endl;
-				mysql->close();
 				
 				instance.setDatabase(mysql);
 			} catch (const char* msg) {
 				cerr << "Error connecting to database: " << msg << endl;
+				mysql->close();
 				return EXIT_FAILURE;
 			}
+			
+			// Fetch data from database
+			try {
+				vector<DBNode> nodes = mysql->getNodes();
+				if(nodes.size() == 0) {
+					cout << "WARNING: No node templates in database (Table `Nodes`)" << endl;
+				} else {
+					cout << "Fetched " << nodes.size() << " node template(s) from database: " << endl;
+					for(vector<DBNode>::iterator it = nodes.begin(); it != nodes.end(); ++it) {
+						DBNode &node = *it;
+						instance.addNodeTemplate(node);
+						cout << "\t" << node.id() << "\t" << node.name() << " (" << node.location() << ")  -- " << node.description() << endl;
+					}
+					
+				}
+			} catch (const char* msg) {
+				cerr << "WARNING: Error fetching data from database: " << msg << endl;
+			}
+			
+			
+			mysql->close();
 		} else {
 			cout << "Database disabled" << endl;
 		}

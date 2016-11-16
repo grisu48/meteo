@@ -1,7 +1,13 @@
+# Local files
+.*
+
 # Backup files
 *~
 
 # Binaries
 server
 meteo
+
+# Other debugging files
+.gdb_history
 

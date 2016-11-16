@@ -170,3 +170,25 @@ void RoomNode::setName(int id) {
 	ss << id;
 	this->_name = ss.str();
 }
+
+
+
+
+DBNode::DBNode() {}
+
+DBNode::DBNode(int id, std::string name, std::string location, std::string description) {
+	this->_id = id;
+	this->_name = name;
+	this->_location = location;
+	this->_description = description;
+}
+
+DBNode::DBNode(const DBNode &node) {
+	this->_id = node._id;
+	this->_name = node._name;
+	this->_location = node._location;
+	this->_description = node._description;
+}
+
+DBNode::~DBNode() {}
+

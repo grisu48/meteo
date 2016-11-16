@@ -50,6 +50,9 @@ public:
 	/** Push the given node */
 	void push(const Node &node);
 	
+	/** Get all nodes that are registered in the database */
+	std::vector<DBNode> getNodes(void);
+	
 	std::string getDBMSVersion(void);
 	
 	void execute(std::string sql);

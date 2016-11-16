@@ -137,6 +137,30 @@ string MySQL::getDBMSVersion(void) {
 	return version;
 }
 
+vector<DBNode> MySQL::getNodes(void) {
+	execute("SELECT `id`,`name`,`location`,`description` FROM `Nodes`");
+
+	MYSQL_RES *res = mysql_use_result(conn);
+	if(res == NULL) throw "Error getting result structure";
+	MYSQL_ROW row;
+
+	vector<DBNode> ret;
+	// Iterate over rows
+	while ((row = mysql_fetch_row(res)) != NULL) {
+		string s_id = string(row[0]);
+		string name = string(row[1]);
+		string location = string(row[2]);
+		string description = string(row[3]);
+		
+		const int id = atoi(s_id.c_str());
+		ret.push_back(DBNode(id,name,location,description));
+	}
+
+	mysql_free_result(res);
+
+	return ret;
+}
+
 void MySQL::createNodeTable(const Node &node) {
 	stringstream ss;
 	
@@ -166,6 +190,8 @@ void MySQL::execute(std::string sql) {
 
 void MySQL::execute(const char* sql, size_t len) {
 	int ret;
+	
+	if(this->conn == NULL) connect();
 	
 	ret = mysql_real_query(this->conn, sql, len);
 	if(ret != 0) {

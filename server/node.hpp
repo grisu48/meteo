@@ -144,7 +144,7 @@ public:
 	std::string location(void) const { return this->_location; }
 	std::string description(void) const { return this->_description; }
 	
-	
+	std::string toXml(void) const;
 };
 
 #endif

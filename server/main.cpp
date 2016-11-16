@@ -12,6 +12,7 @@
  
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -108,6 +109,11 @@ public:
 	
 	void addNodeTemplate(DBNode &node) {
 		this->_nodeTemplates.push_back(node);
+	}
+	
+	vector<DBNode> nodeTemplates(void) const {
+		vector<DBNode> ret(this->_nodeTemplates);
+		return ret;
 	}
 	
 	void runAliveThread(void);
@@ -916,11 +922,32 @@ static void clientReceivedCallback(TcpBroadcastClient *client, string in) {
 	if(cmd == "close") {
 		client->close();
 	} else if(cmd == "list") {
+		// TODO: Give client list of all nodes and let the client instance decide the format
 		// Push all nodes to client
 		vector<Node> nodes = instance.nodes();
 		for(vector<Node>::iterator it = nodes.begin(); it != nodes.end(); ++it)
 			client->broadcast(*it);
+	} else if(cmd == "nodes") {
+		// Send a list of all template nodes
+		
+		// TODO: Give client list of all nodes and let the client instance decide the format
+		
+		vector<DBNode> nodes = instance.nodeTemplates();
+		
+		stringstream ss;
+		ss << "<Nodes count=\"" << nodes.size() << "\">\n";
+		for(vector<DBNode>::iterator it = nodes.begin(); it != nodes.end(); it++)
+			ss << (*it).toXml() << "\n";
+		
+		ss << "</Nodes>\n";
+		
+		string packet = ss.str();
+		client->send(packet);
+		
+		
 	} else {
 		cerr << "Client " << client->getRemoteHost() << ":" << client->getLocalPort() << " illegal command: " << cmd << endl;
+		
+		// TODO: Report error to client
 	}
 }

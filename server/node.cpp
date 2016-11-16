@@ -190,5 +190,11 @@ DBNode::DBNode(const DBNode &node) {
 	this->_description = node._description;
 }
 
+string DBNode::toXml(void) const {
+	stringstream ss;
+	ss << "<Node id=\"" << this->_id << "\" name=\"" << this->_name << "\" location=\"" << this->_location << "\" description=\"" << this->_description << "\" />";
+	return ss.str();
+}
+
 DBNode::~DBNode() {}
 

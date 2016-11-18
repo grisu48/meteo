@@ -299,7 +299,8 @@ public:
 /** Singleton instance*/
 static Instance instance;
 
-
+/** PID file. Needed to be deleted if set, therefore static */
+static string pidFile = "";
 
 
 
@@ -381,7 +382,11 @@ int main(int argc, char** argv) {
 				    } else if(arg == "--serial") {
 				        if(isLast) throw "Missing argument: Serial device file";
 				        serials.push_back(string(argv[++i]));
-				        
+				    
+				    
+				    } else if(arg == "--pid") {
+				    	if(isLast) throw "Missing argument: PID file";
+				    	pidFile = string(argv[++i]);
 				    } else if(arg == "-d" || arg == "--daemon") {
 				        daemon = true;
 					    
@@ -416,6 +421,27 @@ int main(int argc, char** argv) {
             cout << "Running as daemon" << endl;
         }
         
+        
+        // PID file. This MUST be done after daemonizing, to prevent unnecessary actions
+        if(pidFile.size() > 0) {
+        	ifstream pidIn(pidFile.c_str());
+        	if(pidIn.is_open()) {
+        		int pid;
+        		pidIn >> pid;
+        		cerr << "meteo server registered with pid " << pid << " in file " << pidFile << "." << endl;
+        		cerr << "  Program will exit now. Delete this file, if this is not intended" << endl;
+        		return EXIT_FAILURE;
+        	} else {
+		    	pidIn.close();
+		    	ofstream pidOut(pidFile.c_str());
+		    	if(pidOut.is_open()) {
+		    		pidOut << getpid();
+		    		pidOut.close();
+		    	} else {
+		    		cerr << "Error writing to PID file " << pidFile << endl;
+		    	}
+        	}
+        }
         
 		
 		// Setup udp ports first
@@ -879,13 +905,38 @@ static void printHelp(const char* progname) {
 	cout << "  --mysql REMOTE                   Set REMOTE as MySQL database instance." << endl;
 	cout << "          REMOTE is in the form: user:password@hostname/database" << endl;
 	cout << "  --db-write-delay MILLIS          Set the delay for database writes in milliseconds" << endl;
-	cout << "  -f FILE                          Periodically write the current settings to FILE" << endl;
+	cout << "  -f FILE                          Periodically write the current readings to FILE" << endl;
 	cout << "  --serial FILE                    Open FILE as serial device file and read contents from it" << endl;
 	cout << "  -d  --daemon                     Run as daemon" << endl;
+	cout << "  --pid FILE                       Write pid to given FILE. Exists if the given file exists" << endl;
 	cout << endl;
 }
 
 static void cleanup(void) {
+	if(pidFile.size() > 0) {
+		int ret = ::unlink(pidFile.c_str());
+		if(ret != 0) {
+			cerr << "Error deleting pid file " << pidFile << ": ";
+			switch(ret) {
+				case EACCES:
+					cerr << "Access denied";
+					break;
+				case EBUSY:
+					cerr << "File busy";
+					break;
+				case EPERM:
+					cerr << "Permission denied";
+					break;
+				case EFAULT:
+					cerr << "EFAULT";
+					break;
+				default:
+					cerr << strerror(errno);
+					break;
+			}
+			cerr << endl;
+		}
+	}
 	MySQL::Finalize();
 }
 

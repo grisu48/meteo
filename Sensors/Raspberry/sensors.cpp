@@ -1,16 +1,20 @@
 /* =============================================================================
  * 
- * Title:         meteoLink Main header
+ * Title:         General Sensor classes
  * Author:        Felix Niederwanger
  * License:       Copyright (c), 2016 Felix Niederwanger
  *                MIT license (http://opensource.org/licenses/MIT)
- * Description:   Global configurations
+ * Description:   
  * 
  * =============================================================================
  */
+ 
+#include "sensors.hpp"
 
-
-#define DEVICE "/dev/ttyUSB0"
-#define DEFAULT_PORT 5232
+#include "sensor.cpp"
+#include "bmp180.cpp"
+#include "htu21df.cpp"
+#include "mcp9808.cpp"
+#include "tsl2561.cpp"
 
 

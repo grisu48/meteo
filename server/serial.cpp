@@ -122,11 +122,14 @@ std::string Serial::readLine(void) {
 	while(true) {
 		if(read(&c,1)==0) break;
 		if(c == '\n') break;
-		else
+		else {
 			ss << c;
+		}
 	}
+	
+	std::string ret = ss.str();
 
-	return ss.str();
+	return ret;
 
 }
 

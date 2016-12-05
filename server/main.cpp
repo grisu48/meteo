@@ -99,7 +99,7 @@ protected:
 	volatile bool running = true;
 	
 	/** Flag indicating if we only accept known nodes */
-	bool acceptOnlyKnown = true;
+	bool acceptOnlyKnown = false;
 	
 	/** Threads */
 	vector<pthread_t> threads;
@@ -956,15 +956,16 @@ static void* serial_thread(void* arg) {
         cout << "Serial reader at device " << dev << " started" << endl;
         while(!serial.eof()) {
             string line = serial.readLine();
+            //cout << "READ (" << line.size() << "): " << line << endl;		// DEBUG
             if(line.size() == 0 || line.at(0) == '#') continue;
-            
-            // cout << "# [" << dev << "] " << line << endl;
             
             // Parse line
 		    if(parser.parse(line)) {
 		    	Node node = parser.node();
 			    recvCallback(node);
 			    parser.clear();
+		    } else {
+		    	cerr << "Serial read: Illegal input ('" << line << "')" << endl;
 		    }
         }
     } catch (const char* msg) {

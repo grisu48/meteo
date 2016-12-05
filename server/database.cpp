@@ -166,7 +166,7 @@ void MySQL::createNodeTable(const Node &node) {
 	
 	string name = escape(node.name());
 	
-	ss << "CREATE TABLE IF NOT EXISTS `" << this->database << "`.`Node_" << name << "` ( `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP";
+	ss << "CREATE TABLE IF NOT EXISTS `" << this->database << "`.`Node_" << node.id() << "` ( `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP";
 	
 	map<string, double> val = node.values();
 	for(map<string, double>::iterator it = val.begin(); it != val.end(); ++it) {

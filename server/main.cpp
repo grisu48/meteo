@@ -57,6 +57,9 @@ static void cleanup(void);
 static pthread_t  setup_serial(const char* dev);
 /** Rung program as deamon */
 static void deamonize();
+/* Alive thread */
+static void alive_thread(void* arg);
+
 
 class Instance {
 protected:
@@ -98,6 +101,8 @@ protected:
 	
 	volatile bool running = true;
 	
+	bool createTables = false;
+	
 	/** Flag indicating if we only accept known nodes */
 	bool acceptOnlyKnown = false;
 	
@@ -118,6 +123,8 @@ public:
 		this->_nodeTemplates.push_back(node);
 	}
 	
+	void setCreateTables(bool enabled) { this->createTables = enabled; }
+	
 	vector<DBNode> nodeTemplates(void) const {
 		vector<DBNode> ret(this->_nodeTemplates);
 		return ret;
@@ -134,6 +141,16 @@ public:
 	}
 	
 	void runAliveThread(void);
+	
+	void startAliveThread(void) {
+		if(this->tid_alive > 0) return;
+		int ret;
+		ret = pthread_create(&this->tid_alive, NULL, (void* (*)(void*))alive_thread, NULL);
+		if(ret < 0) {
+			cerr << "Error creating alive thread" << endl;
+			this->tid_alive = 0;
+		}
+	}
 	
 	/** Create new Udp receiver on the given port.
 	  * Creates and adds the given receiver. The receiver is NOT started
@@ -191,6 +208,8 @@ public:
 	    else
 	        this->writeDBDelay = delay;
 	}
+	
+	long dbWriteDelay(void) const { return this->writeDBDelay; }
 	
 	/** Check if we accept this node (check if the node is in the known nodes list) */
 	bool acceptNode(const Node &node) {
@@ -371,6 +390,9 @@ int main(int argc, char** argv) {
 						db.username = dbUsername;
 						db.password = dbPassword;
 						
+					} else if(arg == "--create-tables") {
+						instance.setCreateTables(true);
+						
 					} else if(arg == "--db-write-delay") {
 					    if(isLast) throw "Missing argument: Database write delay";
 					    // Write delay in milliseconds
@@ -547,8 +569,9 @@ int main(int argc, char** argv) {
 				cerr << "WARNING: Error fetching data from database: " << msg << endl;
 			}
 			
-			
 			mysql->close();
+			
+			cout << "DB write period: " << instance.dbWriteDelay() << " ms" << endl;
 		} else {
 			cout << "Database disabled" << endl;
 		}
@@ -560,6 +583,7 @@ int main(int argc, char** argv) {
 	signal(SIGTERM, sig_handler);
 	signal(SIGINT, sig_handler);
 	atexit(cleanup);
+	instance.startAliveThread();
 	
 	
     cout << "meteo Server is up an running";
@@ -669,26 +693,10 @@ int main(int argc, char** argv) {
     return EXIT_SUCCESS;
 }
 
-
-static void alive_thread(void* arg) {
-	(void)arg;
-	
-	// Thread is cancellable immediately
-	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-	
-	instance.runAliveThread();
-}
-
 Instance::Instance() {
 	this->tid_alive = 0;
 	
-	int ret;
-	ret = pthread_create(&this->tid_alive, NULL, (void* (*)(void*))alive_thread, NULL);
-	if(ret < 0) {
-		cerr << "Error creating alive thread" << endl;
-	}
-	ret = pthread_mutex_init(&db_mutex, NULL);
+	int ret = pthread_mutex_init(&db_mutex, NULL);
 	if(ret != 0) {
 		cerr << "Error creating db mutex" << endl;
 		exit(EXIT_FAILURE);
@@ -787,6 +795,9 @@ void Instance::writeToDB(void) {
 					if(timestamp > t_max) {
 					
 						try {
+							if(this->createTables)
+								this->db->createNodeTable(node);
+							
 							this->db->push(node);
 						} catch (const char* msg) {
 							cerr << "Error writing node " << id << " to database: " << msg << endl;
@@ -904,6 +915,7 @@ static void printHelp(const char* progname) {
 	cout << "  --broadcast PORT                 Listen on PORT for tcp broadcast clients. Multiple definitions allowed" << endl;
 	cout << "  --mysql REMOTE                   Set REMOTE as MySQL database instance." << endl;
 	cout << "          REMOTE is in the form: user:password@hostname/database" << endl;
+	cout << "  --create-tables                  Create tables in database, if not yet existing" << endl;
 	cout << "  --db-write-delay MILLIS          Set the delay for database writes in milliseconds" << endl;
 	cout << "  -f FILE                          Periodically write the current readings to FILE" << endl;
 	cout << "  --serial FILE                    Open FILE as serial device file and read contents from it" << endl;
@@ -985,6 +997,16 @@ static pthread_t setup_serial(const char* dev) {
 	if(ret < 0) throw "Error creating serial thread";
 	if(pthread_detach(tid) != 0) throw "Error detaching serial thread";
 	return tid;
+}
+
+static void alive_thread(void* arg) {
+	(void)arg;
+	
+	// Thread is cancellable immediately
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	
+	instance.runAliveThread();
 }
 
 static void deamonize(void) {

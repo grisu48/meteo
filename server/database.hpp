@@ -29,14 +29,11 @@ protected:
 	std::string password;
 	int port = 3306;
 	
-	
 	MYSQL *conn = NULL;
+	
 	
 	std::string escape(std::string str) { return this->escape(str.c_str()); }
 	std::string escape(const char* str);
-	
-	void createRoomNodeTable(const int stationId);
-	void createNodeTable(const Node &node);
 public:
 	MySQL(std::string remote, std::string username, std::string password, std::string database);
 	virtual ~MySQL();
@@ -57,6 +54,9 @@ public:
 	
 	void execute(std::string sql);
 	void execute(const char* sql, size_t len);
+	
+	void createRoomNodeTable(const int stationId);
+	void createNodeTable(const Node &node);
 	
 	/** Finalize mysql connection */
 	static void Finalize(void);

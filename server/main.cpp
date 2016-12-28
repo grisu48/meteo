@@ -811,6 +811,7 @@ void Instance::writeToDB(void) {
 					cerr << errors << " error(s) occurred while writing to database" << endl;
 				}
 		
+				this->db->commit();
 				this->db->close();
 			}
 		} catch (const char* msg) {

@@ -40,12 +40,19 @@ MySQL::~MySQL() {
 
 
 void MySQL::connect(void) {
-	this->close();		// Close if already established
+	if(this->conn != NULL)
+		this->close();		// Close if already established
 	
 	conn = mysql_init(NULL);
 	if(conn == NULL) throw "Insufficient memory";
 	if(!mysql_real_connect(conn, this->remote.c_str(), this->username.c_str(), this->password.c_str(), this->database.c_str(), this->port, NULL, 0)) 
 		throwSqlError(this->conn);
+}
+
+void MySQL::commit(void) {
+	if(this->conn != NULL) {
+		mysql_commit(this->conn);
+	}
 }
 
 void MySQL::close(void) {
@@ -91,9 +98,6 @@ void MySQL::push(const Node &node) {
 	string name = "Node_" + ::to_string(id);
 
 	map<string, double> val = node.values();
-		
-	// Create table statement
-	this->createNodeTable(node);
 	
 	// Insert values statement
 	{
@@ -199,10 +203,12 @@ void MySQL::execute(const char* sql, size_t len) {
 		const char* error = mysql_error(this->conn);
 		if(error == NULL) throw "Unknown error";
 		else throw error;
-	}
+	} 
+	// else cout << "  MySQL::execute(\"" << sql << "\") = " << ret << endl;
 }
 
 void MySQL::Finalize(void) {
+	// TODO: Fix this!
 	// mysql_thread_end();
 	mysql_library_end();
 }

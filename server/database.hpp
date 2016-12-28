@@ -41,6 +41,8 @@ public:
 	void connect(void);
 	void close(void);
 	
+	void commit(void);
+	
 	/** Push the given roomnode instance */
 	void push(const RoomNode &node);
 	

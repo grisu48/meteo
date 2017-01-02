@@ -464,6 +464,10 @@ void TcpReceiverThread::close(void) {
 	    this->tid = 0;
     }
     
+    // Close connection
+    if(this->fd > 0) ::close(this->fd);
+    this->fd = 0;
+    
     this->receiver->onReceiverClosed(this);
 }
 
@@ -481,7 +485,7 @@ void TcpReceiverThread::run(void) {
 		    this->onReceived(packet);
 	    } else
 		    ss << c;
-    }
+	}
 }
 
 

@@ -63,7 +63,7 @@ public:
 	virtual ~UdpBroadcast();
 	
 	std::string getRemoteHost(void) const { return this->remote; }
-	int getPort(void) { return this->port; }
+	int getPort(void) const { return this->port; }
 	
 	/** Close this broadcast instance */
 	void close(void);
@@ -103,20 +103,14 @@ public:
 
 
 UdpBroadcast::UdpBroadcast(std::string remote, int port) {
-	this->fd = socket(AF_INET, SOCK_DGRAM, 0);
-	if(this->fd < 0) throw "Error setting up socket";
-	int broadcastEnable=1;
-	int ret=setsockopt(this->fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
-	if(ret != 0) throw "Error enabling broadcast";	
-
 	this->port = port;
 	this->remote = remote;
 	
 	// Setup destination address
-	memset(&dest_addr, '\0', sizeof(struct sockaddr_in));
+	memset(&this->dest_addr, '\0', sizeof(this->dest_addr));
 	dest_addr.sin_family = AF_INET;
 	dest_addr.sin_port = (in_port_t)htons(port);
-	//dest_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+	dest_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 	dest_addr.sin_addr.s_addr = inet_addr(remote.c_str());
 }
 
@@ -137,16 +131,19 @@ ssize_t UdpBroadcast::send(const char* msg, size_t size) {
 	
 	const socklen_t dest_len = sizeof(dest_addr);
 	
+	const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+	if(fd < 0) return -1;
 	
-	ret = sendto(this->fd, (void*)msg, sizeof(char)*size, flags, (const sockaddr*)&dest_addr, dest_len);
+	int broadcastEnable=1;
+    setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+		
+	ret = ::sendto(fd, (void*)msg, sizeof(char)*size, flags, (const sockaddr*)&dest_addr, dest_len);
+	::close(fd);
 	return ret;
 }
 
 ssize_t UdpBroadcast::send(std::string msg) {
 	return this->send(msg.c_str(), msg.length());
-	
-	
-	return -1;
 }
 
 

@@ -10,12 +10,16 @@
  */
 
 #include <sstream>
+#include <iostream>
 
 #include <string.h>
 
 #include "database.hpp"
 
 using namespace std;
+
+
+// #define DEBUG 1
 
 #define DELETE(x) { if (x!=NULL) delete x; x = NULL; }
 
@@ -43,15 +47,33 @@ void MySQL::connect(void) {
 	if(this->conn != NULL)
 		this->close();		// Close if already established
 	
+#if DEBUG
+		cerr << "MySQL::Connect = ";
+#endif
+	
 	conn = mysql_init(NULL);
 	if(conn == NULL) throw "Insufficient memory";
-	if(!mysql_real_connect(conn, this->remote.c_str(), this->username.c_str(), this->password.c_str(), this->database.c_str(), this->port, NULL, 0)) 
+	mysql_real_connect(conn, this->remote.c_str(), this->username.c_str(), this->password.c_str(), this->database.c_str(), this->port, NULL, 0);
+	if(!conn) {
+#if DEBUG
+			cerr << "Err" << endl;
+#endif
 		throwSqlError(this->conn);
+	}
+#if DEBUG
+		cerr << "OK" << endl;
+#endif
 }
 
 void MySQL::commit(void) {
 	if(this->conn != NULL) {
+#if DEBUG
+		cerr << "MySQL::Commit = ";
+#endif
 		mysql_commit(this->conn);
+#if DEBUG
+		cerr << "OK" << endl;
+#endif
 	}
 }
 
@@ -112,7 +134,7 @@ void MySQL::push(const Node &node) {
 			const double value = it->second;
 	
 			columns << ", `" << valName << "`";
-			values << ", " << value;
+			values << ", '" << value << '\'';
 		}
 
 		sql << "INSERT INTO `" << this->database << "`.`" << name << "` (" << columns.str() << ") VALUES (" << values.str() << ");";
@@ -197,19 +219,30 @@ void MySQL::execute(const char* sql, size_t len) {
 	
 	if(this->conn == NULL) connect();
 	
+#if DEBUG
+	cerr << "MySQL::execute(\"" << sql << "\") = ";
+#endif
+	
 	ret = mysql_real_query(this->conn, sql, len);
 	if(ret != 0) {
-		//int errno = mysql_errno(this->conn);
 		const char* error = mysql_error(this->conn);
+#if DEBUG
+		//const int errno = mysql_errno(this->conn);
+		
+		cerr << " ERR (" << error << ")" << endl;
+#endif
+		
+		
 		if(error == NULL) throw "Unknown error";
 		else throw error;
 	} 
-	// else cout << "  MySQL::execute(\"" << sql << "\") = " << ret << endl;
+#if DEBUG
+	cerr << ret << endl;
+#endif
 }
 
 void MySQL::Finalize(void) {
-	// TODO: Fix this!
-	// mysql_thread_end();
+	mysql_thread_end();
 	mysql_library_end();
 }
 

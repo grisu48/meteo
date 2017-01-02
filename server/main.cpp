@@ -237,7 +237,6 @@ public:
 		map<string, double> values = node.values();
 		if(values.size() == 0) return;
 		
-		node.setTimestamp(getSystemTime());
 		// Insert node if not yet existing
 		if (_nodes.find(id) == _nodes.end()) {
 			_nodes[id] = node;
@@ -246,6 +245,7 @@ public:
 			cout << "RECEIVED ";
 			// Update values
 			_nodes[id].pushData(values);
+			_nodes[id].setTimestamp(getSystemTime());
 		}
 		cout << node.toString() << endl;
 		
@@ -804,6 +804,8 @@ void Instance::writeToDB(void) {
 							errors++;
 						}
 			
+					} else {
+						cerr << "WARN: Node " << node.name() << " is too old (" << timestamp << " > " << t_max << ")" << endl;
 					}
 				}
 		

@@ -118,31 +118,47 @@ void MainWindow::on_actionConnect_triggered()
 }
 
 void MainWindow::receiver_newData(const long station, QMap<QString, double> values) {
-    ui->lblStatus->setText("New data from station " + QString::number(station) + ".");
+    QDateTime now = QDateTime::currentDateTime();
+
+    ui->lblStatus->setText("New data from station " + QString::number(station) + " [" + now.toString("HH:mm:ss") + "]");
 
 
-    if(station == 8) {      // Living room
-        cout << "ROOM 8";
+    if(station == 2) {      // Living room
         if(values.contains("temperature")) {
             const double temperature = values["temperature"];
-            ui->txtLivingRoomTemperature->setText(QString::number(temperature) + " degree C");
-            cout << " temperature = " << temperature;
+            ui->txtLivingRoomTemperature->setText(QString::number(temperature, 'f', 2) + " degree C");
+            ui->prgLivingTemp->setValue(temperature);
         }
         if(values.contains("humidity")) {
             const double hum = values["humidity"];
-            ui->txtLivingRoomHumidity->setText(QString::number(hum) + " % relative");
-            cout << " humidity = " << hum;
+            ui->txtLivingRoomHumidity->setText(QString::number(hum, 'f', 2) + " % rel");
+            ui->prgLivingHumidity->setValue(hum);
         }
         if(values.contains("light")) {
             const float light = (float)values["light"];
             ui->txtLivingRoomLight->setText(QString::number(light) + " / 255");
-            cout << " light = " << light;
         }
 
-        cout << endl;
+    } else if(station == 8) {      // Flex' room
 
-        QDateTime now = QDateTime::currentDateTime();
-        ui->lblLivingRoomRefreshed->setText("Last refreshed: " + now.toString());
+        cout << "ROOM 2";
+        if(values.contains("temperature")) {
+            const double temperature = values["temperature"];
+            ui->txtFlexTemp->setText(QString::number(temperature, 'f', 2) + " degree C");
+            ui->prgFlexTemp->setValue(temperature);
+        }
+        if(values.contains("humidity")) {
+            const double hum = values["humidity"];
+            ui->txtFlexHumidity->setText(QString::number(hum, 'f', 2) + " % rel");
+            ui->prgFlexHum->setValue(hum);
+        }
+        if(values.contains("light")) {
+            const float light = (float)values["light"];
+            ui->txtFlexLight->setText(QString::number(light) + " / 255");
+        }
+
+    } else if(station == 1) {      // Outdoor
+
     }
 }
 

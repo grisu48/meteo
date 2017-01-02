@@ -1,6 +1,7 @@
 #include "receiverthread.h"
 
 #include <iostream>
+#include <string>
 
 using namespace std;
 
@@ -12,9 +13,7 @@ ReceiverThread::ReceiverThread(const QString &hostName, quint16 port, QObject *p
     // Try to connect
     this->remote = hostName;
     this->port = port;
-    this->running = reconnect();
-    if(!this->running)
-        throw "Connection failed";
+    this->running = false;
 }
 
 ReceiverThread::~ReceiverThread() {
@@ -32,12 +31,12 @@ bool ReceiverThread::reconnect() {
 void ReceiverThread::close() {
     this->socket.close();
     this->running = false;
+    QThread::quit();
 }
 
 
 void ReceiverThread::queryNodes() {
-    const char* data = "list\n";
-    this->socket.write(data, 5);
+    this->socket.write("list\n", 5);
 }
 
 void ReceiverThread::packetReceived(QString &packet) {
@@ -101,6 +100,11 @@ void ReceiverThread::packetReceived(QString &packet) {
 }
 
 void ReceiverThread::run() {
+    this->running = reconnect();
+    if(!this->running)
+        throw "Connection failed";
+
+
     QString packet;
 
     while(running) {
@@ -108,20 +112,22 @@ void ReceiverThread::run() {
             if(!reconnect()) {
                 emit error(socket.error(), socket.errorString());
                 return;
-            } else
+            } else {
                 continue;
+            }
         }
+        if(socket.bytesAvailable() <= 0) continue;
 
         QByteArray data = socket.readAll();
-        if(data.size() == 0) break;
+        if(data.size() == 0) continue;
         else {
             const int len = data.size();
-
             for(int i=0;i<len;i++) {
                 const char c = data.at(i);
-                if(c == '\n')
+                if(c == '\n') {
                     this->packetReceived(packet);
-                else
+                    packet = "";
+                } else
                     packet += c;
             }
         }

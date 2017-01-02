@@ -26,9 +26,6 @@ namespace sensors {
 
 class MCP9808 : public Sensor {
 private:
-	std::string _device;
-	int _address;
-	
 	// Last readings
 	float t;
 	

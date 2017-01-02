@@ -28,13 +28,12 @@ namespace sensors {
   */
   
 class Sensor {
-private:
+protected:
 	/** Device name (default: "/dev/i2c-1")*/
 	std::string _device;
 	/** I2C Address */
 	int _address;
 	
-protected:
 	/** Error flag */
 	bool _error;
 public:

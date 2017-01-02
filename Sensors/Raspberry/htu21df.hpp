@@ -27,9 +27,6 @@ namespace sensors {
 
 class HTU21DF : public Sensor {
 private:
-	std::string _device;
-	int _address;
-	
 	// Last readings
 	float t, h;
 	

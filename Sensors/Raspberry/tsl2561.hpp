@@ -26,9 +26,6 @@ namespace sensors {
 
 class TSL2561 : public Sensor {
 private:
-	std::string _device;
-	int _address;
-	
 	// Last readings
 	int _visible, _ir;
 	

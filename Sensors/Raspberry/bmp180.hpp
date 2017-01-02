@@ -26,9 +26,6 @@ namespace sensors {
 
 class BMP180 : public Sensor {
 private:
-	std::string _device;
-	int _address;
-	
 	// Last readings
 	float t,p,alt;
 	

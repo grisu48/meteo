@@ -8,8 +8,10 @@
  * 
  * =============================================================================
  */
- 
+
+
 #include <string>
+#include <sstream>
 #include <vector>
 #include <map>
  
@@ -24,15 +26,89 @@ Parser::~Parser() {}
 
 bool Parser::parse(std::string input) {
 	this->clear();
+	if(input.size() == 0) return false;
 	
-	
-	String msg(input);
+	String msg = String(input).trim();
 	if(msg.isEmpty()) return false;
+
+	// Check for XML
+	if(msg.startsWithIgnoreCase("<meteo") && msg.endsWith("/>")) {
+		// XXX: This section was written in a haste, and could need some attention!
+		// XML input of a METEO station
+		
+		String rem = msg.substr(6).trim();
+		rem = rem.left(rem.size()-2);
+		
+		const size_t len = rem.size();
+		
+		this->_id = 0;
+		this->_values.clear();
+		
+		// Split tokens
+		vector<String> tokens;
+		{
+			bool inString = false;
+			stringstream ss;
+			for(size_t i=0;i<len;i++) {
+				char c = rem.at(i);
+				
+				if(inString) {
+					if (c== '\"') {
+						inString = false;
+						continue;
+					} else
+						ss << c;
+				} else {
+					if (c== '\"') {
+						inString = true;
+						continue;
+					}
+					
+					if(::isspace(c)) {
+						String token = String(ss.str()).trim();
+						ss.str("");
+						if(!token.isEmpty()) tokens.push_back(token);
+					} else
+						ss << c;
+				}
+			}
+			
+			// Last token
+			String token = String(ss.str()).trim();
+			if(!token.isEmpty()) tokens.push_back(token);
+		}
+		
+		// Parse token
+		for(vector<String>::iterator it = tokens.begin(); it != tokens.end(); it++) {
+			String token = *it;
+			
+			size_t index = token.find('=');
+			if(index == string::npos || index == 0) continue;
+			String name = token.left(index);
+			String value = token.mid(index+1);
+			if(name.isEmpty() || value.isEmpty()) continue;
+			
+			const double f_val = atof(value.c_str());
+			
+			// Just keep the relevant data
+			name = name.toLowercase();
+			if(name == "temperature" || name == "humidity" || name == "pressure")
+				this->_values[name] = f_val;
+			else if(name == "station") {
+				this->_id = atol(value.c_str());
+			}
+		}
+		
+		return true;
+	}
 	
 	
-		// Plain text node
-		vector<String> split = msg.split(" ");
-		String type = split[0];
+	
+	
+	
+	/* ==== Plain text node ================================================= */
+	vector<String> split = msg.split(" ");
+	String type = split[0].toUppercase();
 	
 	// Switch type of receiver
 	if(type == "ROOM") {

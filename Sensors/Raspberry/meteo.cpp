@@ -29,6 +29,8 @@
 #include <sys/time.h>
 #include <time.h>
 #include <fcntl.h>
+#include <netinet/in.h>
+#include <netdb.h>
 
 // Include sensors
 #include "sensors.hpp"
@@ -65,6 +67,34 @@ public:
 	
 	/** Close this broadcast instance */
 	void close(void);
+	/** Send the given message */
+	ssize_t send(const char* msg, size_t size);
+	/** Send the given message */
+	ssize_t send(std::string msg);	
+};
+
+class TcpBroadcast {
+private:
+	string remote;
+	int port;
+	struct sockaddr_in m_addr;
+	
+public:
+	TcpBroadcast(string remote, int port) {
+		this->remote = remote;
+		this->port = port;
+		
+		memset(&m_addr, 0, sizeof(m_addr));
+		m_addr.sin_family = AF_INET;
+		m_addr.sin_port = htons(port);
+	
+		if(inet_pton(AF_INET, this->remote.c_str(), &m_addr.sin_addr)<=0)
+			throw "Illegal remote TCP-IP address";
+	}
+	
+	string getRemote(void) const { return remote; }
+	int getPort(void) const { return port; }
+	
 	/** Send the given message */
 	ssize_t send(const char* msg, size_t size);
 	/** Send the given message */
@@ -114,7 +144,39 @@ ssize_t UdpBroadcast::send(const char* msg, size_t size) {
 
 ssize_t UdpBroadcast::send(std::string msg) {
 	return this->send(msg.c_str(), msg.length());
+	
+	
+	return -1;
 }
+
+
+
+
+
+ssize_t TcpBroadcast::send(const char* msg, size_t size) {
+	if(msg == NULL || size == 0) return 0L;
+	
+	const int sock = ::socket( AF_INET, SOCK_STREAM, 0);
+	if(sock < 0) return -1L;
+	
+	if(::connect(sock, (struct sockaddr*)&m_addr, sizeof(m_addr)) < 0) {
+		::close(sock);
+		return -1L;
+	} else {
+		const int flags = 0;
+		ssize_t ret = ::send(sock, msg, sizeof(char)*size, flags);
+		::close(sock);
+		return ret;
+	}
+	
+	return 0L;
+}
+
+ssize_t TcpBroadcast::send(std::string msg) {
+	return this->send(msg.c_str(), msg.size());
+}
+
+
 
 struct {
 	bool enabled_BMP180 = false;
@@ -136,6 +198,7 @@ static volatile bool running = true;
 
 
 static vector<UdpBroadcast> broadcasts;
+static vector<TcpBroadcast> tcp_broadcasts;
 /** Static meteo configuration */
 static config_t config;
 
@@ -146,6 +209,7 @@ static void probeSensors(void);
 static void printHelp(const char* progname);
 static void sig_handler(int sig_no);
 static void addBroadcast(const char* address);
+static void addTcpBroadcast(const char* address);
 static int64_t getSystemTime(void);
 /** Precision sleep */
 static int p_sleep(long millis, long micros);
@@ -199,6 +263,9 @@ int main(int argc, char** argv) {
 				} else if(arg == "--udp") {
 					if(isLast) throw "Missing argument: Broadcast address";
 					addBroadcast(argv[++i]);
+				} else if(arg == "--tcp") {
+					if(isLast) throw "Missing argument: TCP destination address";
+					addTcpBroadcast(argv[++i]);
 				} else if(arg == "-d" || arg == "--delay") {
 					if(isLast) throw "Missing argument: Delay time";
 					config.delay = atol(argv[++i]);
@@ -208,6 +275,14 @@ int main(int argc, char** argv) {
 					config.i2c_device = argv[++i];
 				} else if(arg == "-v" || arg == "--verbose" || arg == "--noconfig") {
 					// Already processed
+				} else if(arg == "--bmp180") {
+					config.enabled_BMP180 = true;
+				} else if(arg == "--htu21df") {
+					config.enabled_HTU21DF = true;
+				} else if(arg == "--mcp9808") {
+					config.enabled_MCP9808 = true;
+				} else if(arg == "--tsl2561") {
+					config.enabled_TSL2561 = true;
 				} else if(arg == "-a" || arg == "--all") {
 					config.enabled_BMP180 = true;
 					config.enabled_HTU21DF = true;
@@ -338,10 +413,16 @@ int main(int argc, char** argv) {
     	if(iteration++ > config.reportEvery) {
     		iteration = 0;
     	
-			string message = buffer.str();
+			string message = buffer.str() + "\n";
 			cout << message << endl;
+			ssize_t ret;
 	    	for(vector<UdpBroadcast>::iterator it=broadcasts.begin(); it != broadcasts.end(); it++)
     			(*it).send(message);
+    		for(vector<TcpBroadcast>::iterator it=tcp_broadcasts.begin(); it != tcp_broadcasts.end(); it++) {
+    			ret = (*it).send(message);
+    			if(ret < 0)
+    				cerr << "Error sending data via tcp to " << (*it).getRemote() << ":" << (*it).getPort()<< " - " << strerror(errno) << endl;
+    		}
     	}
     	
     	
@@ -434,14 +515,22 @@ static void printHelp(const char* progname) {
 	cout << "OPTIONS" << endl;
 	cout << "  -h    --help              Display this help message" << endl;
 	cout << "  -v    --verbose           Verbosity mode" << endl;
-	cout << "        --probe             Probe all supported sensors" << endl;
 	cout << "        --id ID             Manually set station id to ID" << endl;
+	cout << "        --noconfig          Do not read config files" << endl;
 	cout << "        --udp REMOTE:PORT   Set endpoint for UDP broadcast" << endl;
 	cout << "                            Definition of multiple endpoints is possible by" << endl;
 	cout << "                            Repeating the argument" << endl;
-	cout << "        --noconfig          Do not read config files" << endl;
+	cout << "        --tcp REMOTE:PORT   Set endpoint for TCP data sent" << endl;
+	cout << "        --probe             Probe all supported sensors" << endl;
+	cout << "        --bmp180            Enable BMP180 sensor (Pressure sensor)" << endl;
+	cout << "        --htu21df           Enable HTU21D-F sensor (Temperatue + Humidity)" << endl;
+	cout << "        --mcp9808           Enable MCP9808 sensor (High accuracy temperature)" << endl;
+	cout << "        --tsl2561            nable TSL2561 sensor (Luminosity sensor)" << endl;
 	cout << "  -a    --all               Enable all sensors" << endl;
+	
+	
 	cout << endl;
+	cout << "CONFIG FILES" << endl;
     cout << "Before applying program paremeters the following two files are read" << endl;
     cout << "  * /etc/meteo.cf" << endl;
     cout << "  * ./meteo.cf" << endl;
@@ -470,7 +559,7 @@ static void addBroadcast(const char* addr) {
 	size_t sIndex = address.find(":");
 	if(sIndex != string::npos) {
 		string sPort = address.substr(sIndex+1);
-		address = address.substr(0,sIndex-1);
+		address = address.substr(0,sIndex);
 		port = atoi(sPort.c_str());
 	}
 	
@@ -479,6 +568,23 @@ static void addBroadcast(const char* addr) {
 	
 	// Create and add broadcast
 	broadcasts.push_back( UdpBroadcast(address, port) );
+}
+
+
+static void addTcpBroadcast(const char* addr) {
+	string address = string(addr);
+	int port = DEFAULT_UDP_PORT;
+	size_t sIndex = address.find(":");
+	if(sIndex != string::npos) {
+		string sPort = address.substr(sIndex+1);
+		address = address.substr(0,sIndex);
+		port = atoi(sPort.c_str());
+	}
+	
+	if (port <= 0) throw "Illegal port";
+	if (address.length() == 0) throw "Missing address";
+	
+	tcp_broadcasts.push_back( TcpBroadcast(address, port) );
 }
 
 static int64_t getSystemTime(void) {

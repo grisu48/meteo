@@ -15,6 +15,7 @@
 #include <string>
 
 #include <cstdlib>
+#include <sys/ioctl.h>
 #include "tsl2561.c"
 
 #include "tsl2561.hpp"

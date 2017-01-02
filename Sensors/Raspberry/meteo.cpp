@@ -183,8 +183,9 @@ struct {
 	bool enabled_HTU21DF = false;
 	bool enabled_MCP9808 = false;
 	bool enabled_TSL2561 = false;
+	bool daemonize = false;
 	int station_id = 0;
-	char* i2c_device = (char*)"/dev/i2c-1";
+	string i2c_device = std::string(Sensor::DEFAULT_I2C_DEVICE);
 	long delay = 1000L;		// Delay between iterations in milliseconds
 	int reportEvery = 0;	// Report every N iterations 	XXX: NOT YET IMPLEMENTED
 } typedef config_t;
@@ -216,6 +217,8 @@ static int p_sleep(long millis, long micros);
 static int p_sleep(long millis) { return p_sleep(millis, 0); }
 /** Apply the given config file */
 static void applyConfig(Config &config);
+/** Rung program as deamon */
+static void deamonize();
 
 /* ==== MAIN ================================================================ */
 
@@ -270,9 +273,11 @@ int main(int argc, char** argv) {
 					if(isLast) throw "Missing argument: Delay time";
 					config.delay = atol(argv[++i]);
 					if(config.delay <= 0) throw "Illegal delay time";
+				} else if(arg == "--daemon") {
+					config.daemonize = true;
 				} else if(arg == "--i2c" || arg == "--device") {
 					if(isLast) throw "Missing argument: i2c device";
-					config.i2c_device = argv[++i];
+					config.i2c_device = std::string(argv[++i]);
 				} else if(arg == "-v" || arg == "--verbose" || arg == "--noconfig") {
 					// Already processed
 				} else if(arg == "--bmp180") {
@@ -302,6 +307,14 @@ int main(int argc, char** argv) {
 		return EXIT_FAILURE;
 	}
 	
+	
+	// Daemonize, if needed
+	if(config.daemonize) {
+		deamonize();
+		cout << "Running as daemon" << endl;
+	}
+	
+	
 	// Register signal handlers
     signal(SIGTERM, sig_handler);
     signal(SIGINT, sig_handler);
@@ -318,7 +331,7 @@ int main(int argc, char** argv) {
     
     // Try to access the device file
 	{
-		int fd = open(config.i2c_device, O_RDONLY, 0);
+		int fd = open(config.i2c_device.c_str(), O_RDONLY, 0);
 		if (fd < 0) cerr << "WARNING: Error accessing device file '" << config.i2c_device << "': " << strerror(errno) << endl;
 		else close(fd);
 	}
@@ -343,7 +356,7 @@ int main(int argc, char** argv) {
 	if (config.enabled_TSL2561) sensor_count++;
 #endif
     
-    if(sensor_count) {
+    if(sensor_count == 0) {
     	cerr << "Warning: No sensors present" << endl;
     }
     
@@ -414,7 +427,7 @@ int main(int argc, char** argv) {
     		iteration = 0;
     	
 			string message = buffer.str() + "\n";
-			cout << message << endl;
+			cout << message;
 			ssize_t ret;
 	    	for(vector<UdpBroadcast>::iterator it=broadcasts.begin(); it != broadcasts.end(); it++)
     			(*it).send(message);
@@ -442,7 +455,6 @@ int main(int argc, char** argv) {
     				sleep(ret);
     			}
     			cerr << endl;
-    			
     		}
     	}
     }
@@ -464,13 +476,35 @@ int main(int argc, char** argv) {
 
 
 
+static void deamonize(void) {
+    pid_t pid = fork();
+    if(pid < 0) {
+	    cerr << "Fork daemon failed" << endl;
+	    exit(EXIT_FAILURE);
+    } else if(pid > 0) {
+	    // Success. The parent leaves here
+	    exit(EXIT_SUCCESS);
+    }
+
+    /* Fork off for the second time */
+    /* This is needed to detach the deamon from a terminal */
+    pid = fork();
+    if(pid < 0) {
+	    cerr << "Fork daemon failed (step two)" << endl;
+	    exit(EXIT_FAILURE);
+    } else if(pid > 0) {
+	    // Success. The parent again leaves here
+	    exit(EXIT_SUCCESS);
+    }
+}
+
 static bool probeSensor(Sensor& sensor) {
 	if(sensor.read() != 0) return false;
 	return !sensor.isError();
 }
 
 static void probeSensors(void) {
-	const char* i2c_device = config.i2c_device;
+	const char* i2c_device = config.i2c_device.c_str();
 	
 	// Probe all sensors
 	cout << " Probing BMP180 ...  "; cout.flush();
@@ -625,9 +659,35 @@ static int p_sleep(long millis, long micros) {
 
 static void applyConfig(Config &conf) {
 	config.station_id = conf.getInt("id", config.station_id);
+	
 	config.enabled_BMP180 = conf.getBoolean("bmp180", config.enabled_BMP180);
 	config.enabled_HTU21DF = conf.getBoolean("htu21df", config.enabled_HTU21DF);
 	config.enabled_MCP9808 = conf.getBoolean("mcp9808", config.enabled_MCP9808);
 	config.enabled_TSL2561 = conf.getBoolean("tsl2561", config.enabled_TSL2561);
+	config.daemonize = conf.getBoolean("daemonize", config.daemonize);
+	
+	// Broadcasts 
+	string temp = conf.get("tcp");
+	if(temp.size() > 0) {
+		try {
+			addTcpBroadcast(temp.c_str());
+		} catch(const char *msg) {
+			cerr << "Error adding tcp broadcast: " << temp << " - " << msg << endl;
+		}
+	}
+	temp = conf.get("udp");
+	if(temp.size() > 0) {
+		try {
+			addBroadcast(temp.c_str());
+		} catch(const char *msg) {
+			cerr << "Error adding udp broadcast: " << temp << " - " << msg << endl;
+		}
+	}
+	
+	// I2C device
+	temp = conf.get("i2c");
+	if(temp.size() > 0) {
+		config.i2c_device = temp;
+	}
 }
 

@@ -29,9 +29,9 @@ bool ReceiverThread::reconnect() {
 }
 
 void ReceiverThread::close() {
-    this->socket.close();
     this->running = false;
-    QThread::quit();
+    this->wait();
+    this->socket.close();
 }
 
 
@@ -108,7 +108,9 @@ void ReceiverThread::run() {
     QString packet;
 
     while(running) {
-        if(!socket.waitForReadyRead()) {
+        if(!socket.waitForReadyRead(1000L)) {
+            if(!running) return;
+
             if(!reconnect()) {
                 emit error(socket.error(), socket.errorString());
                 return;

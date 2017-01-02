@@ -17,7 +17,7 @@ MainWindow::MainWindow(QWidget *parent) :
     qRegisterMetaType<QString>("QString");
 
     // Try to connect to patatoe.wg
-    this->connectStation("patatoe.wg", 8888);
+    this->connectStation("patatoe.wg", DEFAULT_PORT);
 
 }
 
@@ -31,7 +31,7 @@ void MainWindow::closeConnection(void) {
     if(this->receiver == NULL) return;
     else {
         this->receiver->close();
-        delete this->receiver;
+        this->receiver->deleteLater();
         this->receiver = NULL;
     }
     ui->lblStatus->setText("Closed");
@@ -96,7 +96,7 @@ void MainWindow::on_actionConnect_triggered()
     if(remote.isEmpty()) return;
 
     try {
-        int port = 8888;
+        int port = DEFAULT_PORT;
         if(remote.contains(":")) {
             const int pos = remote.indexOf(':');
             QString sPort = remote.mid(pos+1);
@@ -123,7 +123,29 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
     ui->lblStatus->setText("New data from station " + QString::number(station) + " [" + now.toString("HH:mm:ss") + "]");
 
 
-    if(station == 2) {      // Living room
+    if(station == 1) {      // Outdoor
+        if(values.contains("temperature")) {
+            const double temperature = values["temperature"];
+            ui->txtOutTemp->setText(QString::number(temperature, 'f', 2) + " degree C");
+            ui->prgOutTemp->setValue(temperature);
+        }
+        if(values.contains("humidity")) {
+            const double hum = values["humidity"];
+            ui->txtOutHum->setText(QString::number(hum, 'f', 2) + " % rel");
+            ui->prgOutHum->setValue(hum);
+        }
+        if(values.contains("light")) {
+            const float light = (float)values["light"];
+            ui->txtOutLight->setText(QString::number(light) + " / 255");
+        }
+        if(values.contains("pressure")) {
+            const double pressure = values["pressure"]/100.0;
+            ui->txtOutPress->setText(QString::number(pressure, 'f', 2) + " mBar");
+        }
+
+        ui->lblStatusOutdoor->setText("Update: [" + now.toString("HH:mm:ss") + "]");
+
+    } else if(station == 2) {      // Living room
         if(values.contains("temperature")) {
             const double temperature = values["temperature"];
             ui->txtLivingRoomTemperature->setText(QString::number(temperature, 'f', 2) + " degree C");
@@ -139,6 +161,7 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
             ui->txtLivingRoomLight->setText(QString::number(light) + " / 255");
         }
 
+        ui->lblStatusLivingRoom->setText("Update: [" + now.toString("HH:mm:ss") + "]");
     } else if(station == 8) {      // Flex' room
 
         cout << "ROOM 2";
@@ -157,7 +180,7 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
             ui->txtFlexLight->setText(QString::number(light) + " / 255");
         }
 
-    } else if(station == 1) {      // Outdoor
+        ui->lblStatusFlex->setText("Update: [" + now.toString("HH:mm:ss") + "]");
 
     }
 }

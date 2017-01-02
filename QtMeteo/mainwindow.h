@@ -8,6 +8,8 @@
 
 #include "receiverthread.h"
 
+#define DEFAULT_PORT 8888
+
 namespace Ui {
 class MainWindow;
 }

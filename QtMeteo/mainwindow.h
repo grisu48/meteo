@@ -5,8 +5,11 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QDateTime>
+#include <QVector>
+#include <QMap>
 
 #include "receiverthread.h"
+#include "station.h"
 
 #define DEFAULT_PORT 8888
 
@@ -33,6 +36,10 @@ private slots:
     void receiver_newData(const long station, QMap<QString, double> values);
     void receiver_error(int socketError, const QString &message);
     void receiver_parseError(QString &message, QString &packet);
+
+    void on_actionReconnect_triggered();
+
+    void on_actionShowGraphs_triggered();
 
 private:
     Ui::MainWindow *ui;

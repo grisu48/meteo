@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui network xml
+QT       += core gui network xml printsupport
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -15,9 +15,13 @@ CONFIG += c++11
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    receiverthread.cpp
+    receiverthread.cpp \
+    station.cpp \
+    qcustomplot.cpp
 
 HEADERS  += mainwindow.h \
-    receiverthread.h
+    receiverthread.h \
+    station.h \
+    qcustomplot.h
 
 FORMS    += mainwindow.ui

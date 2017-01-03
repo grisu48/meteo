@@ -3,6 +3,11 @@
 
 #include <iostream>
 
+#define S_ID_OUTDOOR 1
+#define S_ID_LIVING 2
+#define S_ID_FLEX 8
+
+
 using std::cerr;
 using std::cout;
 using std::endl;
@@ -122,8 +127,10 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
 
     ui->lblStatus->setText("New data from station " + QString::number(station) + " [" + now.toString("HH:mm:ss") + "]");
 
+    // Add to local data
+    Stations::instance()->push(station, values);
 
-    if(station == 1) {      // Outdoor
+    if(station == S_ID_OUTDOOR) {      // Outdoor
         if(values.contains("temperature")) {
             const double temperature = values["temperature"];
             ui->txtOutTemp->setText(QString::number(temperature, 'f', 2) + " degree C");
@@ -145,7 +152,7 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
 
         ui->lblStatusOutdoor->setText("Update: [" + now.toString("HH:mm:ss") + "]");
 
-    } else if(station == 2) {      // Living room
+    } else if(station == S_ID_LIVING) {      // Living room
         if(values.contains("temperature")) {
             const double temperature = values["temperature"];
             ui->txtLivingRoomTemperature->setText(QString::number(temperature, 'f', 2) + " degree C");
@@ -162,9 +169,8 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
         }
 
         ui->lblStatusLivingRoom->setText("Update: [" + now.toString("HH:mm:ss") + "]");
-    } else if(station == 8) {      // Flex' room
+    } else if(station == S_ID_FLEX) {      // Flex' room
 
-        cout << "ROOM 2";
         if(values.contains("temperature")) {
             const double temperature = values["temperature"];
             ui->txtFlexTemp->setText(QString::number(temperature, 'f', 2) + " degree C");
@@ -181,7 +187,6 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
         }
 
         ui->lblStatusFlex->setText("Update: [" + now.toString("HH:mm:ss") + "]");
-
     }
 }
 
@@ -197,4 +202,16 @@ void MainWindow::receiver_parseError(QString &message, QString &packet) {
 void MainWindow::on_actionClose_triggered()
 {
     this->closeConnection();
+}
+
+void MainWindow::on_actionReconnect_triggered()
+{
+    this->closeConnection();
+    this->connectStation(this->remote, this->port);
+}
+
+
+void MainWindow::on_actionShowGraphs_triggered()
+{
+
 }

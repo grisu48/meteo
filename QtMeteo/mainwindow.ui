@@ -26,7 +26,7 @@
          <x>0</x>
          <y>0</y>
          <width>386</width>
-         <height>388</height>
+         <height>397</height>
         </rect>
        </property>
        <layout class="QGridLayout" name="gridLayout_2">
@@ -90,7 +90,7 @@
            </font>
           </property>
           <property name="text">
-           <string>Outdoor</string>
+           <string>&lt;a href=&quot;Outdoor&quot;&gt;Outdoor&lt;/a&gt;</string>
           </property>
           <property name="alignment">
            <set>Qt::AlignCenter</set>
@@ -107,7 +107,7 @@
            </font>
           </property>
           <property name="text">
-           <string>Living Room</string>
+           <string>&lt;a href=&quot;LivingRoom&quot;&gt;Living Room&lt;/a&gt;</string>
           </property>
           <property name="alignment">
            <set>Qt::AlignCenter</set>
@@ -312,7 +312,7 @@
            </font>
           </property>
           <property name="text">
-           <string>Flex' Room</string>
+           <string>&lt;a href=&quot;FlexRoom&quot;&gt;Flex' Room&lt;/a&gt;</string>
           </property>
           <property name="alignment">
            <set>Qt::AlignCenter</set>
@@ -516,7 +516,7 @@
      <x>0</x>
      <y>0</y>
      <width>406</width>
-     <height>25</height>
+     <height>19</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">

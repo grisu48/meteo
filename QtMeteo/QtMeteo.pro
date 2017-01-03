@@ -17,11 +17,14 @@ SOURCES += main.cpp\
         mainwindow.cpp \
     receiverthread.cpp \
     station.cpp \
-    qcustomplot.cpp
+    qcustomplot.cpp \
+    stationdialog.cpp
 
 HEADERS  += mainwindow.h \
     receiverthread.h \
     station.h \
-    qcustomplot.h
+    qcustomplot.h \
+    stationdialog.h
 
-FORMS    += mainwindow.ui
+FORMS    += mainwindow.ui \
+    stationdialog.ui

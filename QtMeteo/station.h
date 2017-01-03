@@ -8,8 +8,50 @@
 #include <QTime>
 #include <QDateTime>
 
+
+#define S_ID_OUTDOOR 1
+#define S_ID_LIVING 2
+#define S_ID_FLEX 8
+
+
+
 class Station;
 class Stations;
+
+/** Outdoor data */
+struct {
+    /** Timestamp in millis */
+    long timestamp;
+    /** Temperature in degree C */
+    double t;
+    /** Pressure in hPa*/
+    double p;
+    /** Humidity in rel %*/
+    double h;
+} typedef st_outdoor_t;
+
+struct {
+    /** Timestamp in millis */
+    long timestamp;
+    /** Temperature in degree C */
+    double t;
+    /** Humidity in rel %*/
+    double h;
+
+} typedef st_livin_t;
+
+struct {
+    /** Timestamp in millis */
+    long timestamp;
+    /** Temperature in degree C */
+    double t;
+    /** Humidity in rel %*/
+    double h;
+
+    /** Battery flag*/
+    int battery;
+} typedef st_flex_t;
+
 
 
 /** Station instance to keep track of a station's data */
@@ -47,12 +89,17 @@ private:
     /** Known stations with data */
     QMap<long, Station> stations;
 
+    QList<st_livin_t> lLivingRoom;
+    QList<st_outdoor_t> lOutdoor;
+    QList<st_flex_t> lFlex;
 public:
-
-
     Stations();
 
-    void push(long station, QMap<QString, double> &data);
+    void push(const long station, const QMap<QString, double> &data);
+
+    QList<st_livin_t> getLivingRoom(void) const { return QList<st_livin_t>(this->lLivingRoom); }
+    QList<st_outdoor_t> getOutdoor(void) const { return QList<st_outdoor_t>(this->lOutdoor); }
+    QList<st_flex_t> getRoomFlex(void) const { return QList<st_flex_t>(this->lFlex); }
 
     void clear(void);
 

@@ -3,10 +3,6 @@
 
 #include <iostream>
 
-#define S_ID_OUTDOOR 1
-#define S_ID_LIVING 2
-#define S_ID_FLEX 8
-
 
 using std::cerr;
 using std::cout;
@@ -214,4 +210,34 @@ void MainWindow::on_actionReconnect_triggered()
 void MainWindow::on_actionShowGraphs_triggered()
 {
 
+}
+
+void MainWindow::on_lblOutdoor_linkActivated(const QString &link)
+{
+    if(link.toLower() == "outdoor") {
+        // Show station
+        StationDialog *dialog = new StationDialog();
+        dialog->setStation(S_ID_OUTDOOR);
+        dialog->show();
+    }
+}
+
+void MainWindow::on_lblLivingRoomTemperature_linkActivated(const QString &link)
+{
+    if(link.toLower() == "livingroom") {
+        // Show station
+        StationDialog *dialog = new StationDialog();
+        dialog->setStation(S_ID_LIVING);
+        dialog->show();
+    }
+}
+
+void MainWindow::on_lblLivingRoomHumidity_linkActivated(const QString &link)
+{
+    if(link.toLower() == "flexroom") {
+        // Show station
+        StationDialog *dialog = new StationDialog();
+        dialog->setStation(S_ID_FLEX);
+        dialog->show();
+    }
 }

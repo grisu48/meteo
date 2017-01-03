@@ -8,8 +8,10 @@
 #include <QVector>
 #include <QMap>
 
+
 #include "receiverthread.h"
 #include "station.h"
+#include "stationdialog.h"
 
 #define DEFAULT_PORT 8888
 
@@ -40,6 +42,12 @@ private slots:
     void on_actionReconnect_triggered();
 
     void on_actionShowGraphs_triggered();
+
+    void on_lblOutdoor_linkActivated(const QString &link);
+
+    void on_lblLivingRoomTemperature_linkActivated(const QString &link);
+
+    void on_lblLivingRoomHumidity_linkActivated(const QString &link);
 
 private:
     Ui::MainWindow *ui;

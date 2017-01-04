@@ -12,6 +12,7 @@
 #include "receiverthread.h"
 #include "station.h"
 #include "stationdialog.h"
+#include "qweatherdata.h"
 
 #define DEFAULT_PORT 8888
 
@@ -61,6 +62,9 @@ private:
     QString remote;
     /** Currently connected port */
     int port = 0;
+
+    /** Weather widgets*/
+    QMap<long, QWeatherData*> w_widgets;
 };
 
 #endif // MAINWINDOW_H

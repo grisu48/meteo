@@ -58,7 +58,7 @@ void StationDialog::showOutdoor() {
     else if(ui->rbHumidity->isChecked())
         type = 2;
     else if(ui->rbPressure->isChecked())
-        return;
+        type = 3;
     else
         return;
 

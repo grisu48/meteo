@@ -126,64 +126,32 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
     // Add to local data
     Stations::instance()->push(station, values);
 
-    if(station == S_ID_OUTDOOR) {      // Outdoor
-        if(values.contains("temperature")) {
-            const double temperature = values["temperature"];
-            ui->txtOutTemp->setText(QString::number(temperature, 'f', 2) + " degree C");
-            ui->prgOutTemp->setValue(temperature);
-        }
-        if(values.contains("humidity")) {
-            const double hum = values["humidity"];
-            ui->txtOutHum->setText(QString::number(hum, 'f', 2) + " % rel");
-            ui->prgOutHum->setValue(hum);
-        }
-        if(values.contains("light")) {
-            const float light = (float)values["light"];
-            ui->txtOutLight->setText(QString::number(light) + " / 255");
-        }
-        if(values.contains("pressure")) {
-            const double pressure = values["pressure"]/100.0;
-            ui->txtOutPress->setText(QString::number(pressure, 'f', 2) + " mBar");
-        }
+    QWeatherData *widget = NULL;
+    if(w_widgets.contains(station)) {
+        widget = w_widgets[station];
+    } else {
+        widget = new QWeatherData(ui->scrollSensors);
+        w_widgets[station] = widget;
+        ui->lySensors->addWidget(widget);
 
-        ui->lblStatusOutdoor->setText("Update: [" + now.toString("HH:mm:ss") + "]");
+        QString name = "Station " + QString::number(station);
+        if(station == S_ID_FLEX) name = "Flex' room";
+        else if(station == S_ID_OUTDOOR) name = "Outdoors";
+        else if(station == S_ID_LIVING) name = "Living room";
 
-    } else if(station == S_ID_LIVING) {      // Living room
-        if(values.contains("temperature")) {
-            const double temperature = values["temperature"];
-            ui->txtLivingRoomTemperature->setText(QString::number(temperature, 'f', 2) + " degree C");
-            ui->prgLivingTemp->setValue(temperature);
-        }
-        if(values.contains("humidity")) {
-            const double hum = values["humidity"];
-            ui->txtLivingRoomHumidity->setText(QString::number(hum, 'f', 2) + " % rel");
-            ui->prgLivingHumidity->setValue(hum);
-        }
-        if(values.contains("light")) {
-            const float light = (float)values["light"];
-            ui->txtLivingRoomLight->setText(QString::number(light) + " / 255");
-        }
-
-        ui->lblStatusLivingRoom->setText("Update: [" + now.toString("HH:mm:ss") + "]");
-    } else if(station == S_ID_FLEX) {      // Flex' room
-
-        if(values.contains("temperature")) {
-            const double temperature = values["temperature"];
-            ui->txtFlexTemp->setText(QString::number(temperature, 'f', 2) + " degree C");
-            ui->prgFlexTemp->setValue(temperature);
-        }
-        if(values.contains("humidity")) {
-            const double hum = values["humidity"];
-            ui->txtFlexHumidity->setText(QString::number(hum, 'f', 2) + " % rel");
-            ui->prgFlexHum->setValue(hum);
-        }
-        if(values.contains("light")) {
-            const float light = (float)values["light"];
-            ui->txtFlexLight->setText(QString::number(light) + " / 255");
-        }
-
-        ui->lblStatusFlex->setText("Update: [" + now.toString("HH:mm:ss") + "]");
+        widget->setName(name);
     }
+
+    // Refresh data
+    if(values.contains("temperature"))
+        widget->setTemperature(values["temperature"]);
+    if(values.contains("humidity"))
+        widget->setHumidity(values["humidity"]);
+    if(values.contains("pressure"))
+        widget->setPressure(values["pressure"]);
+    if(values.contains("light"))
+        widget->setLight(values["light"]);
+    widget->setStatus("Update: [" + now.toString("HH:mm:ss") + "]");
 }
 
 void MainWindow::receiver_error(int socketError, const QString &message) {

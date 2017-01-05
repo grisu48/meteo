@@ -81,35 +81,4 @@ public:
     QMap<long, QMap<QString, double> > getData(void) const;
 };
 
-
-/** Station manager instance */
-class Stations {
-private:
-
-    /** Known stations with data */
-    QMap<long, Station> stations;
-
-    QList<st_livin_t> lLivingRoom;
-    QList<st_outdoor_t> lOutdoor;
-    QList<st_flex_t> lFlex;
-public:
-    Stations();
-
-    void push(const long station, const QMap<QString, double> &data);
-
-    QList<st_livin_t> getLivingRoom(void) const { return QList<st_livin_t>(this->lLivingRoom); }
-    QList<st_outdoor_t> getOutdoor(void) const { return QList<st_outdoor_t>(this->lOutdoor); }
-    QList<st_flex_t> getRoomFlex(void) const { return QList<st_flex_t>(this->lFlex); }
-
-    void clear(void);
-
-    /** Get signleton instance */
-    static Stations* instance(void) {
-        static Stations *singleton;
-        if(!singleton)
-            singleton = new Stations();
-        return singleton;
-    }
-};
-
 #endif // STATION_H

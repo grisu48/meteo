@@ -123,9 +123,6 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
 
     ui->lblStatus->setText("New data from station " + QString::number(station) + " [" + now.toString("HH:mm:ss") + "]");
 
-    // Add to local data
-    Stations::instance()->push(station, values);
-
     QWeatherData *widget = NULL;
     if(w_widgets.contains(station)) {
         widget = w_widgets[station];
@@ -134,10 +131,22 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
         w_widgets[station] = widget;
         ui->lySensors->addWidget(widget);
 
-        QString name = "Station " + QString::number(station);
-        if(station == S_ID_FLEX) name = "Flex' room";
-        else if(station == S_ID_OUTDOOR) name = "Outdoors";
-        else if(station == S_ID_LIVING) name = "Living room";
+        QString name;
+        if(station == S_ID_FLEX) {
+            name = "Flex' room";
+            widget->setTemperatureRange(10,30);
+            widget->setHumidity(20,60);
+        } else if(station == S_ID_OUTDOOR) {
+            name = "Outdoors";
+            widget->setTemperatureRange(-20,40);
+            widget->setHumidity(0,100);
+        } else if(station == S_ID_LIVING) {
+            name = "Living room";
+            widget->setTemperatureRange(10,30);
+            widget->setHumidity(20,60);
+        } else {
+            name = "Station " + QString::number(station);
+        }
 
         widget->setName(name);
     }
@@ -172,40 +181,4 @@ void MainWindow::on_actionReconnect_triggered()
 {
     this->closeConnection();
     this->connectStation(this->remote, this->port);
-}
-
-
-void MainWindow::on_actionShowGraphs_triggered()
-{
-
-}
-
-void MainWindow::on_lblOutdoor_linkActivated(const QString &link)
-{
-    if(link.toLower() == "outdoor") {
-        // Show station
-        StationDialog *dialog = new StationDialog();
-        dialog->setStation(S_ID_OUTDOOR);
-        dialog->show();
-    }
-}
-
-void MainWindow::on_lblLivingRoomTemperature_linkActivated(const QString &link)
-{
-    if(link.toLower() == "livingroom") {
-        // Show station
-        StationDialog *dialog = new StationDialog();
-        dialog->setStation(S_ID_LIVING);
-        dialog->show();
-    }
-}
-
-void MainWindow::on_lblLivingRoomHumidity_linkActivated(const QString &link)
-{
-    if(link.toLower() == "flexroom") {
-        // Show station
-        StationDialog *dialog = new StationDialog();
-        dialog->setStation(S_ID_FLEX);
-        dialog->show();
-    }
 }

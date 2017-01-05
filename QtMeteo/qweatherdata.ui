@@ -75,6 +75,9 @@
      <property name="value">
       <number>24</number>
      </property>
+     <property name="textVisible">
+      <bool>false</bool>
+     </property>
     </widget>
    </item>
    <item row="2" column="2">
@@ -95,6 +98,9 @@
      <property name="value">
       <number>24</number>
      </property>
+     <property name="textVisible">
+      <bool>false</bool>
+     </property>
     </widget>
    </item>
    <item row="3" column="0" colspan="3">
@@ -111,6 +117,47 @@
     </widget>
    </item>
   </layout>
+  <action name="actionShowCurrent">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Current readings</string>
+   </property>
+   <property name="toolTip">
+    <string>Show the current readings</string>
+   </property>
+  </action>
+  <action name="actionShowSmoothed">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Smoothed</string>
+   </property>
+   <property name="toolTip">
+    <string>Show the smoother current readings</string>
+   </property>
+  </action>
+  <action name="actionShowAverage">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Average</string>
+   </property>
+   <property name="toolTip">
+    <string>Show long term average</string>
+   </property>
+  </action>
+  <action name="actionClear">
+   <property name="text">
+    <string>Clear</string>
+   </property>
+   <property name="toolTip">
+    <string>Clear current readings</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>

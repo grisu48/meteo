@@ -10,9 +10,8 @@
 
 
 #include "receiverthread.h"
-#include "station.h"
-#include "stationdialog.h"
 #include "qweatherdata.h"
+#include "stations.h"
 
 #define DEFAULT_PORT 8888
 
@@ -34,21 +33,13 @@ private slots:
     void on_actionQuit_triggered();
     void on_actionConnect_triggered();
     void on_actionClose_triggered();
+    void on_actionReconnect_triggered();
 
 
     void receiver_newData(const long station, QMap<QString, double> values);
     void receiver_error(int socketError, const QString &message);
     void receiver_parseError(QString &message, QString &packet);
 
-    void on_actionReconnect_triggered();
-
-    void on_actionShowGraphs_triggered();
-
-    void on_lblOutdoor_linkActivated(const QString &link);
-
-    void on_lblLivingRoomTemperature_linkActivated(const QString &link);
-
-    void on_lblLivingRoomHumidity_linkActivated(const QString &link);
 
 private:
     Ui::MainWindow *ui;

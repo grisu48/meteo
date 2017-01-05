@@ -16,18 +16,14 @@ CONFIG += c++11
 SOURCES += main.cpp\
         mainwindow.cpp \
     receiverthread.cpp \
-    station.cpp \
     qcustomplot.cpp \
-    stationdialog.cpp \
     qweatherdata.cpp
 
 HEADERS  += mainwindow.h \
     receiverthread.h \
-    station.h \
     qcustomplot.h \
-    stationdialog.h \
-    qweatherdata.h
+    qweatherdata.h \
+    stations.h
 
 FORMS    += mainwindow.ui \
-    stationdialog.ui \
     qweatherdata.ui

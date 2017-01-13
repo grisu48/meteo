@@ -48,6 +48,9 @@ private slots:
 
     void on_actionShowAverage_triggered();
 
+signals:
+    void onLinkClicked(void);
+
 private:
     Ui::QWeatherData *ui;
 

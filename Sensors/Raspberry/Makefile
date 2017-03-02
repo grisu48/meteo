@@ -15,8 +15,8 @@ CC_FLAGS=$(O_FLAGS) -std=c99
 # Binaries, object files, libraries and stuff
 LIBS=-lm
 INCLUDE=
-OBJS=sensor.o bmp180.o tsl2561.o mcp9808.o htu21df.o config.o
-BINS=bmp180 tsl2561 mcp9808 htu21df meteo
+OBJS=sensor.o bmp180.o tsl2561.o mcp9808.o htu21df.o config.o string.o
+BINS=bmp180 tsl2561 mcp9808 htu21df meteo meteod
 LIB_FILE=libmeteo.so
 
 # Default generic instructions
@@ -56,3 +56,6 @@ htu21df:	read_htu21df.cpp htu21df.o sensor.o
 
 meteo:	meteo.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) $(OBJS)
+	
+meteod:	http.cpp $(OBJS)
+	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) $(OBJS) 

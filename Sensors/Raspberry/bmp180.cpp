@@ -47,12 +47,13 @@ BMP180::~BMP180() {
 	
 int BMP180::read() {
 	if(this->bmp == NULL) return -1;
-	
+	if(this->_error) return -1;
+
+	// Unfortunately, currently there is no error report for the BMP180	
 	this->t = bmp180_temperature(bmp);
 	this->p = bmp180_pressure(bmp);
 	this->alt = bmp180_altitude(bmp);
 	
-	// TODO: Return status on error
 	return 0;
 }
 

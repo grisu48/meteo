@@ -54,6 +54,14 @@ int BMP180::read() {
 	this->p = bmp180_pressure(bmp);
 	this->alt = bmp180_altitude(bmp);
 	
+	// XXX: Dirty hack. Those values appear on an error, and up to now this
+	//      is the best we can do to detect errors.
+	//      Since we are having numerical values, the probability of having exact
+	//      those values is almost zero, so it should work in practice without
+	//      any side-effects
+	// PS. Yes, this is lazy :-)
+	if(this->t == 12.8 && this->p == 99975.0) return -1;
+	
 	return 0;
 }
 

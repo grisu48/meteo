@@ -36,11 +36,15 @@
 // Include sensors
 #include "sensors.hpp"
 #include "config.hpp"
+#include "string.hpp"
 
 
 using namespace std;
 using namespace sensors;
 using namespace meteo;
+using flex::String;
+
+
 
 // Sensor enable switches (1 = ENABLED, 0 = DISABLED)
 #define SENSOR_BMP180 1
@@ -116,6 +120,7 @@ protected:
     pthread_t tid = 0;
 public:
     Webserver(const int port);
+    Webserver(Webserver &&src);
     virtual ~Webserver();
     
     void close(void);
@@ -125,7 +130,7 @@ public:
     
     /** Run method for the thread */
     void run();
-}
+};
 
 
 UdpBroadcast::UdpBroadcast(std::string remote, int port) {
@@ -359,6 +364,7 @@ static volatile bool running = true;
 
 static vector<UdpBroadcast> broadcasts;
 static vector<TcpBroadcast> tcp_broadcasts;
+static vector<Webserver*> webservers;
 /** Static meteo configuration */
 static config_t config;
 
@@ -380,12 +386,14 @@ static void applyConfig(Config &config);
 static void deamonize();
 /** Create a listening IPv4 socket */
 static int createListeningSocket4(const int port);
+static void cleanup();
 
 /* ==== MAIN ================================================================ */
 
 int main(int argc, char** argv) {
 	bool verbose = false;
 	bool readConfig = true;		// Read configuration
+	vector<int> httpPorts;		// Ports where the webserver will be launched
 	
 	// First check, if the configuration is skipped	
 	for(int i=1;i<argc;i++) {
@@ -454,6 +462,11 @@ int main(int argc, char** argv) {
 					config.enabled_HTU21DF = true;
 					config.enabled_MCP9808 = true;
 					config.enabled_TSL2561 = true;
+				} else if(arg == "-H" || arg == "--http") {
+					if(isLast) throw "Missing argument: Webserver port";
+					const int port = ::atoi(argv[++i]);
+					if(port <= 0) throw "Illegal port";
+					httpPorts.push_back(port);
 				} else {
 					cerr << "Invalid program argument: " << arg << endl;
 					cout << "Type " << argv[0] << " --help, if you need help" << endl;
@@ -477,6 +490,7 @@ int main(int argc, char** argv) {
 	
 	
 	// Register signal handlers
+	atexit(cleanup);
     signal(SIGTERM, sig_handler);
     signal(SIGINT, sig_handler);
     signal(SIGUSR1, sig_handler);
@@ -519,6 +533,13 @@ int main(int argc, char** argv) {
     
     if(sensor_count == 0) {
     	cerr << "Warning: No sensors present" << endl;
+    }
+    
+    // Starting Webservers
+    for(vector<int>::const_iterator it = httpPorts.begin(); it != httpPorts.end(); ++it) {
+    	Webserver *server = new Webserver(*it);
+    	server->start();
+    	webservers.push_back(server);
     }
     
     if(verbose) cout << "Enter main routine ... " << endl;
@@ -716,6 +737,7 @@ static void printHelp(const char* progname) {
 	cout << "                            Definition of multiple endpoints is possible by" << endl;
 	cout << "                            Repeating the argument" << endl;
 	cout << "        --tcp REMOTE:PORT   Set endpoint for TCP data sent" << endl;
+	cout << "   -H   --http PORT         Start webserver on the given port" << endl;
 	cout << "        --probe             Probe all supported sensors" << endl;
 	cout << "        --bmp180            Enable BMP180 sensor (Pressure sensor)" << endl;
 	cout << "        --htu21df           Enable HTU21D-F sensor (Temperatue + Humidity)" << endl;
@@ -888,7 +910,19 @@ static int createListeningSocket4(const int port) {
 
 Webserver::Webserver(const int port) {
     this->port = port;
-    this->socket = createListeningSocket4(port);
+    this->sock = createListeningSocket4(port);
+    this->tid = 0;
+}
+
+Webserver::Webserver(Webserver &&src) {
+	if(src.tid != 0) throw "Cannot copy started webserver instance";
+	
+	this->port = src.port;
+    this->sock = src.sock;
+    this->tid = src.tid;
+    src.port = 0;
+    src.sock = 0;
+    src.tid = 0;
 }
 
 Webserver::~Webserver() {
@@ -899,6 +933,11 @@ void Webserver::close(void) {
     if(this->sock) {
         ::close(this->sock);
         this->sock = 0;
+    }
+    // Join thread
+    if(this->tid > 0) {
+    	pthread_join(this->tid, NULL);
+    	this->tid = 0;
     }
 }
 
@@ -912,6 +951,7 @@ static void * op_webserver_thread(void *attr) {
         cerr << "Unknown webserver error" << endl;
     }
     www->close();
+    return 0;
 }
 
 void Webserver::start() {
@@ -922,7 +962,8 @@ void Webserver::start() {
 }
 
 
-static void doHttpRequest(const inf fd) {
+/** Do the http request. return 0 on success and a negative number on error*/
+static int doHttpRequest(const int fd) {
 	// Process http request
 	Socket socket(fd);
 	
@@ -958,7 +999,7 @@ static void doHttpRequest(const inf fd) {
 	    // XXX Unsupported protocol
 		socket << "Unsupported protocol";
 		socket.close();
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	
 	// Switch requests uris
@@ -974,7 +1015,7 @@ static void doHttpRequest(const inf fd) {
         if (config.enabled_BMP180)
             socket << "<li><a href=\"bmp180\">BMP 180 Pressure/temperature sensor</a></li>";
 #endif
-
+#if SENSOR_HTU21DF == 1
         if (config.enabled_HTU21DF)
             socket << "<li><a href=\"htu21df\">HTU21-df Humidity/temperature sensor</a></li>";
 #endif
@@ -988,7 +1029,6 @@ static void doHttpRequest(const inf fd) {
 #endif
         socket << "</body>";
 
-
 	} else if(url == "/bmp180") {
 #if SENSOR_BMP180 == 1
         if (config.enabled_BMP180) {
@@ -997,6 +1037,7 @@ static void doHttpRequest(const inf fd) {
 	        if(ret != 0) {
 	            socket.writeHttpHeader(500);
 	            socket << "Error reading sensor";
+		    	return 500;
 	        } else {
 	            socket.writeHttpHeader();
 		        socket << bmp180.temperature() << " deg C\n";
@@ -1005,16 +1046,18 @@ static void doHttpRequest(const inf fd) {
 		} else {
 		    socket.writeHttpHeader(400);
 		    socket << "Sensor disabled";
+		    return 400;
 		}
 #endif
 	} else if(url == "/htu21df" || url == "/htu-21df") {
 #if SENSOR_HTU21DF == 1
 		if (config.enabled_BMP180) {
             HTU21DF htu21df(config.i2c_device);
-	        const int ret = bmp180.read();
+	        const int ret = htu21df.read();
 	        if(ret != 0) {
 	            socket.writeHttpHeader(500);
 	            socket << "Error reading sensor";
+		    	return 500;
 	        } else {
 	            socket.writeHttpHeader();
 		        socket << htu21df.temperature() << " deg C\n";
@@ -1023,6 +1066,7 @@ static void doHttpRequest(const inf fd) {
 		} else {
 		    socket.writeHttpHeader(400);
 		    socket << "Sensor disabled";
+		    return 400;
 		}
 #endif
 	} else if(url == "/mcp9808") {
@@ -1033,6 +1077,7 @@ static void doHttpRequest(const inf fd) {
 	        if(ret != 0) {
 	            socket.writeHttpHeader(500);
 	            socket << "Error reading sensor";
+		    	return 500;
 	        } else {
 	            socket.writeHttpHeader();
 		        socket << mcp9808.temperature() << " deg C\n";
@@ -1040,6 +1085,7 @@ static void doHttpRequest(const inf fd) {
 		} else {
 		    socket.writeHttpHeader(400);
 		    socket << "Sensor disabled";
+		    return 400;
 		}
 #endif
 	} else if(url == "/tsl2561") {
@@ -1050,6 +1096,7 @@ static void doHttpRequest(const inf fd) {
 	        if(ret != 0) {
 	            socket.writeHttpHeader(500);
 	            socket << "Error reading sensor";
+		    	return 500;
 	        } else {
 	            socket.writeHttpHeader();
 		        socket << tsl2561.visible() << " visible\n";
@@ -1058,6 +1105,7 @@ static void doHttpRequest(const inf fd) {
 		} else {
 		    socket.writeHttpHeader(400);
 		    socket << "Sensor disabled";
+		    return 400;
 		}
 #endif
 	} else {
@@ -1066,9 +1114,11 @@ static void doHttpRequest(const inf fd) {
 		socket << "Content-Type: text/html\n\n";
 		socket << "<html><head><title>Not found</title></head><body><h1>Not found</h1>";
 		socket << "<p>Error 404 - Sensor or page not found. Maybe you want to <a href=\"index.html\">go back to the homepage</a></p>";
+		return 400;
 	}
 	
-	exit(EXIT_SUCCESS);
+	// All good
+	return 0;
 }
 
 void Webserver::run() {
@@ -1077,12 +1127,22 @@ void Webserver::run() {
         const pid_t pid = fork();
 	    if(pid < 0) throw strerror(errno);
 	    if(pid == 0) {
-		    ::close(fd);		// Parent thread doesn't need the socket
-		    return;
-	    } else {
-	        doHttpRequest(fd);
+	        const int ret = doHttpRequest(fd);
 		    // Child ends with the end of the request
-	        exit(EXIT_SUCCESS;
+		    cout << ret << endl;
+	        exit(ret);
+	    } else {
+		    ::close(fd);		// Parent thread doesn't need the socket
+		    continue;
 	    }
     }
+    
+    // No running anymore
+    this->tid = 0;
+}
+
+void cleanup() {
+	for(vector<Webserver*>::const_iterator it = webservers.begin(); it != webservers.end(); ++it)
+		delete *it;
+	webservers.clear();
 }

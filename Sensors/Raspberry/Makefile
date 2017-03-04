@@ -13,10 +13,10 @@ CC_FLAGS=$(O_FLAGS) -std=c99
 
 
 # Binaries, object files, libraries and stuff
-LIBS=-lm
+LIBS=-lm -pthread
 INCLUDE=
 OBJS=sensor.o bmp180.o tsl2561.o mcp9808.o htu21df.o config.o string.o
-BINS=bmp180 tsl2561 mcp9808 htu21df meteo meteod
+BINS=bmp180 tsl2561 mcp9808 htu21df meteo
 LIB_FILE=libmeteo.so
 
 # Default generic instructions

@@ -1,15 +1,15 @@
-## I2C device
-#i2c = /dev/i2c-1
+# I2C device
+i2c = /dev/i2c-2
 
-## Station ID
-#id = 0
+# Station ID
+id = 1
 
-## Enabled Sensors for this instance
-#bmp180 = 1
-#htu21df = 1
-#mcp9808 = 1
-#tsl2561 = 1
+# Sensors for this instance
+bmp180 = 1
+htu21df = 1
+mcp9808 = 0
+tsl2561 = 0
 
-## Broadcasts
-#tcp = 127.0.0.1:5232
-#udp = 127.0.0.1:5232
+# Broadcasts
+#tcp = 192.168.0.100:5232
+udp = 192.168.0.100:5232

@@ -411,6 +411,8 @@ static int createListeningSocket4(const int port);
 static void cleanup();
 /** Detach a webserver. Return child pid */
 static pid_t startWebserver(const int port);
+/** Read sensor with fault tolerance */
+static int readSensor(Sensor &sensor);
 
 /* ==== MAIN ================================================================ */
 
@@ -597,7 +599,7 @@ int main(int argc, char** argv) {
 	Average pressure;
 #if SENSOR_BMP180 == 1
 		if (config.enabled_BMP180) {
-			ret = bmp180.read();
+			ret = readSensor(bmp180);
 			buffer << " bmp180=\"" << ret << "\" temperature_bmp180=\"" << bmp180.temperature() << "\" pressure=\"" << bmp180.pressure() << "\"";
 			if (ret == 0) {
 				temperature << bmp180.temperature();
@@ -607,7 +609,7 @@ int main(int argc, char** argv) {
 #endif
 #if SENSOR_HTU21DF == 1
 		if (config.enabled_HTU21DF) {
-			ret = htu21df.read();
+			ret = readSensor(htu21df);
 			buffer << " htu21df=\"" << ret << "\" temperature_htu21df=\"" << htu21df.temperature() << "\" humidity=\"" << htu21df.humidity() << "\"";
 			if (ret == 0) {
 				temperature << htu21df.temperature();
@@ -617,7 +619,7 @@ int main(int argc, char** argv) {
 #endif
 #if SENSOR_MCP9808 == 1
 		if (config.enabled_MCP9808) {
-			ret = mcp9808.read();
+			ret = readSensor(mcp9808);
 			buffer << " mcp9808=\"" << ret << "\" temperature_mcp9808=\"" << mcp9808.temperature() << "\"";
 			if(ret == 0) {
 				temperature << mcp9808.temperature();
@@ -626,7 +628,7 @@ int main(int argc, char** argv) {
 #endif
 #if SENSOR_TSL2561 == 1
 		 if (config.enabled_TSL2561) {
-			ret = tsl2561.read();
+			ret = readSensor(tsl2561);
 			buffer << " tsl2561=\"" << ret << "\" lux_visible=\"" << tsl2561.visible() << "\" lux_infrared=\"" << tsl2561.ir() << "\"";
 		}
 #endif
@@ -1044,7 +1046,7 @@ static int doHttpRequest(const int fd) {
 #if SENSOR_BMP180 == 1
         if (config.enabled_BMP180) {
             BMP180 bmp180(config.i2c_device);
-	        const int ret = bmp180.read();
+	        const int ret = readSensor(bmp180);
 	        if(ret != 0) {
 	            socket.writeHttpHeader(500);
 	            socket << "Error reading sensor";
@@ -1064,7 +1066,7 @@ static int doHttpRequest(const int fd) {
 #if SENSOR_HTU21DF == 1
 		if (config.enabled_BMP180) {
             HTU21DF htu21df(config.i2c_device);
-	        const int ret = htu21df.read();
+	        const int ret = readSensor(htu21df);
 	        if(ret != 0) {
 	            socket.writeHttpHeader(500);
 	            socket << "Error reading sensor";
@@ -1084,7 +1086,7 @@ static int doHttpRequest(const int fd) {
 #if SENSOR_MCP9808 == 1
 		if (config.enabled_BMP180) {
             MCP9808 mcp9808(config.i2c_device);
-	        const int ret = mcp9808.read();
+	        const int ret = readSensor(mcp9808);
 	        if(ret != 0) {
 	            socket.writeHttpHeader(500);
 	            socket << "Error reading sensor";
@@ -1103,7 +1105,7 @@ static int doHttpRequest(const int fd) {
 #if SENSOR_TSL2561 == 1
 		if (config.enabled_BMP180) {
             TSL2561 tsl2561(config.i2c_device);
-	        const int ret = tsl2561.read();
+	        const int ret = readSensor(tsl2561);
 	        if(ret != 0) {
 	            socket.writeHttpHeader(500);
 	            socket << "Error reading sensor";
@@ -1186,4 +1188,18 @@ void cleanup() {
 		kill(pid, SIGTERM);
 	}
 	children.clear();
+}
+
+static int readSensor(Sensor &sensor) {
+	int tries = 5;
+	int ret;
+	while(tries-- > 0) {
+		ret = sensor.read();
+		if(ret == 0) return ret;		// Done
+		
+		// Could be that someone else is currently reading, therefore we
+		// wait a little bit and try again
+		p_sleep(100);
+	}
+	return ret;
 }

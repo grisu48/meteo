@@ -73,20 +73,38 @@ public:
 		}
 	}
 	
+	void print(const char* str) {
+	    const size_t len = strlen(str);
+		if(len == 0) return;
+		this->write((void*)str, sizeof(char)*len);
+	}
+	
+	void println(const char* str) {
+	    this->print(str);
+		this->write("\n", sizeof(char));
+	}
+	
+	void print(const string &str) {
+	    const size_t len = str.size();
+		if(len == 0) return;
+		this->write((void*)str.c_str(), sizeof(char)*len);
+	}
+	
+	void println(const string &str) {
+	    this->print(str);
+		this->write("\n", sizeof(char));
+	}
+	
 	Socket& operator<<(const char c) {
 		this->write(&c, sizeof(char));
 		return (*this);
 	}
 	Socket& operator<<(const char* str) {
-		const size_t len = strlen(str);
-		if(len == 0) return (*this);
-		this->write((void*)str, sizeof(char)*len);
+		print(str);
 		return (*this);
 	}
 	Socket& operator<<(const string &str) {
-		const size_t len = str.size();
-		if(len == 0) return (*this);
-		this->write((void*)str.c_str(), sizeof(char)*len);
+		this->print(str);
 		return (*this);
 	}
 	
@@ -128,11 +146,27 @@ public:
 		String ret(ss.str());
 		return ret.trim();
 	}
+	
+	void writeHttpHeader(const int statusCode = 200) {
+            this->print("HTTP/1.1 ");
+            this->print(::to_string(statusCode));
+            this->print(" OK\n");
+            this->print("Content-Type:text/html\n");
+            this->print("\n");
+	}
 };
 
 
-int main() { //int argc, char** argv) {
+int main(int argc, char** argv) {
     int port = 8428;		// Default port
+    
+    // TODO: Parse program arguments
+    for(int i=1;i<argc;i++) {
+        String arg(argv[i]);
+        if(arg.isEmpty()) continue;
+        
+        
+    }
     
     try {
 	    sock = createListeningSocket4(port);
@@ -229,29 +263,44 @@ static void doRequest(const int fd) {
 		
 		// Now process request
 		if(!protocol.equalsIgnoreCase("HTTP/1.1")) {
-			// XXX: Unsupported protocol
+		    // XXX Unsupported protocol
+			socket << "Unsupported protocol";
 			socket.close();
 			return;
 		}
 		
 		// Switch now requests
-		if(url == "/") {
+		if(url == "/" || url == "index.html" || url == "index.html") {
 			// Default page
-			
-			
+            socket.writeHttpHeader();
+            socket << "<html><head><title>meteo Sensor node</title></head>";
+            socket << "<body>";
+            socket << "<h1>Meteo Sensor Node</h1>\n";
+            // XXX: Check for available sensors
+            socket << "<ul>";
+            socket << "<li><a href=\"bmp180\">BMP 180 Pressure/temperature sensor</a></li>";
+            socket << "<li><a href=\"htu21df\">HTU21-df Humidity/temperature sensor</a></li>";
+            socket << "<li><a href=\"mcp9808\">MCP9808 high accuracy temperature sensor</a></li>";
+            socket << "<li><a href=\"tsl2561\">TSL2561 luminosity sensor</a></li>";
+            socket << "</body>";
 		} else if(url == "/bmp180") {
-			
+			socket.writeHttpHeader();
+			socket << "Not yet supported";
 		} else if(url == "/htu21df" || url == "/htu-21df") {
-			
+			socket.writeHttpHeader();
+			socket << "Not yet supported";
 		} else if(url == "/mcp9808") {
-			
+			socket.writeHttpHeader();
+			socket << "Not yet supported";
 		} else if(url == "/tsl2561") {
-			
+			socket.writeHttpHeader();
+			socket << "Not yet supported";
 		} else {
 			// Not found
 			socket << "HTTP/1.1 404 Not Found\n";
 			socket << "Content-Type: text/html\n\n";
-			socket << "404 - Sensor or page not found";
+			socket << "<html><head><title>Not found</title></head><body><h1>Not found</h1>";
+			socket << "<p>Error 404 - Sensor or page not found. Maybe you want to <a href=\"index.html\">go back to the homepage</a></p>";
 		}
 		
 		socket.close();

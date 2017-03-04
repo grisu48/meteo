@@ -2,9 +2,9 @@
  * 
  * Title:         Meteo Main program
  * Author:        Felix Niederwanger
- * License:       Copyright (c), 2015 Felix Niederwanger
+ * License:       Copyright (c), 2017 Felix Niederwanger
  *                MIT license (http://opensource.org/licenses/MIT)
- * Description:   
+ * Description:   Meteo sensor node
  * 
  * =============================================================================
  */
@@ -31,6 +31,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <pthread.h>
 
 // Include sensors
 #include "sensors.hpp"
@@ -51,6 +52,7 @@ using namespace meteo;
 
 /* ==== CLASS DECLARATIONS ================================================== */
 
+/** Class for sending data over UDP */
 class UdpBroadcast {
 private:
 	int fd;
@@ -73,6 +75,7 @@ public:
 	ssize_t send(std::string msg);	
 };
 
+/** Class for sending the data over TCP */
 class TcpBroadcast {
 private:
 	string remote;
@@ -100,6 +103,29 @@ public:
 	/** Send the given message */
 	ssize_t send(std::string msg);	
 };
+
+/** Simple webserver instance */
+class Webserver {
+protected:
+    /** Port we're listening */
+    int port;
+    /** Server socket */
+    volatile int sock;
+    
+
+    pthread_t tid = 0;
+public:
+    Webserver(const int port);
+    virtual ~Webserver();
+    
+    void close(void);
+    
+    /** Start the webserver thread */
+    void start();
+    
+    /** Run method for the thread */
+    void run();
+}
 
 
 UdpBroadcast::UdpBroadcast(std::string remote, int port) {
@@ -174,6 +200,142 @@ ssize_t TcpBroadcast::send(std::string msg) {
 }
 
 
+/** Socket helper */
+class Socket {
+private:
+	int sock;
+	
+	ssize_t write(const void* buf, size_t len) {
+		if(sock <= 0) throw "Socket closed";
+		ssize_t ret = ::send(sock, buf, len, 0);
+		if(ret == 0) {
+			this->close();
+			throw "Socket closed";
+		} else if (ret < 0) 
+			throw strerror(errno);
+		else
+			return ret;
+	}
+	
+public:
+	Socket(int sock) { this->sock = sock; }
+	virtual ~Socket() { this->close(); }
+	void close() {
+		if(sock > 0) {
+			::close(sock);
+			sock = 0;
+		}
+	}
+	
+	void print(const char* str) {
+	    const size_t len = strlen(str);
+		if(len == 0) return;
+		this->write((void*)str, sizeof(char)*len);
+	}
+	
+	void println(const char* str) {
+	    this->print(str);
+		this->write("\n", sizeof(char));
+	}
+	
+	void print(const string &str) {
+	    const size_t len = str.size();
+		if(len == 0) return;
+		this->write((void*)str.c_str(), sizeof(char)*len);
+	}
+	
+	void println(const string &str) {
+	    this->print(str);
+		this->write("\n", sizeof(char));
+	}
+	
+	Socket& operator<<(const char c) {
+		this->write(&c, sizeof(char));
+		return (*this);
+	}
+	Socket& operator<<(const char* str) {
+		print(str);
+		return (*this);
+	}
+	Socket& operator<<(const string &str) {
+		this->print(str);
+		return (*this);
+	}
+	
+	Socket& operator<<(const int i) {
+	    string str = ::to_string(i);
+	    this->print(str);
+	    return (*this);
+	}
+	
+	Socket& operator<<(const long l) {
+	    string str = ::to_string(l);
+	    this->print(str);
+	    return (*this);
+	}
+	
+	Socket& operator<<(const float f) {
+	    string str = ::to_string(f);
+	    this->print(str);
+	    return (*this);
+	}
+	
+	Socket& operator<<(const double d) {
+	    string str = ::to_string(d);
+	    this->print(str);
+	    return (*this);
+	}
+	
+	Socket& operator>>(char &c) {
+		if(sock <= 0) throw "Socket closed";
+		ssize_t ret = ::recv(sock, &c, sizeof(char), 0);
+		if(ret == 0) {
+			this->close();
+			throw "Socket closed";
+		} else if (ret < 0) 
+			throw strerror(errno);
+		else
+			return (*this);
+	}
+	
+	Socket& operator>>(String &str) {
+		String line = readLine();
+		str = line;
+		return (*this);
+	}
+	
+	String readLine(void) {
+		if(sock <= 0) throw "Socket closed";
+		stringstream ss;
+		while(true) {
+			char c;
+			ssize_t ret = ::recv(sock, &c, sizeof(char), 0);
+			if(ret == 0) {
+				this->close();
+				throw "Socket closed";
+			} else if (ret < 0) 
+				throw strerror(errno);
+				
+			if(c == '\n')
+				break;
+			else
+				ss << c;
+		}
+		String ret(ss.str());
+		return ret.trim();
+	}
+	
+	void writeHttpHeader(const int statusCode = 200) {
+            this->print("HTTP/1.1 ");
+            this->print(::to_string(statusCode));
+            this->print(" OK\n");
+            this->print("Content-Type:text/html\n");
+            this->print("\n");
+	}
+};
+
+
+
 
 struct {
 	bool enabled_BMP180 = false;
@@ -216,6 +378,8 @@ static int p_sleep(long millis) { return p_sleep(millis, 0); }
 static void applyConfig(Config &config);
 /** Rung program as deamon */
 static void deamonize();
+/** Create a listening IPv4 socket */
+static int createListeningSocket4(const int port);
 
 /* ==== MAIN ================================================================ */
 
@@ -688,3 +852,237 @@ static void applyConfig(Config &conf) {
 	}
 }
 
+
+static int createListeningSocket4(const int port) {
+	const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+	if(sock < 0)
+		throw strerror(errno);
+	
+	try {
+		// Setup socket
+		struct sockaddr_in address;
+		address.sin_family = AF_INET;
+		address.sin_addr.s_addr = INADDR_ANY;
+		address.sin_port = htons (port);
+	
+		// Set reuse address and port
+		int enable = 1;
+		if (::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+			throw strerror(errno);
+		if (::setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) < 0)
+			throw strerror(errno);
+		
+		if (::bind(sock, (struct sockaddr *) &address, sizeof(address)) != 0)
+			throw strerror(errno);
+		
+		// Listen
+		if( ::listen(sock, 10) != 0)
+			throw strerror(errno);
+	} catch(...) {
+		::close(sock);
+		throw;
+	}
+	return sock;
+}
+
+
+Webserver::Webserver(const int port) {
+    this->port = port;
+    this->socket = createListeningSocket4(port);
+}
+
+Webserver::~Webserver() {
+    this->close();
+}
+
+void Webserver::close(void) {
+    if(this->sock) {
+        ::close(this->sock);
+        this->sock = 0;
+    }
+}
+
+static void * op_webserver_thread(void *attr) {
+    Webserver *www = (Webserver*)attr;
+    try {
+        www->run();
+    } catch(const char* msg) {
+        cerr << "Webserver error: " << msg << endl;
+    } catch(...) {
+        cerr << "Unknown webserver error" << endl;
+    }
+    www->close();
+}
+
+void Webserver::start() {
+    if(tid > 0) throw "Already started";
+    
+	if (pthread_create(&this->tid, NULL, op_webserver_thread, (void*)this) != 0)
+		throw "Error starting thread";
+}
+
+
+static void doHttpRequest(const inf fd) {
+	// Process http request
+	Socket socket(fd);
+	
+	// Read request
+	String line;
+	vector<String> header;
+	while(true) {
+		line = socket.readLine();
+		if(line.size() == 0) break;
+		else
+			header.push_back(String(line));
+	}
+	
+	// Search request for URL
+	String url;
+	String protocol = "";
+	for(vector<String>::const_iterator it = header.begin(); it != header.end(); ++it) {
+		String line = *it;
+		vector<String> split = line.split(" ");
+		if(split[0].equalsIgnoreCase("GET")) {
+			if(split.size() < 2) 
+				url = "/";
+			else {
+				url = split[1];
+				if(split.size() > 2)
+					protocol = split[2];
+			}
+		}
+	}
+	
+	// Now process request
+	if(!protocol.equalsIgnoreCase("HTTP/1.1")) {
+	    // XXX Unsupported protocol
+		socket << "Unsupported protocol";
+		socket.close();
+		exit(EXIT_FAILURE);
+	}
+	
+	// Switch requests uris
+	if(url == "/" || url == "index.html" || url == "index.html") {
+		// Default page
+        socket.writeHttpHeader();
+        socket << "<html><head><title>meteo Sensor node</title></head>";
+        socket << "<body>";
+        socket << "<h1>Meteo Sensor Node</h1>\n";
+        // XXX: Check for available sensors
+        socket << "<ul>";
+#if SENSOR_BMP180 == 1
+        if (config.enabled_BMP180)
+            socket << "<li><a href=\"bmp180\">BMP 180 Pressure/temperature sensor</a></li>";
+#endif
+
+        if (config.enabled_HTU21DF)
+            socket << "<li><a href=\"htu21df\">HTU21-df Humidity/temperature sensor</a></li>";
+#endif
+#if SENSOR_MCP9808 == 1
+        if (config.enabled_MCP9808)
+            socket << "<li><a href=\"mcp9808\">MCP9808 high accuracy temperature sensor</a></li>";
+#endif
+#if SENSOR_TSL2561 == 1
+        if (config.enabled_TSL2561)
+            socket << "<li><a href=\"tsl2561\">TSL2561 luminosity sensor</a></li>";
+#endif
+        socket << "</body>";
+
+
+	} else if(url == "/bmp180") {
+#if SENSOR_BMP180 == 1
+        if (config.enabled_BMP180) {
+            BMP180 bmp180(config.i2c_device);
+	        const int ret = bmp180.read();
+	        if(ret != 0) {
+	            socket.writeHttpHeader(500);
+	            socket << "Error reading sensor";
+	        } else {
+	            socket.writeHttpHeader();
+		        socket << bmp180.temperature() << " deg C\n";
+		        socket << bmp180.pressure() << " hPa";
+	        }
+		} else {
+		    socket.writeHttpHeader(400);
+		    socket << "Sensor disabled";
+		}
+#endif
+	} else if(url == "/htu21df" || url == "/htu-21df") {
+#if SENSOR_HTU21DF == 1
+		if (config.enabled_BMP180) {
+            HTU21DF htu21df(config.i2c_device);
+	        const int ret = bmp180.read();
+	        if(ret != 0) {
+	            socket.writeHttpHeader(500);
+	            socket << "Error reading sensor";
+	        } else {
+	            socket.writeHttpHeader();
+		        socket << htu21df.temperature() << " deg C\n";
+		        socket << htu21df.humidity() << " % rel";
+	        }
+		} else {
+		    socket.writeHttpHeader(400);
+		    socket << "Sensor disabled";
+		}
+#endif
+	} else if(url == "/mcp9808") {
+#if SENSOR_MCP9808 == 1
+		if (config.enabled_BMP180) {
+            MCP9808 mcp9808(config.i2c_device);
+	        const int ret = mcp9808.read();
+	        if(ret != 0) {
+	            socket.writeHttpHeader(500);
+	            socket << "Error reading sensor";
+	        } else {
+	            socket.writeHttpHeader();
+		        socket << mcp9808.temperature() << " deg C\n";
+	        }
+		} else {
+		    socket.writeHttpHeader(400);
+		    socket << "Sensor disabled";
+		}
+#endif
+	} else if(url == "/tsl2561") {
+#if SENSOR_TSL2561 == 1
+		if (config.enabled_BMP180) {
+            TSL2561 tsl2561(config.i2c_device);
+	        const int ret = tsl2561.read();
+	        if(ret != 0) {
+	            socket.writeHttpHeader(500);
+	            socket << "Error reading sensor";
+	        } else {
+	            socket.writeHttpHeader();
+		        socket << tsl2561.visible() << " visible\n";
+		        socket << tsl2561.ir() << " ir";
+	        }
+		} else {
+		    socket.writeHttpHeader(400);
+		    socket << "Sensor disabled";
+		}
+#endif
+	} else {
+		// Not found
+		socket << "HTTP/1.1 404 Not Found\n";
+		socket << "Content-Type: text/html\n\n";
+		socket << "<html><head><title>Not found</title></head><body><h1>Not found</h1>";
+		socket << "<p>Error 404 - Sensor or page not found. Maybe you want to <a href=\"index.html\">go back to the homepage</a></p>";
+	}
+	
+	exit(EXIT_SUCCESS);
+}
+
+void Webserver::run() {
+    while(this->sock > 0) {
+        const int fd = ::accept(sock, NULL, 0);
+        const pid_t pid = fork();
+	    if(pid < 0) throw strerror(errno);
+	    if(pid == 0) {
+		    ::close(fd);		// Parent thread doesn't need the socket
+		    return;
+	    } else {
+	        doHttpRequest(fd);
+		    // Child ends with the end of the request
+	        exit(EXIT_SUCCESS;
+	    }
+    }
+}

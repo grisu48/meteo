@@ -57,5 +57,3 @@ htu21df:	read_htu21df.cpp htu21df.o sensor.o
 meteo:	meteo.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) $(OBJS)
 	
-meteod:	http.cpp $(OBJS)
-	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) $(OBJS) 

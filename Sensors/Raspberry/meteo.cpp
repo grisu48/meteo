@@ -519,9 +519,15 @@ int main(int argc, char** argv) {
     // Starting Webservers. This must happend before registering signal handlers
     for(vector<int>::const_iterator it = httpPorts.begin(); it != httpPorts.end(); ++it) {
     	if(verbose) { cout << "Starting webserver (" << *it << ") ... "; cout.flush(); }
-    	static pid_t pid = startWebserver(*it);
-    	if(verbose) { cout << pid << endl; cout.flush(); }
-    	children.push_back(pid);
+    	try {
+	    	static pid_t pid = startWebserver(*it);
+	    	if(verbose) { cout << pid << endl; cout.flush(); }
+	    	if(pid > 0) 
+	    		children.push_back(pid);
+	    } catch (const char* msg) {
+	    	cerr << "Error starting webserver: " << msg << endl;
+	    	return EXIT_FAILURE;
+	    }
     }
 	
 	// Register signal handlers
@@ -949,8 +955,10 @@ static int createListeningSocket4(const int port) {
 		int enable = 1;
 		if (::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
 			throw strerror(errno);
+		#if 0
 		if (::setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) < 0)
 			throw strerror(errno);
+		#endif
 		
 		if (::bind(sock, (struct sockaddr *) &address, sizeof(address)) != 0)
 			throw strerror(errno);
@@ -1133,31 +1141,40 @@ static pid_t startWebserver(const int port) {
 		// Parent process. return pid
 		return pid;
 	} else {
-		// Child process. Actually start webserver
-		const int sock = createListeningSocket4(port);
+		try {
+			// Child process. Actually start webserver
+			const int sock = createListeningSocket4(port);
 		
-		while(true) {
-	        const int fd = ::accept(sock, NULL, 0);
-	        // Fork child
-	        pid = fork();
-	        if(pid < 0) {
-	        	cerr << "Cannot fork in web server: " << strerror(errno) << endl;
-	        	::close(pid);
-	        	continue;
-	        }
-	        if(pid == 0) {
-	        	// We don't need the listening socket here
-	        	::close(sock);
-	        	
-	        	// Process request
-	        	const int ret = doHttpRequest(fd);
-	        	exit(ret);
-	        } else {
-	        	// Parent process. We don't need the socket here
-	        	::close(fd);
-	        	continue;
-	        }
+			while(true) {
+			    const int fd = ::accept(sock, NULL, 0);
+			    // Fork child
+			    pid = fork();
+			    if(pid < 0) {
+			    	cerr << "Cannot fork in web server: " << strerror(errno) << endl;
+			    	::close(pid);
+			    	continue;
+			    }
+			    if(pid == 0) {
+			    	// We don't need the listening socket here
+			    	::close(sock);
+			    	
+			    	// Process request
+			    	const int ret = doHttpRequest(fd);
+			    	exit(ret);
+			    } else {
+			    	// Parent process. We don't need the socket here
+			    	::close(fd);
+			    	continue;
+			    }
+			}
+	    } catch (const char* msg) {
+	    	cerr << "Webserver error: " << msg << endl;
+	    	exit(EXIT_FAILURE);
+	    } catch (...) {
+	    	cerr << "Uncaught webserver error" << endl;
+	    	exit(EXIT_FAILURE);
 	    }
+	    return pid;
 	}
 }
 

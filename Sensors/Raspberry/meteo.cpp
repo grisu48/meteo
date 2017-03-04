@@ -15,6 +15,7 @@
 #include <string>
 #include <sstream>
 #include <fstream>
+#include <algorithm>
 
 
 #include <cstdlib>
@@ -23,6 +24,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <string.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -106,30 +108,6 @@ public:
 	ssize_t send(const char* msg, size_t size);
 	/** Send the given message */
 	ssize_t send(std::string msg);	
-};
-
-/** Simple webserver instance */
-class Webserver {
-protected:
-    /** Port we're listening */
-    int port;
-    /** Server socket */
-    volatile int sock;
-    
-
-    pthread_t tid = 0;
-public:
-    Webserver(const int port);
-    Webserver(Webserver &&src);
-    virtual ~Webserver();
-    
-    void close(void);
-    
-    /** Start the webserver thread */
-    void start();
-    
-    /** Run method for the thread */
-    void run();
 };
 
 
@@ -339,6 +317,48 @@ public:
 	}
 };
 
+class Average {
+private:
+	vector<double> values;
+	
+public:
+	Average() {};
+	virtual ~Average() {};
+	
+	Average &operator<<(const double v) {
+		this->values.push_back(v);
+		return (*this);
+	}
+	
+	double average(void) const {
+		const size_t len = this->values.size();
+		if(len == 0) return 0.0;
+		double ret = 0.0;
+		for(vector<double>::const_iterator it = values.begin(); it != values.end(); ++it)
+			ret += *it;
+		return ret /(double)len;
+	}
+	
+	size_t size(void) const { return this->values.size(); }
+	
+	void print(std::ostream &out = cout) {
+		const size_t len = size();
+		if(len == 0) {
+			out << "-";
+		} else if (len==1) {
+			out << values[0];
+		} else {
+			out << average() << " (";
+			bool first = true;
+			for(vector<double>::const_iterator it = values.begin(); it != values.end(); ++it) {
+				if(first) first = false;
+				else out << ", ";
+				out << *it;
+			}
+			out << ")";
+		}
+	}
+};
 
 
 
@@ -351,7 +371,8 @@ struct {
 	int station_id = 0;
 	string i2c_device = std::string(Sensor::DEFAULT_I2C_DEVICE);
 	long delay = 1000L;		// Delay between iterations in milliseconds
-	int reportEvery = 0;	// Report every N iterations 	XXX: NOT YET IMPLEMENTED
+	int reportEvery = 0;	// Report every N iterations
+	bool display = false;	// Display measurement on screen
 } typedef config_t;
 
 /* ==== END OF CLASS DECLARATIONS =========================================== */
@@ -359,15 +380,15 @@ struct {
 // Global running flag
 static volatile bool running = true;
 
-// XXX: Don't use static variables, you lazy! :-)
-
-
+/** All udp-broadcast instances */
 static vector<UdpBroadcast> broadcasts;
+/** All attached tcp-broadcast instances */
 static vector<TcpBroadcast> tcp_broadcasts;
-static vector<Webserver*> webservers;
 /** Static meteo configuration */
 static config_t config;
 
+/** List of all child processes */
+static vector<pid_t> children;
 
 
 static bool probeSensor(Sensor& sensor);
@@ -386,7 +407,10 @@ static void applyConfig(Config &config);
 static void deamonize();
 /** Create a listening IPv4 socket */
 static int createListeningSocket4(const int port);
+/** Cleanup procedure at end */
 static void cleanup();
+/** Detach a webserver. Return child pid */
+static pid_t startWebserver(const int port);
 
 /* ==== MAIN ================================================================ */
 
@@ -442,6 +466,9 @@ int main(int argc, char** argv) {
 					if(isLast) throw "Missing argument: Delay time";
 					config.delay = atol(argv[++i]);
 					if(config.delay <= 0) throw "Illegal delay time";
+					
+				} else if(arg == "--display") {
+					config.display = true;
 				} else if(arg == "--daemon") {
 					config.daemonize = true;
 				} else if(arg == "--i2c" || arg == "--device") {
@@ -488,6 +515,14 @@ int main(int argc, char** argv) {
 		cout << "Running as daemon" << endl;
 	}
 	
+    
+    // Starting Webservers. This must happend before registering signal handlers
+    for(vector<int>::const_iterator it = httpPorts.begin(); it != httpPorts.end(); ++it) {
+    	if(verbose) { cout << "Starting webserver (" << *it << ") ... "; cout.flush(); }
+    	static pid_t pid = startWebserver(*it);
+    	if(verbose) { cout << pid << endl; cout.flush(); }
+    	children.push_back(pid);
+    }
 	
 	// Register signal handlers
 	atexit(cleanup);
@@ -495,6 +530,7 @@ int main(int argc, char** argv) {
     signal(SIGINT, sig_handler);
     signal(SIGUSR1, sig_handler);
     signal(SIGUSR2, sig_handler);
+    signal(SIGCHLD, sig_handler);
     
     if(verbose) {
     	if(broadcasts.size() > 0) {
@@ -535,13 +571,6 @@ int main(int argc, char** argv) {
     	cerr << "Warning: No sensors present" << endl;
     }
     
-    // Starting Webservers
-    for(vector<int>::const_iterator it = httpPorts.begin(); it != httpPorts.end(); ++it) {
-    	Webserver *server = new Webserver(*it);
-    	server->start();
-    	webservers.push_back(server);
-    }
-    
     if(verbose) cout << "Enter main routine ... " << endl;
     stringstream buffer;
     const long delay = config.delay;
@@ -557,28 +586,36 @@ int main(int argc, char** argv) {
     	vector<double> avg_temperature;
     	
 	int ret;
+	Average temperature;
+	Average humidity;
+	Average pressure;
 #if SENSOR_BMP180 == 1
 		if (config.enabled_BMP180) {
 			ret = bmp180.read();
 			buffer << " bmp180=\"" << ret << "\" temperature_bmp180=\"" << bmp180.temperature() << "\" pressure=\"" << bmp180.pressure() << "\"";
-			if (ret == 0)
-				avg_temperature.push_back(bmp180.temperature());
+			if (ret == 0) {
+				temperature << bmp180.temperature();
+				pressure << bmp180.pressure();
+			}
 		}
 #endif
 #if SENSOR_HTU21DF == 1
 		if (config.enabled_HTU21DF) {
 			ret = htu21df.read();
 			buffer << " htu21df=\"" << ret << "\" temperature_htu21df=\"" << htu21df.temperature() << "\" humidity=\"" << htu21df.humidity() << "\"";
-			if (ret == 0)
-				avg_temperature.push_back(htu21df.temperature());
+			if (ret == 0) {
+				temperature << htu21df.temperature();
+				humidity << htu21df.humidity();
+			}
 		}
 #endif
 #if SENSOR_MCP9808 == 1
 		if (config.enabled_MCP9808) {
 			ret = mcp9808.read();
 			buffer << " mcp9808=\"" << ret << "\" temperature_mcp9808=\"" << mcp9808.temperature() << "\"";
-			if(ret == 0)
-				avg_temperature.push_back(mcp9808.temperature());
+			if(ret == 0) {
+				temperature << mcp9808.temperature();
+			}
 		}
 #endif
 #if SENSOR_TSL2561 == 1
@@ -588,18 +625,14 @@ int main(int argc, char** argv) {
 		}
 #endif
     	
-    	
-		if(avg_temperature.size() > 0) {
-			double temp = 0.0;
-			int count = 0;
-			for(vector<double>::iterator it = avg_temperature.begin(); it != avg_temperature.end(); ++it) {
-				temp += *it;
-				count += 1;
-			}
-			if(count > 0) {
-				temp /= (double)count;
-				buffer << " temperature=\"" << temp << "\"";
-			}
+    	if(temperature.size() > 0) {
+			buffer << " temperature=\"" << temperature.average() << "\"";
+		}
+		if(humidity.size() > 0) {
+			buffer << " humidity=\"" << humidity.average() << "\"";
+		}
+		if(pressure.size() > 0) {
+			buffer << " pressure=\"" << pressure.average() << "\"";
 		}
     	
     	buffer << "/>";
@@ -609,7 +642,13 @@ int main(int argc, char** argv) {
     		iteration = 0;
     	
 			string message = buffer.str() + "\n";
-			cout << message;
+			if(verbose) cout << message;
+			else if (config.display) {
+				// Pretty output
+				if(temperature.size() > 0) { cout << "Temperature:  "; temperature.print(); cout << endl; }
+				if(humidity.size() > 0) { cout << "Humidity:     "; humidity.print(); cout << endl; }
+				if(pressure.size() > 0) { cout << "Pressure:     "; pressure.print(); cout << endl; }
+			}
 			ssize_t ret;
 	    	for(vector<UdpBroadcast>::iterator it=broadcasts.begin(); it != broadcasts.end(); it++)
     			(*it).send(message);
@@ -739,6 +778,7 @@ static void printHelp(const char* progname) {
 	cout << "        --tcp REMOTE:PORT   Set endpoint for TCP data sent" << endl;
 	cout << "   -H   --http PORT         Start webserver on the given port" << endl;
 	cout << "        --probe             Probe all supported sensors" << endl;
+	cout << "        --display           Pretty print sensor readings (disabled when verbose is on)" << endl;
 	cout << "        --bmp180            Enable BMP180 sensor (Pressure sensor)" << endl;
 	cout << "        --htu21df           Enable HTU21D-F sensor (Temperatue + Humidity)" << endl;
 	cout << "        --mcp9808           Enable MCP9808 sensor (High accuracy temperature)" << endl;
@@ -755,6 +795,10 @@ static void printHelp(const char* progname) {
     cout << "  and the program arguments overwrite them again for even more local settings" << endl;
 }
 
+static inline void unregister_child(const pid_t pid) {
+	children.erase(std::remove(children.begin(), children.end(), pid), children.end());
+}
+
 static void sig_handler(int sig_no) {
 	switch(sig_no) {
 		case SIGTERM:
@@ -765,6 +809,16 @@ static void sig_handler(int sig_no) {
 			} else {
 				cerr << "Termination request" << endl;
 				running = false;
+			}
+			break;
+		case SIGCHLD:		// Child ended
+			{
+				pid_t pid;		// pid of the child that exited
+				int status;		// Exit status
+				while( (pid = waitpid((pid_t)-1, &status, WNOHANG)) > 0) {
+					cerr << "WARNING: Child " << pid << " terminated with status " << status << endl;
+					unregister_child(pid);
+				}
 			}
 	}
 }
@@ -829,8 +883,12 @@ static int p_sleep(long millis, long micros) {
 		case EFAULT:
 			return -1;
 		case EINTR:
-			// Note: In "rem" the remaining time is stored
-			return -2;
+			// Interrupted, sleep remaining time
+			millis = rem.tv_sec * 1000L;
+			micros = rem.tv_nsec / 1000L;
+			millis += micros/1000L;
+			micros -= millis * 1000L;
+			return p_sleep(millis, micros);
 		case EINVAL:
 			return -3;
 		default :
@@ -906,61 +964,6 @@ static int createListeningSocket4(const int port) {
 	}
 	return sock;
 }
-
-
-Webserver::Webserver(const int port) {
-    this->port = port;
-    this->sock = createListeningSocket4(port);
-    this->tid = 0;
-}
-
-Webserver::Webserver(Webserver &&src) {
-	if(src.tid != 0) throw "Cannot copy started webserver instance";
-	
-	this->port = src.port;
-    this->sock = src.sock;
-    this->tid = src.tid;
-    src.port = 0;
-    src.sock = 0;
-    src.tid = 0;
-}
-
-Webserver::~Webserver() {
-    this->close();
-}
-
-void Webserver::close(void) {
-    if(this->sock) {
-        ::close(this->sock);
-        this->sock = 0;
-    }
-    // Join thread
-    if(this->tid > 0) {
-    	pthread_join(this->tid, NULL);
-    	this->tid = 0;
-    }
-}
-
-static void * op_webserver_thread(void *attr) {
-    Webserver *www = (Webserver*)attr;
-    try {
-        www->run();
-    } catch(const char* msg) {
-        cerr << "Webserver error: " << msg << endl;
-    } catch(...) {
-        cerr << "Unknown webserver error" << endl;
-    }
-    www->close();
-    return 0;
-}
-
-void Webserver::start() {
-    if(tid > 0) throw "Already started";
-    
-	if (pthread_create(&this->tid, NULL, op_webserver_thread, (void*)this) != 0)
-		throw "Error starting thread";
-}
-
 
 /** Do the http request. return 0 on success and a negative number on error*/
 static int doHttpRequest(const int fd) {
@@ -1121,28 +1124,49 @@ static int doHttpRequest(const int fd) {
 	return 0;
 }
 
-void Webserver::run() {
-    while(this->sock > 0) {
-        const int fd = ::accept(sock, NULL, 0);
-        const pid_t pid = fork();
-	    if(pid < 0) throw strerror(errno);
-	    if(pid == 0) {
-	        const int ret = doHttpRequest(fd);
-		    // Child ends with the end of the request
-		    cout << ret << endl;
-	        exit(ret);
-	    } else {
-		    ::close(fd);		// Parent thread doesn't need the socket
-		    continue;
+
+static pid_t startWebserver(const int port) {
+	pid_t pid = fork();
+	if(pid < 0) 
+		throw strerror(errno);
+	if(pid > 0) {
+		// Parent process. return pid
+		return pid;
+	} else {
+		// Child process. Actually start webserver
+		const int sock = createListeningSocket4(port);
+		
+		while(true) {
+	        const int fd = ::accept(sock, NULL, 0);
+	        // Fork child
+	        pid = fork();
+	        if(pid < 0) {
+	        	cerr << "Cannot fork in web server: " << strerror(errno) << endl;
+	        	::close(pid);
+	        	continue;
+	        }
+	        if(pid == 0) {
+	        	// We don't need the listening socket here
+	        	::close(sock);
+	        	
+	        	// Process request
+	        	const int ret = doHttpRequest(fd);
+	        	exit(ret);
+	        } else {
+	        	// Parent process. We don't need the socket here
+	        	::close(fd);
+	        	continue;
+	        }
 	    }
-    }
-    
-    // No running anymore
-    this->tid = 0;
+	}
 }
 
+
 void cleanup() {
-	for(vector<Webserver*>::const_iterator it = webservers.begin(); it != webservers.end(); ++it)
-		delete *it;
-	webservers.clear();
+	// Close all children
+	for(vector<pid_t>::const_iterator it = children.begin(); it != children.end(); ++it) {
+		const pid_t pid = *it;
+		kill(pid, SIGTERM);
+	}
+	children.clear();
 }

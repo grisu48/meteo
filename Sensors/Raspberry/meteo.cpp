@@ -443,6 +443,7 @@ int main(int argc, char** argv) {
 
 	// Parse all arguments
 	try {
+		bool displaySet = false;
 		for(int i=1;i<argc;i++) {
 			string arg = string(argv[i]);
 			const bool isLast = i >= argc-1;
@@ -471,6 +472,7 @@ int main(int argc, char** argv) {
 					
 				} else if(arg == "--display") {
 					config.display = true;
+					displaySet = true;
 				} else if(arg == "--daemon") {
 					config.daemonize = true;
 				} else if(arg == "--i2c" || arg == "--device") {
@@ -503,6 +505,11 @@ int main(int argc, char** argv) {
 				}
 			
 			}
+		}
+		
+		// Enable display, if not daemon
+		if(!displaySet) {
+			if(!config.daemonize) config.display = true;
 		}
 	} catch (const char* msg) {
 		cerr << "Error in program parameters: " << msg << endl;
@@ -891,7 +898,10 @@ static int p_sleep(long millis, long micros) {
 		case EFAULT:
 			return -1;
 		case EINTR:
-			// Interrupted, sleep remaining time
+			// Interrupted
+			if(!running) return -2;
+			
+			// Is still running, so sleep remaining time
 			millis = rem.tv_sec * 1000L;
 			micros = rem.tv_nsec / 1000L;
 			millis += micros/1000L;
@@ -1121,6 +1131,62 @@ static int doHttpRequest(const int fd) {
 		    return 400;
 		}
 #endif
+	} else if(url == "/sensors" || url == "/readings") {
+		
+    	// Setting up sensors
+		int errors = 0;
+		stringstream ss;
+#if SENSOR_BMP180 == 1
+		BMP180 bmp180(config.i2c_device);
+		if (config.enabled_BMP180) {
+			if(readSensor(bmp180) == 0) {
+				ss << "BMP180: " << bmp180.temperature() << " deg C, " << bmp180.pressure() << " hPa" << "\r\n";
+			} else
+				errors++;
+		}
+#endif
+#if SENSOR_HTU21DF == 1
+		HTU21DF htu21df(config.i2c_device);
+		if (config.enabled_HTU21DF) {
+			if(readSensor(htu21df) == 0) {
+				ss << "HTU21D-F: " << htu21df.temperature() << " deg C, " << htu21df.humidity() << " % rel" << "\r\n";
+			} else
+				errors++;
+		}
+#endif
+#if SENSOR_MCP9808 == 1
+		MCP9808 mcp9808(config.i2c_device);
+		if (config.enabled_MCP9808) {
+			if(readSensor(mcp9808) == 0) {
+				ss << "MCP9808: " << mcp9808.temperature() << " deg C" << "\r\n";
+			} else
+				errors++;
+		}
+#endif
+#if SENSOR_TSL2561 == 1
+		TSL2561 tsl2561(config.i2c_device);
+		if (config.enabled_TSL2561) {
+			if(readSensor(tsl2561) == 0) {
+				ss << "TSL2561: " << tsl2561.visible() << " visible, " << tsl2561.ir() << " ir" << "\r\n";
+			} else
+				errors++;
+		
+		}
+#endif
+
+		// Manual header
+		
+		int statusCode = 200;
+		if(errors > 0) statusCode = 500;
+		
+        socket.print("HTTP/1.1 ");
+        socket.print(::to_string(statusCode));
+        socket.print(" OK\r\n");
+        socket.print("Content-Type:text/plain\r\n");
+        socket.print("\r\n");
+		
+		socket << ss.str();
+		socket.close();
 	} else {
 		// Not found
 		socket << "HTTP/1.1 404 Not Found\n";

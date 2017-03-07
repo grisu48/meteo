@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Meteo client instance
+ * Meteo default TCP client instance
  * 
  * @author phoenix
  *
@@ -36,9 +36,13 @@ public class Meteo {
 		public void onError(final IOException e);
 	}
 
+	/** Socket to communicate with host */
 	private final Socket socket;
+	/** Inputstream of the socket */
 	private final InputStream in;
+	/** {@link OutputStream} of the socekt */
 	private final OutputStream out;
+	/** Writer to the socket */
 	private final PrintWriter writer;
 
 	/** Receiver thread, if setup */
@@ -58,6 +62,12 @@ public class Meteo {
 		super.finalize();
 	}
 
+	/**
+	 * Close ignore consequences
+	 * 
+	 * @param closeable
+	 *            To be closed
+	 */
 	private void close(final Closeable closeable) {
 		try {
 			closeable.close();
@@ -65,6 +75,9 @@ public class Meteo {
 		}
 	}
 
+	/**
+	 * Close all connections to the host
+	 */
 	public synchronized void close() {
 		close(writer);
 		close(out);
@@ -107,14 +120,22 @@ public class Meteo {
 		return buffer.toString();
 	}
 
-	private Map<String, String> parseLine(final String line)
+	static Map<String, String> parseLine(String line)
 			throws IllegalArgumentException {
 
 		// XXX Trivial XML parser. This is currently a ugly hack
-		if (!(line.startsWith("<Node ") && line.endsWith(" />")))
-			throw new IllegalArgumentException("Illegal format");
+		line = line.trim().toLowerCase();
+		if (line.isEmpty())
+			throw new IllegalArgumentException("Empty input");
 
-		String data = line.substring(6, line.length() - 6 - 3).trim();
+		String data = "";
+		if ((line.startsWith("<node ") && line.endsWith("/>"))) {
+			data = line.substring(6, line.length() - 6 - 2).trim();
+		} else if ((line.startsWith("<meteo ") && line.endsWith("/>"))) {
+			data = line.substring(7, line.length() - 7 - 2).trim();
+		} else {
+			throw new IllegalArgumentException("Illegal format");
+		}
 
 		final Map<String, String> ret = new HashMap<String, String>();
 
@@ -185,6 +206,13 @@ public class Meteo {
 		}
 	}
 
+	/**
+	 * Receive a single {@link MeteoData} dataset
+	 * 
+	 * @return Next arriving {@link MeteoData} dataset
+	 * @throws IOException
+	 *             Thrown if occurring while reading from host
+	 */
 	public synchronized MeteoData receive() throws IOException {
 		final String line = readLine();
 

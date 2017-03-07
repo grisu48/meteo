@@ -124,14 +124,15 @@ public class Meteo {
 			throws IllegalArgumentException {
 
 		// XXX Trivial XML parser. This is currently a ugly hack
-		line = line.trim().toLowerCase();
+		line = line.trim();
+		String lline = line.toLowerCase();
 		if (line.isEmpty())
 			throw new IllegalArgumentException("Empty input");
 
 		String data = "";
-		if ((line.startsWith("<node ") && line.endsWith("/>"))) {
+		if ((lline.startsWith("<node ") && lline.endsWith("/>"))) {
 			data = line.substring(6, line.length() - 6 - 2).trim();
-		} else if ((line.startsWith("<meteo ") && line.endsWith("/>"))) {
+		} else if ((lline.startsWith("<meteo ") && lline.endsWith("/>"))) {
 			data = line.substring(7, line.length() - 7 - 2).trim();
 		} else {
 			throw new IllegalArgumentException("Illegal format");

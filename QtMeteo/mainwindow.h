@@ -7,13 +7,14 @@
 #include <QDateTime>
 #include <QVector>
 #include <QMap>
+#include <QDir>
 
 
-#include "receiverthread.h"
 #include "qweatherdata.h"
 #include "stations.h"
 
 #include "receiver.h"
+#include "configfile.h"
 
 #define DEFAULT_PORT 8888
 
@@ -35,7 +36,6 @@ private slots:
     void on_actionQuit_triggered();
     void on_actionConnect_triggered();
     void on_actionClose_triggered();
-    void on_actionReconnect_triggered();
 
 
     void receiver_newData(const WeatherData &data);
@@ -43,10 +43,15 @@ private slots:
     void receiver_parseError(QString &message, QString &packet);
 
 
+    void on_actionListen_triggered();
+
+    void on_actionClear_triggered();
+
 private:
     Ui::MainWindow *ui;
 
     Receiver receiver;
+    ConfigFile *config;
 
     void connectTcp(QString remote, int port = 8888);
     void listenUdp(const int port = 5232);

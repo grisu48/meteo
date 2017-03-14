@@ -20,14 +20,27 @@ MainWindow::MainWindow(QWidget *parent) :
 
     connect(&this->receiver, SIGNAL(dataArrival(WeatherData)), this, SLOT(receiver_newData(WeatherData)));
 
-    // Try to connect to patatoe.wg
-    this->connectTcp("patatoe.wg", DEFAULT_PORT);
-    this->listenUdp();
+    QString configFilename = QDir::homePath() + QDir::separator() + ".qtmeteo.cf";
+    config = new ConfigFile(configFilename);
+    if(config->fileExists()) {
+        if(config->contains("connect")) {
+            QString remote = (*config)["connect"];
+            this->connectTcp(remote, DEFAULT_PORT);
+        }
+        if(config->contains("listen")) {
+            QString s_port = (*config)["listen"];
+            bool ok;
+            const int port = s_port.toInt(&ok);
+            if(ok)
+                this->listenUdp(port);
+        }
+    }
 }
 
 MainWindow::~MainWindow()
 {
     this->closeConnection();
+    delete config;
     delete ui;
 }
 
@@ -84,7 +97,6 @@ void MainWindow::listenUdp(const int port) {
 
 void MainWindow::on_actionConnect_triggered()
 {
-
     QInputDialog qInput(this);
     qInput.setLabelText("Remote server");
     QString text = "";
@@ -137,21 +149,20 @@ void MainWindow::receiver_newData(const WeatherData &data) {
         w_widgets[station] = widget;
         ui->lySensors->addWidget(widget);
 
-        QString name;
+        QString name = "Station " + QString::number(station);
+        QString key = "station_" +  QString::number(station);
+        if(config->contains(key))
+            name = (*config)[key];
+
         if(station == S_ID_FLEX) {
-            name = "Flex' room";
             widget->setTemperatureRange(10,30);
             widget->setHumidity(20,60);
         } else if(station == S_ID_OUTDOOR) {
-            name = "Outdoors";
             widget->setTemperatureRange(-20,40);
             widget->setHumidity(0,100);
         } else if(station == S_ID_LIVING) {
-            name = "Living room";
             widget->setTemperatureRange(10,30);
             widget->setHumidity(20,60);
-        } else {
-            name = "Station " + QString::number(station);
         }
 
         widget->setName(name);
@@ -181,8 +192,36 @@ void MainWindow::on_actionClose_triggered()
     this->closeConnection();
 }
 
-void MainWindow::on_actionReconnect_triggered()
+void MainWindow::on_actionListen_triggered()
 {
-    this->closeConnection();
-    this->connectTcp(this->remote, this->port);
+    QInputDialog qInput(this);
+    qInput.setLabelText("Local UDP port");
+    qInput.setTextValue("5232");
+    qInput.setCancelButtonText("Cancel");
+    qInput.setOkButtonText("Connect");
+    qInput.setToolTip("PORT");
+    qInput.show();
+    qInput.exec();
+    QString remote = qInput.textValue().trimmed();
+    if(remote.isEmpty()) return;
+
+    try {
+        bool ok;
+        int port = remote.toInt(&ok);
+        if(ok)
+            this->listenUdp(port);
+
+    } catch (const char* msg) {
+        ui->lblStatus->setText("Error: " + QString(msg));
+    }
+
+}
+
+void MainWindow::on_actionClear_triggered()
+{
+    foreach(QWeatherData *widget, w_widgets.values()) {
+        ui->lySensors->removeWidget(widget);
+        delete widget;
+    }
+    w_widgets.clear();
 }

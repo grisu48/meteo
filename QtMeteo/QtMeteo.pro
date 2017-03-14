@@ -15,23 +15,23 @@ CONFIG += c++11
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    receiverthread.cpp \
     qcustomplot.cpp \
     qweatherdata.cpp \
     weatherdata.cpp \
     receiver.cpp \
     tcpreceiver.cpp \
-    udpreceiver.cpp
+    udpreceiver.cpp \
+    configfile.cpp
 
 HEADERS  += mainwindow.h \
-    receiverthread.h \
     qcustomplot.h \
     qweatherdata.h \
     stations.h \
     weatherdata.h \
     receiver.h \
     tcpreceiver.h \
-    udpreceiver.h
+    udpreceiver.h \
+    configfile.h
 
 FORMS    += mainwindow.ui \
     qweatherdata.ui

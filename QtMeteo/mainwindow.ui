@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>441</width>
-    <height>612</height>
+    <width>485</width>
+    <height>604</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -25,8 +25,8 @@
         <rect>
          <x>0</x>
          <y>0</y>
-         <width>421</width>
-         <height>507</height>
+         <width>465</width>
+         <height>485</height>
         </rect>
        </property>
        <layout class="QGridLayout" name="gridLayout_2">
@@ -71,7 +71,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>441</width>
+     <width>485</width>
      <height>25</height>
     </rect>
    </property>
@@ -80,18 +80,19 @@
      <string>File</string>
     </property>
     <addaction name="actionConnect"/>
-    <addaction name="actionReconnect"/>
+    <addaction name="actionListen"/>
     <addaction name="actionClose"/>
     <addaction name="separator"/>
     <addaction name="actionQuit"/>
    </widget>
-   <widget class="QMenu" name="menuView">
+   <widget class="QMenu" name="menuStations">
     <property name="title">
-     <string>View</string>
+     <string>Stations</string>
     </property>
+    <addaction name="actionClear"/>
    </widget>
    <addaction name="menuFile"/>
-   <addaction name="menuView"/>
+   <addaction name="menuStations"/>
   </widget>
   <widget class="QToolBar" name="mainToolBar">
    <attribute name="toolBarArea">
@@ -101,7 +102,12 @@
     <bool>false</bool>
    </attribute>
    <addaction name="separator"/>
+   <addaction name="actionConnect"/>
+   <addaction name="actionListen"/>
    <addaction name="separator"/>
+   <addaction name="actionClose"/>
+   <addaction name="separator"/>
+   <addaction name="actionClear"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="actionQuit">
@@ -134,9 +140,14 @@
     <string>Ctrl+W</string>
    </property>
   </action>
-  <action name="actionReconnect">
+  <action name="actionListen">
    <property name="text">
-    <string>Reconnect</string>
+    <string>Listen ...</string>
+   </property>
+  </action>
+  <action name="actionClear">
+   <property name="text">
+    <string>Clear</string>
    </property>
   </action>
  </widget>

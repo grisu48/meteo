@@ -26,7 +26,7 @@
          <x>0</x>
          <y>0</y>
          <width>421</width>
-         <height>493</height>
+         <height>507</height>
         </rect>
        </property>
        <layout class="QGridLayout" name="gridLayout_2">
@@ -100,10 +100,7 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="actionConnect"/>
-   <addaction name="actionReconnect"/>
    <addaction name="separator"/>
-   <addaction name="actionClose"/>
    <addaction name="separator"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>

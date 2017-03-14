@@ -17,13 +17,21 @@ SOURCES += main.cpp\
         mainwindow.cpp \
     receiverthread.cpp \
     qcustomplot.cpp \
-    qweatherdata.cpp
+    qweatherdata.cpp \
+    weatherdata.cpp \
+    receiver.cpp \
+    tcpreceiver.cpp \
+    udpreceiver.cpp
 
 HEADERS  += mainwindow.h \
     receiverthread.h \
     qcustomplot.h \
     qweatherdata.h \
-    stations.h
+    stations.h \
+    weatherdata.h \
+    receiver.h \
+    tcpreceiver.h \
+    udpreceiver.h
 
 FORMS    += mainwindow.ui \
     qweatherdata.ui

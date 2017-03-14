@@ -13,6 +13,8 @@
 #include "qweatherdata.h"
 #include "stations.h"
 
+#include "receiver.h"
+
 #define DEFAULT_PORT 8888
 
 namespace Ui {
@@ -36,7 +38,7 @@ private slots:
     void on_actionReconnect_triggered();
 
 
-    void receiver_newData(const long station, QMap<QString, double> values);
+    void receiver_newData(const WeatherData &data);
     void receiver_error(int socketError, const QString &message);
     void receiver_parseError(QString &message, QString &packet);
 
@@ -44,9 +46,10 @@ private slots:
 private:
     Ui::MainWindow *ui;
 
-    ReceiverThread *receiver = NULL;
+    Receiver receiver;
 
-    void connectStation(QString remote, int port = 8888);
+    void connectTcp(QString remote, int port = 8888);
+    void listenUdp(const int port = 5232);
     void closeConnection(void);
 
     /** Currently connected remote */

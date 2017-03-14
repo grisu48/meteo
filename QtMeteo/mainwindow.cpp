@@ -16,10 +16,13 @@ MainWindow::MainWindow(QWidget *parent) :
 
     qRegisterMetaType<QMap<QString,double> >("QMap<QString,double>");
     qRegisterMetaType<QString>("QString");
+    qRegisterMetaType< WeatherData >("WeatherData");
+
+    connect(&this->receiver, SIGNAL(dataArrival(WeatherData)), this, SLOT(receiver_newData(WeatherData)));
 
     // Try to connect to patatoe.wg
-    this->connectStation("patatoe.wg", DEFAULT_PORT);
-
+    this->connectTcp("patatoe.wg", DEFAULT_PORT);
+    this->listenUdp();
 }
 
 MainWindow::~MainWindow()
@@ -29,12 +32,7 @@ MainWindow::~MainWindow()
 }
 
 void MainWindow::closeConnection(void) {
-    if(this->receiver == NULL) return;
-    else {
-        this->receiver->close();
-        this->receiver->deleteLater();
-        this->receiver = NULL;
-    }
+    this->receiver.close();
     ui->lblStatus->setText("Closed");
 }
 
@@ -43,35 +41,42 @@ void MainWindow::on_actionQuit_triggered()
     this->close();
 }
 
-void MainWindow::connectStation(QString remote, int port) {
-    this->closeConnection();
-
+void MainWindow::connectTcp(QString remote, int port) {
     try {
         ui->lblStatus->setText("Connecting to " + remote + ":" + QString::number(port) + " ... ");
 
         this->remote = remote;
         this->port = port;
 
-        ReceiverThread *recv = NULL;
+        TcpReceiver *recv = NULL;
         try {
-            recv = new ReceiverThread(remote, port, this);
-
-            connect(recv, SIGNAL(error(int,QString)), this, SLOT(receiver_error(int,QString)));
-            connect(recv, SIGNAL(newData(const long,QMap<QString,double>)), this, SLOT(receiver_newData(const long,QMap<QString,double>)));
-            connect(recv, SIGNAL(parseError(QString&,QString&)), this, SLOT(receiver_parseError(QString&,QString&)));
-            // Start thread
-            ui->lblStatus->setText("Connected");
-            recv->start();
-            recv->queryNodes();
-            this->receiver = recv;
+            recv = receiver.addTcpReceiver(remote, port);
+            if(!recv->reconnect()) {
+                receiver.removeReceiver(recv);
+                ui->lblStatus->setText("Cannot connect to " + remote + ":" + QString::number(port));
+                return;
+            } else {
+                // Start thread
+                ui->lblStatus->setText("Connected");
+            }
         } catch (...) {
             // Cleanup
-            if(recv != NULL) delete recv;
+            if(recv != NULL) {
+                receiver.removeReceiver(recv);
+            }
             throw;
         }
 
+    } catch (const char* msg) {
+        ui->lblStatus->setText("Error: " + QString(msg));
+    }
+}
 
-
+void MainWindow::listenUdp(const int port) {
+    try {
+        UdpReceiver *recv = receiver.addUdpReceiver(port);
+        if(recv == NULL) return;
+        ui->lblStatus->setText("UDP receiver bound: " + QString::number(port));
     } catch (const char* msg) {
         ui->lblStatus->setText("Error: " + QString(msg));
     }
@@ -108,7 +113,7 @@ void MainWindow::on_actionConnect_triggered()
             if(remote.isEmpty()) throw "No remote given";
 
         }
-        this->connectStation(remote, port);
+        this->connectTcp(remote, port);
 
 
     } catch (const char* msg) {
@@ -118,9 +123,10 @@ void MainWindow::on_actionConnect_triggered()
 
 }
 
-void MainWindow::receiver_newData(const long station, QMap<QString, double> values) {
+void MainWindow::receiver_newData(const WeatherData &data) {
     QDateTime now = QDateTime::currentDateTime();
 
+    const long station = data.station();
     ui->lblStatus->setText("New data from station " + QString::number(station) + " [" + now.toString("HH:mm:ss") + "]");
 
     QWeatherData *widget = NULL;
@@ -151,15 +157,13 @@ void MainWindow::receiver_newData(const long station, QMap<QString, double> valu
         widget->setName(name);
     }
 
+
+
     // Refresh data
-    if(values.contains("temperature"))
-        widget->setTemperature(values["temperature"]);
-    if(values.contains("humidity"))
-        widget->setHumidity(values["humidity"]);
-    if(values.contains("pressure"))
-        widget->setPressure(values["pressure"]);
-    if(values.contains("light"))
-        widget->setLight(values["light"]);
+    widget->setTemperature(data.temperature());
+    widget->setHumidity(data.humidity());
+    widget->setPressure(data.pressure());
+    widget->setLight(data.light());
     widget->setStatus("Update: [" + now.toString("HH:mm:ss") + "]");
 }
 
@@ -180,5 +184,5 @@ void MainWindow::on_actionClose_triggered()
 void MainWindow::on_actionReconnect_triggered()
 {
     this->closeConnection();
-    this->connectStation(this->remote, this->port);
+    this->connectTcp(this->remote, this->port);
 }

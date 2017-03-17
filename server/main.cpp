@@ -28,6 +28,7 @@
 #include <string.h>
 #include <signal.h>
 #include <pthread.h>
+#include <sys/wait.h>
 
 #include "server.hpp"
 #include "udp.hpp"
@@ -59,7 +60,11 @@ static pthread_t  setup_serial(const char* dev);
 static void deamonize();
 /* Alive thread */
 static void alive_thread(void* arg);
+/** Start a webserver on the given port */
+static pid_t startWebserver(const int port);
 
+/** Create a listening IPv4 socket */
+static int createListeningSocket4(const int port);
 
 class Instance {
 protected:
@@ -108,6 +113,9 @@ protected:
 	
 	/** Threads */
 	vector<pthread_t> threads;
+	
+	/** Child processes */
+	vector<pid_t> children;
 	
 	/** Write to database mutex */
 	pthread_mutex_t db_mutex;
@@ -201,6 +209,7 @@ public:
 	bool isRunning(void) const { return this->running; }
 	
 	void addThread(pthread_t tid) { this->threads.push_back(tid); }
+	void addChild(const pid_t pid) { this->children.push_back(pid); }
 	
 	/** Set database write delay in milliseconds. Ignored if < 0 */
 	void setDBWriteDelay(long delay) {
@@ -301,6 +310,13 @@ public:
 		    pthread_terminate(*it);
 		}
 		threads.clear();
+		
+		// Close children
+		for(vector<pid_t>::const_iterator it = children.begin(); it != children.end(); ++it) {
+			const pid_t pid = *it;
+			kill(pid, SIGTERM);
+		}
+		children.clear();
 	}
 	
 	/** Clean all nodes that are not marked alive. Marks all alive nodes as not alive
@@ -343,6 +359,7 @@ int main(int argc, char** argv) {
 		vector<int> tcp_ports;
 		vector<int> udp_ports;
 		vector<int> tcp_broadcasts;
+		vector<int> http_ports;
 		vector<string> serials;
 		db_t db;
 		
@@ -412,6 +429,13 @@ int main(int argc, char** argv) {
 				    } else if(arg == "-d" || arg == "--daemon") {
 				        daemon = true;
 					    
+				    } else if(arg == "--http") {
+				    	if(isLast) throw "Missing argument: Http port";
+				    	const int port = ::atoi(argv[++i]);
+				    	if(port <= 0) throw "Illegal http port";
+				    	
+				    	http_ports.push_back(port);
+				    
 					} else if(arg == "--help") {
 						printHelp(argv[0]);
 						return EXIT_SUCCESS;
@@ -534,6 +558,27 @@ int main(int argc, char** argv) {
 	            cerr << "Warning: Error setting up serial: " << msg << endl;
 	            // return EXIT_FAILURE;
 	        }
+		}
+		
+		bool verbose = true;
+		for(vector<int>::const_iterator it = http_ports.begin(); it != http_ports.end(); ++it) {
+			const int port = *it;
+			if(verbose) { cout << "Http server: *:" << port << " ... "; cout.flush(); }
+			try {
+				pid_t pid = startWebserver(port);
+				if(pid < 0) {
+					if(verbose) { cout << "failed" << endl; cout.flush(); }
+					cerr << "Error starting webserver on port " << port << ": " << strerror(errno) << endl;
+					exit(EXIT_FAILURE);
+				} else {
+					if(verbose) { cout << pid << endl; cout.flush(); }
+					instance.addChild(pid);
+				}
+			} catch (const char* msg) {
+				if(verbose) { cout << "failed" << endl; cout.flush(); }
+				cerr << "Error starting webserver on port " << port << ": " << msg << endl;
+				exit(EXIT_FAILURE);
+			}
 		}
 		
 		// Setup database
@@ -908,7 +953,7 @@ static void printHelp(const char* progname) {
 	// user:password@hostname/database
 	
 	cout << "Meteo Server Instance" << endl;
-	cout << "  2016, Felix Niederwanger <felix@feldspaten.org>" << endl;
+	cout << "  2017, Felix Niederwanger <felix@feldspaten.org>" << endl;
 	cout << endl;
 	
 	cout << "Usage: " << progname << " [OPTIONS]" << endl;
@@ -924,6 +969,7 @@ static void printHelp(const char* progname) {
 	cout << "  --serial FILE                    Open FILE as serial device file and read contents from it" << endl;
 	cout << "  -d  --daemon                     Run as daemon" << endl;
 	cout << "  --pid FILE                       Write pid to given FILE. Exists if the given file exists" << endl;
+	cout << "  --http PORT                      Start http server on the given PORT" << endl;
 	cout << endl;
 }
 
@@ -1078,5 +1124,297 @@ static void clientReceivedCallback(TcpBroadcastClient *client, string in) {
 		cerr << "Client " << client->getRemoteHost() << ":" << client->getLocalPort() << " illegal command: " << cmd << endl;
 		
 		// TODO: Report error to client
+	}
+}
+
+
+
+static int createListeningSocket4(const int port) {
+	const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+	if(sock < 0)
+		throw strerror(errno);
+	
+	try {
+		// Setup socket
+		struct sockaddr_in address;
+		address.sin_family = AF_INET;
+		address.sin_addr.s_addr = INADDR_ANY;
+		address.sin_port = htons (port);
+	
+		// Set reuse address and port
+		int enable = 1;
+		if (::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+			throw strerror(errno);
+		#if 0
+		if (::setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) < 0)
+			throw strerror(errno);
+		#endif
+		
+		if (::bind(sock, (struct sockaddr *) &address, sizeof(address)) != 0)
+			throw strerror(errno);
+		
+		// Listen
+		if( ::listen(sock, 10) != 0)
+			throw strerror(errno);
+	} catch(...) {
+		::close(sock);
+		throw;
+	}
+	return sock;
+}
+
+
+/** Socket helper */
+class Socket {
+private:
+	int sock;
+	
+	ssize_t write(const void* buf, size_t len) {
+		if(sock <= 0) throw "Socket closed";
+		ssize_t ret = ::send(sock, buf, len, 0);
+		if(ret == 0) {
+			this->close();
+			throw "Socket closed";
+		} else if (ret < 0) 
+			throw strerror(errno);
+		else
+			return ret;
+	}
+	
+public:
+	Socket(int sock) { this->sock = sock; }
+	virtual ~Socket() { this->close(); }
+	void close() {
+		if(sock > 0) {
+			::close(sock);
+			sock = 0;
+		}
+	}
+	
+	void print(const char* str) {
+	    const size_t len = strlen(str);
+		if(len == 0) return;
+		this->write((void*)str, sizeof(char)*len);
+	}
+	
+	void println(const char* str) {
+	    this->print(str);
+		this->write("\n", sizeof(char));
+	}
+	
+	void print(const string &str) {
+	    const size_t len = str.size();
+		if(len == 0) return;
+		this->write((void*)str.c_str(), sizeof(char)*len);
+	}
+	
+	void println(const string &str) {
+	    this->print(str);
+		this->write("\n", sizeof(char));
+	}
+	
+	Socket& operator<<(const char c) {
+		this->write(&c, sizeof(char));
+		return (*this);
+	}
+	Socket& operator<<(const char* str) {
+		print(str);
+		return (*this);
+	}
+	Socket& operator<<(const string &str) {
+		this->print(str);
+		return (*this);
+	}
+	
+	Socket& operator<<(const int i) {
+	    string str = ::to_string(i);
+	    this->print(str);
+	    return (*this);
+	}
+	
+	Socket& operator<<(const long l) {
+	    string str = ::to_string(l);
+	    this->print(str);
+	    return (*this);
+	}
+	
+	Socket& operator<<(const float f) {
+	    string str = ::to_string(f);
+	    this->print(str);
+	    return (*this);
+	}
+	
+	Socket& operator<<(const double d) {
+	    string str = ::to_string(d);
+	    this->print(str);
+	    return (*this);
+	}
+	
+	Socket& operator>>(char &c) {
+		if(sock <= 0) throw "Socket closed";
+		ssize_t ret = ::recv(sock, &c, sizeof(char), 0);
+		if(ret == 0) {
+			this->close();
+			throw "Socket closed";
+		} else if (ret < 0) 
+			throw strerror(errno);
+		else
+			return (*this);
+	}
+	
+	Socket& operator>>(String &str) {
+		String line = readLine();
+		str = line;
+		return (*this);
+	}
+	
+	String readLine(void) {
+		if(sock <= 0) throw "Socket closed";
+		stringstream ss;
+		while(true) {
+			char c;
+			ssize_t ret = ::recv(sock, &c, sizeof(char), 0);
+			if(ret == 0) {
+				this->close();
+				throw "Socket closed";
+			} else if (ret < 0) 
+				throw strerror(errno);
+				
+			if(c == '\n')
+				break;
+			else
+				ss << c;
+		}
+		String ret(ss.str());
+		return ret.trim();
+	}
+	
+	void writeHttpHeader(const int statusCode = 200) {
+            this->print("HTTP/1.1 ");
+            this->print(::to_string(statusCode));
+            this->print(" OK\n");
+            this->print("Content-Type:text/html\n");
+            this->print("\n");
+	}
+};
+
+
+
+
+static void doHttpRequest(const int fd) {
+	// Process http request
+	Socket socket(fd);
+	
+	// Read request
+	String line;
+	vector<String> header;
+	while(true) {
+		line = socket.readLine();
+		if(line.size() == 0) break;
+		else
+			header.push_back(String(line));
+	}
+	
+	// Search request for URL
+	String url;
+	String protocol = "";
+	for(vector<String>::const_iterator it = header.begin(); it != header.end(); ++it) {
+		String line = *it;
+		vector<String> split = line.split(" ");
+		if(split[0].equalsIgnoreCase("GET")) {
+			if(split.size() < 2) 
+				url = "/";
+			else {
+				url = split[1];
+				if(split.size() > 2)
+					protocol = split[2];
+			}
+		}
+	}
+	
+	// Now process request
+	if(!protocol.equalsIgnoreCase("HTTP/1.1")) {
+		socket << "Unsupported protocol";
+		socket.close();
+		return;
+	}
+	
+	// Switch requests uris
+	if(url == "/" || url == "/index.html" || url == "/index.html") {
+	
+        socket.writeHttpHeader();
+        socket << "<html><head><title>meteo Sensor node</title></head>";
+        socket << "<body>";
+        socket << "<h1>Meteo Server</h1>\n";
+		socket << "<p><a href=\"index.html\">[Startpage]</a> <a href=\"nodes\">[Sensor nodes]</a> <a href=\"current\">[Current readings]</a> </p>";
+		socket << "<p>No contents yet available</p>";
+		
+	} else if(url == "/nodes") {
+		
+        socket.writeHttpHeader();
+        socket << "<html><head><title>meteo Sensor node</title></head>";
+        socket << "<body>";
+        socket << "<h1>Meteo Server</h1>\n";
+		socket << "<p><a href=\"index.html\">[Startpage]</a> <a href=\"nodes\">[Sensor nodes]</a> <a href=\"current\">[Current readings]</a> </p>";
+		socket << "<p>No contents yet available</p>";
+		
+	} else if(url == "/current" || url == "/readings") {
+		
+        socket.writeHttpHeader();
+        socket << "<html><head><title>meteo Sensor node</title></head>";
+        socket << "<body>";
+        socket << "<h1>Meteo Server</h1>\n";
+		socket << "<p><a href=\"index.html\">[Startpage]</a> <a href=\"nodes\">[Sensor nodes]</a> <a href=\"current\">[Current readings]</a> </p>";
+		socket << "<p>No contents yet available</p>";
+	} else {
+		// Not found
+		socket << "HTTP/1.1 404 Not Found\n";
+		socket << "Content-Type: text/html\n\n";
+		socket << "<html><head><title>Not found</title></head><body><h1>Not found</h1>";
+		socket << "<p>Error 404 - Page not found. Maybe you want to <a href=\"index.html\">go back to the homepage</a></p>";
+	}
+}
+
+static pid_t startWebserver(const int port) {
+	// Create socket
+	int sock = createListeningSocket4(port);
+
+	pid_t pid = fork();
+	if(pid < 0) {
+		::close(sock);
+		return pid;
+	} else if(pid == 0) {
+		// Webserver instance
+		while(sock > 0) {
+			const int fd = ::accept(sock, NULL, 0);
+			if(fd < 0) break;		// Terminate
+			
+			pid = fork();
+			if(pid < 0) {
+				cerr << "Http server (Port " << port << ") - Cannot fork: " << strerror(errno) << endl;
+				::close(sock);
+				exit(EXIT_FAILURE);
+			} else if(pid == 0) {
+				// Do http request
+				::close(sock);
+				
+				doHttpRequest(fd);
+				
+				::close(fd);
+				exit(EXIT_SUCCESS);
+			} else {
+				::close(fd);
+				int status;
+				// Wait for child
+				waitpid(pid, &status, 0);
+			}
+		}
+		
+		::close(sock);
+		exit(EXIT_SUCCESS);
+		
+	} else {
+		::close(sock);
+		return pid;
 	}
 }

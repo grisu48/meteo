@@ -418,6 +418,7 @@ static int readSensor(Sensor &sensor);
 
 int main(int argc, char** argv) {
 	bool verbose = false;
+	bool silent = false;
 	bool readConfig = true;		// Read configuration
 	vector<int> httpPorts;		// Ports where the webserver will be launched
 	
@@ -427,7 +428,11 @@ int main(int argc, char** argv) {
 		if(arg == "--noconfig") {
 			readConfig = false;
 		} else if(arg == "-v" || arg == "--verbose") {
+			silent = false;
 			verbose = true;
+		} else if(arg == "--silent") {
+			verbose = false;
+			silent = true;
 		}
 	}
 	// Read parameters from config file (s)
@@ -478,7 +483,7 @@ int main(int argc, char** argv) {
 				} else if(arg == "--i2c" || arg == "--device") {
 					if(isLast) throw "Missing argument: i2c device";
 					config.i2c_device = std::string(argv[++i]);
-				} else if(arg == "-v" || arg == "--verbose" || arg == "--noconfig") {
+				} else if(arg == "-v" || arg == "--verbose" || arg == "--noconfig" || arg == "--silent") {
 					// Already processed
 				} else if(arg == "--bmp180") {
 					config.enabled_BMP180 = true;
@@ -658,7 +663,7 @@ int main(int argc, char** argv) {
     	
 			string message = buffer.str() + "\n";
 			if(verbose) cout << message;
-			else if (config.display) {
+			else if (config.display && !silent) {
 				// Pretty output
 				if(temperature.size() > 0) { cout << "Temperature:  "; temperature.print(); cout << endl; }
 				if(humidity.size() > 0) { cout << "Humidity:     "; humidity.print(); cout << endl; }
@@ -785,6 +790,7 @@ static void printHelp(const char* progname) {
 	cout << "OPTIONS" << endl;
 	cout << "  -h    --help              Display this help message" << endl;
 	cout << "  -v    --verbose           Verbosity mode" << endl;
+	cout << "        --silent            Disable verbose and be silent" << endl;
 	cout << "        --id ID             Manually set station id to ID" << endl;
 	cout << "        --noconfig          Do not read config files" << endl;
 	cout << "        --udp REMOTE:PORT   Set endpoint for UDP broadcast" << endl;
@@ -1019,7 +1025,6 @@ static int doHttpRequest(const int fd) {
 	
 	// Now process request
 	if(!protocol.equalsIgnoreCase("HTTP/1.1")) {
-	    // XXX Unsupported protocol
 		socket << "Unsupported protocol";
 		socket.close();
 		return -1;
@@ -1032,7 +1037,7 @@ static int doHttpRequest(const int fd) {
         socket << "<html><head><title>meteo Sensor node</title></head>";
         socket << "<body>";
         socket << "<h1>Meteo Sensor Node</h1>\n";
-        // XXX: Check for available sensors
+        
         socket << "<ul>";
 #if SENSOR_BMP180 == 1
         if (config.enabled_BMP180)
@@ -1219,19 +1224,26 @@ static pid_t startWebserver(const int port) {
 			    pid = fork();
 			    if(pid < 0) {
 			    	cerr << "Cannot fork in web server: " << strerror(errno) << endl;
-			    	::close(pid);
+			    	::close(fd);
 			    	continue;
 			    }
 			    if(pid == 0) {
-			    	// We don't need the listening socket here
 			    	::close(sock);
 			    	
 			    	// Process request
 			    	const int ret = doHttpRequest(fd);
+			    	::close(fd);
 			    	exit(ret);
+			    	return -1;		// Should never occur
 			    } else {
 			    	// Parent process. We don't need the socket here
 			    	::close(fd);
+			    	
+			    	// Wait for the child to finish
+			    	int status;
+			    	waitpid(pid, &status, 0);
+			    	// XXX Don't care about anything that could go wrong ...
+			    	
 			    	continue;
 			    }
 			}

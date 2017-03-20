@@ -61,7 +61,7 @@ static void deamonize();
 /* Alive thread */
 static void alive_thread(void* arg);
 /** Start a webserver on the given port */
-static pid_t startWebserver(const int port);
+static pthread_t startWebserver(const int port);
 
 /** Create a listening IPv4 socket */
 static int createListeningSocket4(const int port);
@@ -565,15 +565,9 @@ int main(int argc, char** argv) {
 			const int port = *it;
 			if(verbose) { cout << "Http server: *:" << port << " ... "; cout.flush(); }
 			try {
-				pid_t pid = startWebserver(port);
-				if(pid < 0) {
-					if(verbose) { cout << "failed" << endl; cout.flush(); }
-					cerr << "Error starting webserver on port " << port << ": " << strerror(errno) << endl;
-					exit(EXIT_FAILURE);
-				} else {
-					if(verbose) { cout << pid << endl; cout.flush(); }
-					instance.addChild(pid);
-				}
+				pthread_t tid = startWebserver(port);
+				if(verbose) { cout << "Thread " << tid << endl; cout.flush(); }
+				instance.addThread(tid);
 			} catch (const char* msg) {
 				if(verbose) { cout << "failed" << endl; cout.flush(); }
 				cerr << "Error starting webserver on port " << port << ": " << msg << endl;
@@ -1366,6 +1360,16 @@ static void doHttpRequest(const int fd) {
         socket << "<h1>Meteo Server</h1>\n";
 		socket << "<p><a href=\"index.html\">[Startpage]</a> <a href=\"nodes\">[Sensor nodes]</a> <a href=\"current\">[Current readings]</a> </p>";
 		socket << "<p>No contents yet available</p>";
+		
+		
+		
+	} else if(url == "/plain") {
+		
+		socket << "HTTP/1.1 200 OK\n";
+		socket << "Content-Type: text/plain\n\n";
+		
+        socket << "Not yet ready";
+		
 	} else {
 		// Not found
 		socket << "HTTP/1.1 404 Not Found\n";
@@ -1375,46 +1379,58 @@ static void doHttpRequest(const int fd) {
 	}
 }
 
-static pid_t startWebserver(const int port) {
-	// Create socket
-	int sock = createListeningSocket4(port);
+struct {
+	int port;
+} typedef www_config_t;
 
-	pid_t pid = fork();
-	if(pid < 0) {
-		::close(sock);
-		return pid;
-	} else if(pid == 0) {
-		// Webserver instance
-		while(sock > 0) {
-			const int fd = ::accept(sock, NULL, 0);
-			if(fd < 0) break;		// Terminate
+static void* www_thread(void* arg) {
+	www_config_t config;
+	memcpy(&config, arg, sizeof(www_config_t));
+	free(arg);
+	
+	// Create socket
+	int sock = createListeningSocket4(config.port);
+
+	// Webserver instance
+	while(sock > 0) {
+		const int fd = ::accept(sock, NULL, 0);
+		if(fd < 0) break;		// Terminate
+		
+		const pid_t pid = fork();
+		if(pid < 0) {
+			cerr << "Http server (Port " << config.port << ") - Cannot fork: " << strerror(errno) << endl;
+			::close(sock);
+			exit(EXIT_FAILURE);
+		} else if(pid == 0) {
+			// Do http request
+			::close(sock);
 			
-			pid = fork();
-			if(pid < 0) {
-				cerr << "Http server (Port " << port << ") - Cannot fork: " << strerror(errno) << endl;
-				::close(sock);
-				exit(EXIT_FAILURE);
-			} else if(pid == 0) {
-				// Do http request
-				::close(sock);
-				
-				doHttpRequest(fd);
-				
-				::close(fd);
-				exit(EXIT_SUCCESS);
-			} else {
-				::close(fd);
-				int status;
-				// Wait for child
-				waitpid(pid, &status, 0);
-			}
+			doHttpRequest(fd);
+			
+			::close(fd);
+			exit(EXIT_SUCCESS);
+		} else {
+			::close(fd);
+			int status;
+			// Wait for child
+			waitpid(pid, &status, 0);
 		}
-		
-		::close(sock);
-		exit(EXIT_SUCCESS);
-		
-	} else {
-		::close(sock);
-		return pid;
 	}
+	
+	::close(sock);
+	return NULL;
+}
+
+static pthread_t startWebserver(const int port) {
+	www_config_t *config = (www_config_t*)malloc(sizeof(www_config_t));
+	if(config == NULL) throw "Cannot allocate memory";
+	
+	
+	config->port = port;
+	
+	pthread_t tid;
+	int ret = pthread_create(&tid, NULL, www_thread, (void*)config);
+	if(ret != 0) throw "Cannot create thread";
+	if(pthread_detach(tid) != 0) throw "Error detaching www thread";
+	return tid;
 }

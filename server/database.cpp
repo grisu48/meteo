@@ -210,6 +210,13 @@ void MySQL::createRoomNodeTable(const int stationId) {
 	execute(ss.str());
 }
 
+void MySQL::checkError(void) const throw (SQLException) {
+    if(this->conn == NULL) return;
+    
+    if (mysql_errno(this->conn) == 0) return;
+    throw SQLException(mysql_error(this->conn));
+}
+
 void MySQL::execute(std::string sql) {
 	this->execute(sql.c_str(), sql.size());
 }
@@ -245,4 +252,140 @@ void MySQL::Finalize(void) {
 	mysql_thread_end();
 	mysql_library_end();
 }
+
+
+
+MySQLResultSet::MySQLResultSet(MySQL* mysql, string query) {
+    this->mysql = mysql;
+    this->query = query;
+    
+    /* Actual do query */
+    int result = mysql_real_query(mysql->conn, query.c_str(), query.length());
+    mysql->checkError();
+    
+    switch(result) {
+        case 0: break;     // All good
+#if 0
+        case CR_COMMANDS_OUT_OF_SYNC:
+            throw SQLException("Command out of sync");
+        case CR_SERVER_GONE_ERROR:
+            throw SQLException("Server is gone");
+        case CR_SERVER_LOST:
+            throw SQLException("Connection lost");
+        //case CR_UNKNOWN_ERROR:
+#endif
+        default:
+            throw SQLException("Unknown error");
+    }
+    
+    
+    this->mysql_res = mysql_store_result(this->mysql->conn);
+    mysql->checkError();
+    rows = (unsigned long) mysql_num_rows (mysql_res);
+    mysql->checkError();
+    this->affectedRows = (unsigned long)mysql_affected_rows(mysql->conn);
+    mysql->checkError();
+}
+
+MySQLResultSet::~MySQLResultSet() {
+	close();
+}
+
+bool MySQLResultSet::isClosed(void) {
+	return mysql_res == NULL;
+}
+
+void MySQLResultSet::close(void) {
+	if(isClosed()) return;
+    mysql_free_result(mysql_res);
+    mysql_res = NULL;
+    
+    for(vector<MySQLField*>::iterator it = fields.begin(); it != fields.end(); ++it )
+        delete *it;
+    fields.clear();
+    rowData.clear();
+}
+
+unsigned long MySQLResultSet::getAffectedRows() {
+    return this->affectedRows;
+}
+
+unsigned long MySQLResultSet::getRowCount() {
+    return rows;
+}
+
+bool MySQLResultSet::next() {
+    if(this->mysql_res == NULL) throw new SQLException();
+    
+    MYSQL_ROW  row;
+    if ((row = mysql_fetch_row (mysql_res)) == NULL) 
+        return false;
+    mysql->checkError();
+    
+    // Fetch all data
+    rowData.clear();
+    for(vector<MySQLField*>::iterator it = fields.begin(); it != fields.end(); ++it )
+        delete *it;
+    fields.clear();
+    
+    
+    mysql_field_seek (mysql_res, 0);
+    mysql->checkError();
+    this->columns = mysql_num_fields(mysql_res);
+    for(unsigned int i=0;i<columns;i++) {
+        rowData.push_back(row[i]);
+        
+        MySQLField *field = new MySQLField();
+        my_field = mysql_fetch_field (mysql_res);
+        mysql->checkError();
+        
+        this->columnNames.push_back(std::string(my_field->name));
+        
+        field->name = string(my_field->name);
+        field->type = my_field->type;
+        field->length = my_field->length;
+        field->max_length = my_field->max_length;
+        field->flags = my_field->flags;
+        field->decimals = my_field->decimals;
+
+        fields.push_back(field);
+    }
+    
+    return true;
+}
+
+
+int MySQLResultSet::getFieldCount(void) {
+	return (int)this->columns;
+}
+
+std::string MySQLResultSet::getColumnName(int index) {
+	return this->columnNames[index];
+}
+
+std::string MySQLResultSet::getString(string name) {
+    int col = getFieldIndex(name);
+    if(col < 0) throw SQLException("Column not found");
+    return this->getString(col);
+}
+
+std::string MySQLResultSet::getString(int col) {
+    if(this->mysql_res == NULL) throw new SQLException();
+    if(col < 0 || (unsigned int)col >= rowData.size()) throw SQLException("Outside column index");
+    return rowData[col];
+}
+
+int MySQLResultSet::getFieldIndex(string name) {
+    int i = 0;
+    for(vector<MySQLField*>::iterator it = fields.begin(); it != fields.end(); ++it ) { 
+        MySQLField* field = *it;       
+        
+        if(field->name == name) return i;
+        
+        // Next
+        i++;
+    }
+    return -1;
+}
+
 

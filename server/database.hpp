@@ -20,6 +20,33 @@
 
 #include "node.hpp"
 
+
+
+
+class MySQLResultSet;
+class MySQL;
+
+/** General SQL exception */
+class SQLException : public std::exception {
+protected:
+    /** Error message. */
+    std::string _msg;
+public:
+    explicit SQLException(const char* msg) { this->_msg = std::string(msg); }
+    explicit SQLException(std::string msg) { this->_msg = msg; }
+    explicit SQLException() { this->_msg = ""; }
+    virtual ~SQLException() throw () {}
+    
+    std::string getMessage() { return _msg; }
+    virtual const char* what() const throw () {
+    	return _msg.c_str();
+    }
+};
+
+
+
+
+
 /** METEO database access */
 class MySQL {
 protected:
@@ -31,6 +58,8 @@ protected:
 	
 	MYSQL *conn = NULL;
 	
+    
+    MySQLResultSet* resultSet;
 	
 	std::string escape(std::string str) { return this->escape(str.c_str()); }
 	std::string escape(const char* str);
@@ -62,6 +91,63 @@ public:
 	
 	/** Finalize mysql connection */
 	static void Finalize(void);
+	
+	
+    MySQLResultSet* doQuery(std::string query);
+    MySQLResultSet* doQuery(const char* query, size_t len);
+    
+    void checkError(void) const throw (SQLException);
+    
+    friend class MySQLResultSet;
+};
+
+
+class MySQLField {
+public:
+    std::string name;
+    int type;
+    unsigned int length;
+    unsigned int max_length;
+    unsigned int flags;
+    unsigned int decimals;
+};
+
+class MySQLResultSet {
+private:
+    MySQL* mysql;
+    MYSQL_RES  *mysql_res;
+    MYSQL_FIELD *my_field;
+    
+    std::string query;
+    std::vector<std::string> rowData;
+    std::vector<MySQLField*> fields;
+    
+    unsigned long rows;
+    unsigned long affectedRows;
+    int getFieldIndex(std::string name);
+    
+    unsigned int columns;
+    std::vector<std::string> columnNames;
+    
+protected:
+    bool isClosed(void);
+    
+public:
+    MySQLResultSet(MySQL* mysql, std::string query);
+    virtual ~MySQLResultSet();
+    
+    unsigned long getRowCount();
+    
+    int getFieldCount(void);
+    std::string getColumnName(int index);
+    bool next();
+    
+    std::string getString(int col);
+    std::string getString(std::string name);
+    
+    unsigned long getAffectedRows();
+    
+    void close(void);
 };
 
 #endif

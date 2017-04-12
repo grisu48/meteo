@@ -47,6 +47,10 @@ private slots:
 
     void on_actionClear_triggered();
 
+    void on_actionName_stations_triggered();
+
+    void on_actionWrite_settings_to_file_triggered();
+
 private:
     Ui::MainWindow *ui;
 

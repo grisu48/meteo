@@ -87,9 +87,13 @@
    </widget>
    <widget class="QMenu" name="menuStations">
     <property name="title">
-     <string>Stations</string>
+     <string>Settings</string>
     </property>
     <addaction name="actionClear"/>
+    <addaction name="separator"/>
+    <addaction name="actionName_stations"/>
+    <addaction name="separator"/>
+    <addaction name="actionWrite_settings_to_file"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuStations"/>
@@ -147,7 +151,22 @@
   </action>
   <action name="actionClear">
    <property name="text">
-    <string>Clear</string>
+    <string>Clear stations</string>
+   </property>
+  </action>
+  <action name="actionName_stations">
+   <property name="text">
+    <string>Name stations ...</string>
+   </property>
+  </action>
+  <action name="actionWrite_settings_to_file">
+   <property name="text">
+    <string>Write settings to file</string>
+   </property>
+  </action>
+  <action name="actionLoad_settings_from_file">
+   <property name="text">
+    <string>Load settings from file</string>
    </property>
   </action>
  </widget>

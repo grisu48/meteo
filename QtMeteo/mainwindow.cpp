@@ -3,6 +3,7 @@
 
 #include <iostream>
 
+static const QString configFilename = QDir::homePath() + QDir::separator() + ".qtmeteo.cf";
 
 using std::cerr;
 using std::cout;
@@ -20,7 +21,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     connect(&this->receiver, SIGNAL(dataArrival(WeatherData)), this, SLOT(receiver_newData(WeatherData)));
 
-    QString configFilename = QDir::homePath() + QDir::separator() + ".qtmeteo.cf";
+
     config = new ConfigFile(configFilename);
     if(config->fileExists()) {
         if(config->contains("connect")) {
@@ -224,4 +225,35 @@ void MainWindow::on_actionClear_triggered()
         delete widget;
     }
     w_widgets.clear();
+}
+
+void MainWindow::on_actionName_stations_triggered()
+{
+    // XXX This is still nasty, but it works :-)
+
+    bool ok;
+    QString input;
+
+    input = QInputDialog::getText(this, "Station", "Station ID", QLineEdit::Normal,"", &ok).trimmed();
+    if(!ok || input.isEmpty()) return;
+    const int id = input.toInt(&ok);
+    if(!ok) return;
+
+    input = QInputDialog::getText(this, "Station", "Give the name for station " + QString::number(id), QLineEdit::Normal,"", &ok).trimmed();
+    if(!ok || input.isEmpty()) return;
+
+    QString name = input;
+    QString key = "station_" + QString::number(id);
+
+    this->config->putValue(key, name);
+}
+
+void MainWindow::on_actionWrite_settings_to_file_triggered()
+{
+    if(!this->remote.isEmpty()) {
+        QString remote = this->remote;
+        this->config->putValue("connect", remote);
+    }
+    this->config->write(configFilename);
+    ui->lblStatus->setText("Configuration written to file");
 }

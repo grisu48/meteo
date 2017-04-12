@@ -58,3 +58,29 @@ bool ConfigFile::contains(const char *key) const {
 bool ConfigFile::fileExists(void) const {
     return this->file_existed;
 }
+
+void ConfigFile::putValue(const QString &key, const QString &value) {
+    QString t_key = key.trimmed();
+    if(t_key.isEmpty()) return;
+
+    this->values[t_key] = value;
+}
+
+void ConfigFile::write(const QString &filename) {
+    QFile file( filename );
+    if ( file.open(QIODevice::ReadWrite) )
+    {
+        QTextStream stream( &file );
+
+        foreach(QString key, this->values.keys()) {
+            QString value = this->values[key];
+
+            stream << key << " = " << value << "\n";
+        }
+
+    }
+}
+
+void ConfigFile::write(const char* filename) {
+    this->write(QString(filename));
+}

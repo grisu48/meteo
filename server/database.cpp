@@ -2,7 +2,7 @@
  * 
  * Title:         Meteo Node
  * Author:        Felix Niederwanger
- * License:       Copyright (c), 2015 Felix Niederwanger
+ * License:       Copyright (c), 2017 Felix Niederwanger
  *                MIT license (http://opensource.org/licenses/MIT)
  * Description:   Node collecting data
  * 
@@ -13,6 +13,8 @@
 #include <iostream>
 
 #include <string.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include "database.hpp"
 
@@ -22,177 +24,324 @@ using namespace std;
 // #define DEBUG 1
 
 #define DELETE(x) { if (x!=NULL) delete x; x = NULL; }
+#define MARK_USED(x) (void)(x);
 
-static void throwSqlError(MYSQL *conn) {	
-	const char* error = mysql_error(conn);
-	if(error == NULL) throw "Unknown database error";
-	else throw error;
+
+long getMilliseconds(void) {
+	struct timeval tv;
+	int64_t result;
+	gettimeofday(&tv, 0);
+	result = tv.tv_sec;
+	result *= 1000L;
+	result += (int64_t)tv.tv_usec/1000L;
+	return result;
 }
 
-MySQL::MySQL(std::string remote, std::string username, std::string password, std::string database) {
-	this->remote = remote;
-	this->database = database;
-	this->username = username;
-	this->password = password;
-	
-	
+
+SQLite3Db::SQLite3Db(const char *filename) {
+	this->filename = string(filename);
+	this->initialize();
 }
 
-MySQL::~MySQL() {
+SQLite3Db::SQLite3Db(string filename) {
+	this->filename = filename;
+	this->initialize();
+}
+
+SQLite3Db::~SQLite3Db() {
 	this->close();
 }
 
-
-void MySQL::connect(void) {
-	if(this->conn != NULL)
-		this->close();		// Close if already established
+void SQLite3Db::initialize(void) {
+	int rc;
 	
-#if DEBUG
-		cerr << "MySQL::Connect = ";
-#endif
-	
-	conn = mysql_init(NULL);
-	if(conn == NULL) throw "Insufficient memory";
-	mysql_real_connect(conn, this->remote.c_str(), this->username.c_str(), this->password.c_str(), this->database.c_str(), this->port, NULL, 0);
-	if(!conn) {
-#if DEBUG
-			cerr << "Err" << endl;
-#endif
-		throwSqlError(this->conn);
-	}
-#if DEBUG
-		cerr << "OK" << endl;
-#endif
-}
-
-void MySQL::commit(void) {
-	if(this->conn != NULL) {
-#if DEBUG
-		cerr << "MySQL::Commit = ";
-#endif
-		mysql_commit(this->conn);
-#if DEBUG
-		cerr << "OK" << endl;
-#endif
+	this->rs = NULL;
+	rc = sqlite3_open(this->filename.c_str(), &this->db);
+	if(rc != SQLITE_OK) {
+		stringstream errmsg;
+		errmsg << "Error opening sqlite3 database " << sqlite3_errmsg(db);
+		throw SQLException(errmsg.str());
 	}
 }
+   
+void SQLite3Db::connect(void) {
+	if(isConnected()) return;
+	else
+		this->initialize();
+}
 
-void MySQL::close(void) {
-	if(this->conn != NULL) {
-		mysql_close(this->conn);
-		this->conn = NULL;
+bool SQLite3Db::isClosed(void) {
+	return db == NULL;
+}
+
+bool SQLite3Db::isConnected(void) {
+	return db != NULL;
+}
+    
+void SQLite3Db::close(void) {
+	this->clear();
+	if(db != NULL) {
+		this->commit();
+		sqlite3_close(db);
+	}
+	db = NULL;
+}
+    
+void SQLite3Db::clear(void) {
+	this->closeResultSet();
+}
+
+void SQLite3Db::closeResultSet(void) {
+	if(this->rs != NULL) {
+		delete this->rs;
+		this->rs = NULL;
 	}
 }
 
-
-void MySQL::push(const RoomNode &node) {
-	stringstream sql;
-	
-	sql << "INSERT INTO `RoomNode_" << node.id() << "` (`timestamp`, `light`, `humidity`, `temperature`) ";
-	sql << "VALUES (CURRENT_TIMESTAMP, '" << node.light() << "', '" << node.humidity() << "', '" << node.temperature() << "');";
-	
-	
-	this->execute(sql.str());
+void SQLite3Db::cleanup(void) {
+	this->closeResultSet();
 }
 
-std::string MySQL::escape(const char* str) {
-	// unsigned long mysql_real_escape_string(MYSQL *mysql, char *to, const char *from, unsigned long length);
-	
-	if(this->conn == NULL) return string(str);
-	
-	size_t len = strlen(str);
-	char* res = new char[len*2+1];
-	memset(res, '\0', len*2+1);
-	size_t ret_len = mysql_real_escape_string(this->conn, res, str, len);
-	res[ret_len] = '\0';
-	res[len*2] = '\0';		// Make sure it is escaped
-	string ret = string(str);
-	delete[] res;
-	return ret;
+void SQLite3Db::commit(void) {
+	sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
 }
 
-void MySQL::push(const Node &node) {
-	stringstream sql;
-	
-	const int id = node.id();
-	if(id <= 0) return;
-	
-	string name = "Node_" + ::to_string(id);
 
-	map<string, double> val = node.values();
-	
-	// Insert values statement
-	{
-		stringstream columns;
-		stringstream values;
+SQLite3ResultSet* SQLite3Db::doQuery(string query) {
+	return this->doQuery(query.c_str(), query.length());
+}
 
-		columns << "`timestamp`";
-		values << "CURRENT_TIMESTAMP";
+SQLite3ResultSet* SQLite3Db::doQuery(const char* query, size_t len) {
+	this->cleanup();
+	this->rs = new SQLite3ResultSet(this, query, len);
+	return this->rs;
+}
 
-		for(map<string, double>::iterator it = val.begin(); it != val.end(); ++it) {
-			string valName = it->first;
-			const double value = it->second;
+
+void SQLite3Db::execSql(std::string sql) {
+	this->execSql(sql.c_str(), sql.length());
+}
+
+void SQLite3Db::execSql(const char* query, size_t len) {
+	this->cleanup();
+	this->rs = NULL;
+	char* zErrMsg;
+	if(len <= 0) return;
+	if (sqlite3_exec(db, query, NULL, NULL, &zErrMsg) != SQLITE_OK) {
+		stringstream errmsg;
+		errmsg << "SQL error " << zErrMsg;
+		sqlite3_free(zErrMsg);
+		throw SQLException(errmsg.str());
+	}
+}
+
+unsigned int SQLite3Db::execUpdate(std::string sql) {
+	return this->execUpdate(sql.c_str(), sql.length());
+}
+
+unsigned int SQLite3Db::execUpdate(const char* query, size_t len) {
+	return (unsigned int)(this->execUpdate_ul(query, len));
+}
+
+unsigned long SQLite3Db::execUpdate_ul(std::string sql) {
+	return this->execUpdate_ul(sql.c_str(), sql.length());
+}
+
+unsigned long SQLite3Db::execUpdate_ul(const char* query, size_t len) {
+	this->cleanup();
+	this->rs = new SQLite3ResultSet(this, query, len);
+	return 0L;
+}
+   
+void SQLite3Db::exec_noResultSet(std::string query) {
+	this->exec_noResultSet(query.c_str(), query.length());
+}
+
+void SQLite3Db::exec_noResultSet(const char* query, size_t len) {
+	if(db == NULL) throw SQLException("Sqlite connection closed ");
+	char *zErrMsg = 0;
+	int rc;	
+	this->cleanup();
+	if(len <= 0) return;
 	
-			columns << ", `" << valName << "`";
-			values << ", '" << value << '\'';
+	rc = sqlite3_exec(db, query, NULL, NULL, &zErrMsg);
+	if( rc != SQLITE_OK ) {
+		stringstream errmsg;
+		errmsg << "Error executing sqlite command: " << zErrMsg;
+		sqlite3_free(zErrMsg);
+		throw SQLException(errmsg.str());
+	}
+}
+
+string SQLite3Db::escapeString(const char* str, size_t len) {
+	string temp(str,len);
+	return this->escapeString(temp);
+}
+
+static bool replace(std::string& str, const std::string& from, const std::string& to) {
+    size_t start_pos = str.find(from);
+    if(start_pos == std::string::npos)
+        return false;
+    str.replace(start_pos, from.length(), to);
+    return true;
+}
+
+string SQLite3Db::escapeString(std::string str) {
+	string result(str);
+	
+	replace(result, "'", "\\'");
+	return result;
+}
+
+
+static int rs_callback(void *result_set, int argc, char **argv, char **azColName) {
+	SQLite3ResultSet *rs = (SQLite3ResultSet*)(result_set);
+	
+	if(rs->columnNames.size() == 0) {
+		rs->columns = argc;
+		for(int i=0;i<argc;i++) {
+			string columnName = string(azColName[i]);
+			rs->columnNames.push_back(columnName);
 		}
+	}
+	
+	vector<string> rowData;
+	for(int i=0;i<argc;i++)
+		rowData.push_back(string(argv[i]));
+	rs->rowsData.push_back(rowData);
+	
+	rs->rowCount++;
+	return 0;
+}
 
-		sql << "INSERT INTO `" << this->database << "`.`" << name << "` (" << columns.str() << ") VALUES (" << values.str() << ");";
-
-
-		this->execute(sql.str());
+SQLite3ResultSet::SQLite3ResultSet(SQLite3Db* sqlite, const char *query, size_t len) {
+	MARK_USED(len);
+	char *zErrMsg = 0;
+	sqlite3* db = sqlite->db;
+	int rc;
+	
+	this->parent = sqlite;
+	this->c_row = 0;
+	this->rowCount = 0;
+	
+	// Execute query. Keep in mind that this call MUST be after all
+	// variables have been initialized
+	rc = sqlite3_exec(db, query, rs_callback, this, &zErrMsg);
+	if( rc != SQLITE_OK ) {
+		stringstream errmsg;
+		errmsg << "Error executing sqlite command: " << zErrMsg;
+		sqlite3_free(zErrMsg);
+		throw SQLException(errmsg.str());
 	}
 }
 
-string MySQL::getDBMSVersion(void) {
-	execute("SELECT VERSION();");
 
-	string version = "";
-	MYSQL_RES *res = mysql_use_result(conn);
-	if(res == NULL) throw "Error getting result structure";
-	MYSQL_ROW row;
-
-	// Iterate over rows
-	while ((row = mysql_fetch_row(res)) != NULL) {
-		version = string(row[0]);
-		break;
-	}
-
-	mysql_free_result(res);
-
-	return version;
+int SQLite3ResultSet::getFieldCount(void) {
+	return this->columns;
 }
 
-vector<DBNode> MySQL::getNodes(void) {
-	execute("SELECT `id`,`name`,`location`,`description` FROM `Nodes`");
+std::string SQLite3ResultSet::getColumnName(int index) {
+	return this->columnNames[index];
+}
 
-	MYSQL_RES *res = mysql_use_result(conn);
-	if(res == NULL) throw "Error getting result structure";
-	MYSQL_ROW row;
+unsigned long SQLite3ResultSet::getRowCount() {
+	return this->rowCount;
+}
+
+bool SQLite3ResultSet::next() {
+	if(this->c_row >= this->rowCount) return false;
+	this->row = this->rowsData[this->c_row];
+	this->c_row++;
+	return true;
+}
+
+int SQLite3ResultSet::getColumnIndex(string name) {
+	for(int i=0;i<columns;i++) 
+		if(columnNames[i] == name) return i;
+	
+	return -1;
+}
+
+string SQLite3ResultSet::getString(int col) {
+	if(this->c_row > this->rowCount) throw SQLException("End of stream");
+	if(col < 0 || (unsigned int)col >= this->row.size()) throw SQLException("Column index not found");
+	return this->row[col];
+}
+
+string SQLite3ResultSet::getString(string name) {
+	const int index = this->getColumnIndex(name);
+	if(index < 0) throw SQLException("Column name not found");
+	return this->getString(index);
+}
+
+void SQLite3ResultSet::close(void) {
+	parent->closeResultSet();
+}
+
+SQLite3ResultSet::~SQLite3ResultSet() {
+	parent->rs = NULL;
+}
+
+
+
+
+void SQLite3Db::push(const Node &node) {
+       stringstream sql;
+       
+       const int id = node.id();
+       if(id <= 0) return;
+       
+       string name = "Node_" + ::to_string(id);
+
+       map<string, double> val = node.values();
+       
+       // Insert values statement
+       {
+               stringstream columns;
+               stringstream values;
+ 
+               columns << "`timestamp`";
+               values << getMilliseconds();
+ 
+               for(map<string, double>::iterator it = val.begin(); it != val.end(); ++it) {
+                       string valName = it->first;
+                       const double value = it->second;
+       
+                       columns << ", `" << valName << "`";
+                       values << ", '" << value << '\'';
+               } 
+               sql << "INSERT INTO `" << name << "` (" << columns.str() << ") VALUES (" << values.str() << ");"; 
+               this->exec_noResultSet(sql.str());
+       }
+}
+
+
+std::vector<DBNode> SQLite3Db::getNodes(void) {
+	SQLite3ResultSet *rs = doQuery("SELECT `id`,`name`,`location`,`description` FROM `Nodes`");
+
 
 	vector<DBNode> ret;
 	// Iterate over rows
-	while ((row = mysql_fetch_row(res)) != NULL) {
-		string s_id = string(row[0]);
-		string name = string(row[1]);
-		string location = string(row[2]);
-		string description = string(row[3]);
+	while (rs->next()) {
+		const int id = rs->getInt("id");
+		const std::string name = rs->getString("name");
+		const std::string location = rs->getString("location");
+		const std::string description = rs->getString("description");
 		
-		const int id = atoi(s_id.c_str());
-		ret.push_back(DBNode(id,name,location,description));
+		DBNode node(id, name, location, description);
+		ret.push_back(node);
 	}
 
-	mysql_free_result(res);
-
+	this->closeResultSet();
 	return ret;
 }
 
-void MySQL::createNodeTable(const Node &node) {
+void SQLite3Db::createNodeTable(const Node &node) {
 	stringstream ss;
 	
-	string name = escape(node.name());
+	string name = escapeString(node.name());
 	
-	ss << "CREATE TABLE IF NOT EXISTS `" << this->database << "`.`Node_" << node.id() << "` ( `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP";
+	ss << "CREATE TABLE IF NOT EXISTS `Node_" << node.id() << "` ( `timestamp` INT(11)";
 	
 	map<string, double> val = node.values();
 	for(map<string, double>::iterator it = val.begin(); it != val.end(); ++it) {
@@ -200,192 +349,19 @@ void MySQL::createNodeTable(const Node &node) {
 		ss << ", `" << valName << "` FLOAT NOT NULL";
 	}
 	
-	ss << ", PRIMARY KEY (`timestamp`)) ENGINE = InnoDB CHARSET=utf8 COLLATE utf8_general_ci COMMENT = 'Station " << name << " table';";
-	execute(ss.str());	
+	ss << ", PRIMARY KEY (`timestamp`));";
+	exec_noResultSet(ss.str());
+	
+	// TODO: Also insert into Nodes table, if not existing
+	
+	this->commit();
 }
 
-void MySQL::createRoomNodeTable(const int stationId) {
+void SQLite3Db::createTables(void) {
 	stringstream ss;
-	ss << "CREATE TABLE IF NOT EXISTS `" << this->database << "`.`RoomNode_" << stationId << "` ( `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP , `light` FLOAT NOT NULL , `humidity` FLOAT NOT NULL , `temperature` FLOAT NOT NULL , PRIMARY KEY (`timestamp`)) ENGINE = InnoDB CHARSET=utf8 COLLATE utf8_general_ci COMMENT = 'Station " << stationId << " table';";
-	execute(ss.str());
-}
-
-void MySQL::checkError(void) const throw (SQLException) {
-    if(this->conn == NULL) return;
-    
-    if (mysql_errno(this->conn) == 0) return;
-    throw SQLException(mysql_error(this->conn));
-}
-
-void MySQL::execute(std::string sql) {
-	this->execute(sql.c_str(), sql.size());
-}
-
-void MySQL::execute(const char* sql, size_t len) {
-	int ret;
 	
-	if(this->conn == NULL) connect();
-	
-#if DEBUG
-	cerr << "MySQL::execute(\"" << sql << "\") = ";
-#endif
-	
-	ret = mysql_real_query(this->conn, sql, len);
-	if(ret != 0) {
-		const char* error = mysql_error(this->conn);
-#if DEBUG
-		//const int errno = mysql_errno(this->conn);
-		
-		cerr << " ERR (" << error << ")" << endl;
-#endif
-		
-		
-		if(error == NULL) throw "Unknown error";
-		else throw error;
-	} 
-#if DEBUG
-	cerr << ret << endl;
-#endif
+	ss << "CREATE TABLE IF NOT EXISTS `Nodes` (`id` INT PRIMARY KEY, `name` TEXT, `location` TEXT, `description` TEXT);";
+	exec_noResultSet(ss.str());
+	this->commit();
 }
-
-void MySQL::Finalize(void) {
-	mysql_thread_end();
-	mysql_library_end();
-}
-
-
-
-MySQLResultSet::MySQLResultSet(MySQL* mysql, string query) {
-    this->mysql = mysql;
-    this->query = query;
-    
-    /* Actual do query */
-    int result = mysql_real_query(mysql->conn, query.c_str(), query.length());
-    mysql->checkError();
-    
-    switch(result) {
-        case 0: break;     // All good
-#if 0
-        case CR_COMMANDS_OUT_OF_SYNC:
-            throw SQLException("Command out of sync");
-        case CR_SERVER_GONE_ERROR:
-            throw SQLException("Server is gone");
-        case CR_SERVER_LOST:
-            throw SQLException("Connection lost");
-        //case CR_UNKNOWN_ERROR:
-#endif
-        default:
-            throw SQLException("Unknown error");
-    }
-    
-    
-    this->mysql_res = mysql_store_result(this->mysql->conn);
-    mysql->checkError();
-    rows = (unsigned long) mysql_num_rows (mysql_res);
-    mysql->checkError();
-    this->affectedRows = (unsigned long)mysql_affected_rows(mysql->conn);
-    mysql->checkError();
-}
-
-MySQLResultSet::~MySQLResultSet() {
-	close();
-}
-
-bool MySQLResultSet::isClosed(void) {
-	return mysql_res == NULL;
-}
-
-void MySQLResultSet::close(void) {
-	if(isClosed()) return;
-    mysql_free_result(mysql_res);
-    mysql_res = NULL;
-    
-    for(vector<MySQLField*>::iterator it = fields.begin(); it != fields.end(); ++it )
-        delete *it;
-    fields.clear();
-    rowData.clear();
-}
-
-unsigned long MySQLResultSet::getAffectedRows() {
-    return this->affectedRows;
-}
-
-unsigned long MySQLResultSet::getRowCount() {
-    return rows;
-}
-
-bool MySQLResultSet::next() {
-    if(this->mysql_res == NULL) throw new SQLException();
-    
-    MYSQL_ROW  row;
-    if ((row = mysql_fetch_row (mysql_res)) == NULL) 
-        return false;
-    mysql->checkError();
-    
-    // Fetch all data
-    rowData.clear();
-    for(vector<MySQLField*>::iterator it = fields.begin(); it != fields.end(); ++it )
-        delete *it;
-    fields.clear();
-    
-    
-    mysql_field_seek (mysql_res, 0);
-    mysql->checkError();
-    this->columns = mysql_num_fields(mysql_res);
-    for(unsigned int i=0;i<columns;i++) {
-        rowData.push_back(row[i]);
-        
-        MySQLField *field = new MySQLField();
-        my_field = mysql_fetch_field (mysql_res);
-        mysql->checkError();
-        
-        this->columnNames.push_back(std::string(my_field->name));
-        
-        field->name = string(my_field->name);
-        field->type = my_field->type;
-        field->length = my_field->length;
-        field->max_length = my_field->max_length;
-        field->flags = my_field->flags;
-        field->decimals = my_field->decimals;
-
-        fields.push_back(field);
-    }
-    
-    return true;
-}
-
-
-int MySQLResultSet::getFieldCount(void) {
-	return (int)this->columns;
-}
-
-std::string MySQLResultSet::getColumnName(int index) {
-	return this->columnNames[index];
-}
-
-std::string MySQLResultSet::getString(string name) {
-    int col = getFieldIndex(name);
-    if(col < 0) throw SQLException("Column not found");
-    return this->getString(col);
-}
-
-std::string MySQLResultSet::getString(int col) {
-    if(this->mysql_res == NULL) throw new SQLException();
-    if(col < 0 || (unsigned int)col >= rowData.size()) throw SQLException("Outside column index");
-    return rowData[col];
-}
-
-int MySQLResultSet::getFieldIndex(string name) {
-    int i = 0;
-    for(vector<MySQLField*>::iterator it = fields.begin(); it != fields.end(); ++it ) { 
-        MySQLField* field = *it;       
-        
-        if(field->name == name) return i;
-        
-        // Next
-        i++;
-    }
-    return -1;
-}
-
 

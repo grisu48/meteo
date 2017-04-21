@@ -2,7 +2,7 @@
  * 
  * Title:         meteo Server
  * Author:        Felix Niederwanger
- * License:       Copyright (c), 2016 Felix Niederwanger
+ * License:       Copyright (c), 2017 Felix Niederwanger
  *                MIT license (http://opensource.org/licenses/MIT)
  * Description:   Reception, collection and storage of meteo data
  * 
@@ -87,7 +87,7 @@ protected:
 	pthread_t tid_alive = 0;
 	
 	/** Database instance, if set */
-	MySQL *db = NULL;
+	SQLite3Db *db = NULL;
 	
 	/** File where the current readings are written to */
 	string outFile;
@@ -185,7 +185,7 @@ public:
 	
 	
 	/** Assign database */
-	void setDatabase(MySQL *db) { this->db = db; }
+	void setDatabase(SQLite3Db *db) { this->db = db; }
 	
 	void setOutputFile(string filename) {
 		this->outFile = filename;
@@ -343,11 +343,7 @@ static string pidFile = "";
 
 struct {
     bool enabled = false;
-    string hostname;
-    string username;
-    string password;
-    string database;
-    int port = 3306;
+    string filename;
 } typedef db_t;
 
 int main(int argc, char** argv) {
@@ -381,31 +377,12 @@ int main(int argc, char** argv) {
 					} else if(arg == "--broadcast") {
 						if(isLast) throw "Missing argument: tcp port";
 						tcp_broadcasts.push_back(atoi(argv[++i]));
-					} else if(arg == "--mysql" || arg == "--db") {
-						// "user:password@hostname/database"
+					} else if(arg == "--sqlite3" || arg == "--db") {
 						arg = String(argv[++i]);
-						size_t index = arg.find(":");
-						if(index == string::npos) throw "Illegal database format";
-						String dbUsername = arg.substr(0, index);
-						arg = arg.substr(index+1);
-						index = arg.find("@");
-						if(index == string::npos) throw "Illegal database format";
-						String dbPassword = arg.substr(0, index);
-						arg = arg.substr(index+1);
-						index = arg.find("/");
-						if(index == string::npos) throw "Illegal database format";
-						String dbHostname = arg.substr(0, index);
-						String dbDatabase = arg.substr(index+1);
-
-						if(dbHostname.isEmpty()) throw "Missing database hostname";
-						if(dbDatabase.isEmpty()) throw "Missing database name";
-						if(dbUsername.isEmpty()) throw "Missing database username";
+						if(arg.size() == 0) throw "Missing database filename";
 						
 						db.enabled = true;
-						db.hostname = dbHostname;
-						db.database = dbDatabase;
-						db.username = dbUsername;
-						db.password = dbPassword;
+						db.filename = arg;
 						
 					} else if(arg == "--create-tables") {
 						instance.setCreateTables(true);
@@ -488,6 +465,8 @@ int main(int argc, char** argv) {
 		    	}
         	}
         }
+        
+        
         
 		
 		// Setup udp ports first
@@ -577,22 +556,30 @@ int main(int argc, char** argv) {
 		
 		// Setup database
 		if(db.enabled) {
-			MySQL *mysql = NULL;
+			string filename = db.filename;
+			if(filename.size() == 0) filename = ":memory:";
+			SQLite3Db *db = NULL;
 			try {
-				mysql= new MySQL(db.hostname, db.username, db.password, db.database);
-				mysql->connect();
-    			cout << "Database: " << mysql->getDBMSVersion() << endl;
+				db = new SQLite3Db(filename);
+				db->connect();
 				
-				instance.setDatabase(mysql);
+    			cout << "SQLite3 database: " << filename << endl;
+				db->createTables();
+				
+				instance.setDatabase(db);
 			} catch (const char* msg) {
 				cerr << "Error connecting to database: " << msg << endl;
-				mysql->close();
+				db->close();
+				return EXIT_FAILURE;
+			} catch (SQLException &e) {
+				cerr << "Error connecting to database: " << e.what() << endl;
+				db->close();
 				return EXIT_FAILURE;
 			}
 			
 			// Fetch data from database
 			try {
-				vector<DBNode> nodes = mysql->getNodes();
+				vector<DBNode> nodes = db->getNodes();
 				if(nodes.size() == 0) {
 					cout << "WARNING: No node templates in database (Table `Nodes`)" << endl;
 				} else {
@@ -606,9 +593,11 @@ int main(int argc, char** argv) {
 				}
 			} catch (const char* msg) {
 				cerr << "WARNING: Error fetching data from database: " << msg << endl;
+			} catch (SQLException &e) {
+				cerr << "Error connecting to database: " << e.what() << endl;
+				db->close();
+				return EXIT_FAILURE;
 			}
-			
-			mysql->close();
 			
 			cout << "DB write period: " << instance.dbWriteDelay() << " ms" << endl;
 		} else {
@@ -853,11 +842,10 @@ void Instance::writeToDB(void) {
 				}
 		
 				this->db->commit();
-				this->db->close();
 			}
 		} catch (const char* msg) {
-			// MySQL database error
-			cerr << "MySQL error: " << msg << endl;
+			// Database error
+			cerr << "Database error: " << msg << endl;
 		}
 	} catch (const char* msg) {
 		pthread_mutex_unlock(&db_mutex);
@@ -955,9 +943,8 @@ static void printHelp(const char* progname) {
 	cout << "  -h   --help                      Print this help message" << endl;
 	cout << "  --udp PORT                       Listen on PORT for udp messages. Multiple definitions allowed" << endl;
 	cout << "  --broadcast PORT                 Listen on PORT for tcp broadcast clients. Multiple definitions allowed" << endl;
-	cout << "  --mysql REMOTE                   Set REMOTE as MySQL database instance." << endl;
-	cout << "          REMOTE is in the form: user:password@hostname/database" << endl;
-	cout << "  --create-tables                  Create tables in database, if not yet existing" << endl;
+	cout << "  --sqlite FILE                    Set FILE as Sqlite3 database" << endl;
+	cout << "  --create-tables                  Create tables for new nodes in database, if not yet existing" << endl;
 	cout << "  --db-write-delay MILLIS          Set the delay for database writes in milliseconds" << endl;
 	cout << "  -f FILE                          Periodically write the current readings to FILE" << endl;
 	cout << "  --serial FILE                    Open FILE as serial device file and read contents from it" << endl;
@@ -992,7 +979,6 @@ static void cleanup(void) {
 			cerr << endl;
 		}
 	}
-	MySQL::Finalize();
 }
 
 /** Thread for setting up serial */

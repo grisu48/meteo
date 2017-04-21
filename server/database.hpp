@@ -2,7 +2,7 @@
  * 
  * Title:         Meteo Database access
  * Author:        Felix Niederwanger
- * License:       Copyright (c), 2015 Felix Niederwanger
+ * License:       Copyright (c), 2017 Felix Niederwanger
  *                MIT license (http://opensource.org/licenses/MIT)
  * Description:   Access to the database
  * 
@@ -16,15 +16,14 @@
 #include <vector>
 #include <map>
 
-#include <mysql.h>
+#include <sqlite3.h>
 
 #include "node.hpp"
 
 
 
-
-class MySQLResultSet;
-class MySQL;
+class SQLite3ResultSet;
+class SQLite3Db;
 
 /** General SQL exception */
 class SQLException : public std::exception {
@@ -46,34 +45,50 @@ public:
 
 
 
-
-/** METEO database access */
-class MySQL {
+/** METEO Sqlite3 database (default now) */
+class SQLite3Db {
 protected:
-	std::string remote;
-	std::string database;
-	std::string username;
-	std::string password;
-	int port = 3306;
+	sqlite3 *db;
+	std::string filename;
 	
-	MYSQL *conn = NULL;
+	SQLite3ResultSet *rs;
 	
-    
-    MySQLResultSet* resultSet;
+	void initialize(void);
 	
-	std::string escape(std::string str) { return this->escape(str.c_str()); }
-	std::string escape(const char* str);
+	void closeResultSet(void);
 public:
-	MySQL(std::string remote, std::string username, std::string password, std::string database);
-	virtual ~MySQL();
+	SQLite3Db(const char* filename);
+	SQLite3Db(std::string filename);
+	~SQLite3Db();
+    
+    SQLite3ResultSet* doQuery(std::string query);
+    SQLite3ResultSet* doQuery(const char* query, size_t len);
+    
+    void execSql(std::string sql);
+    void execSql(const char* query, size_t len);
+    unsigned int execUpdate(std::string sql);
+    unsigned int execUpdate(const char* query, size_t len);
+    unsigned long execUpdate_ul(std::string sql);
+    unsigned long execUpdate_ul(const char* query, size_t len);
+    
+    void exec_noResultSet(std::string query);
+    void exec_noResultSet(const char* query, size_t len);
+    
+    std::string getVersion();
+    SQLite3ResultSet* getResultSet();
+    
+    void connect(void);
+    void close(void);
+    void clear(void);
+    void commit(void);
+    void cleanup(void);
+    bool isClosed(void);
+    bool isConnected(void);
 	
-	void connect(void);
-	void close(void);
 	
-	void commit(void);
+    std::string escapeString(std::string str);
+    std::string escapeString(const char* str, size_t len);
 	
-	/** Push the given roomnode instance */
-	void push(const RoomNode &node);
 	
 	/** Push the given node */
 	void push(const Node &node);
@@ -81,73 +96,78 @@ public:
 	/** Get all nodes that are registered in the database */
 	std::vector<DBNode> getNodes(void);
 	
-	std::string getDBMSVersion(void);
-	
-	void execute(std::string sql);
-	void execute(const char* sql, size_t len);
-	
-	void createRoomNodeTable(const int stationId);
 	void createNodeTable(const Node &node);
 	
-	/** Finalize mysql connection */
-	static void Finalize(void);
+	void createTables(void);
 	
-	
-    MySQLResultSet* doQuery(std::string query);
-    MySQLResultSet* doQuery(const char* query, size_t len);
-    
-    void checkError(void) const throw (SQLException);
-    
-    friend class MySQLResultSet;
+    friend class SQLite3ResultSet;
 };
 
 
-class MySQLField {
-public:
-    std::string name;
-    int type;
-    unsigned int length;
-    unsigned int max_length;
-    unsigned int flags;
-    unsigned int decimals;
-};
-
-class MySQLResultSet {
-private:
-    MySQL* mysql;
-    MYSQL_RES  *mysql_res;
-    MYSQL_FIELD *my_field;
-    
-    std::string query;
-    std::vector<std::string> rowData;
-    std::vector<MySQLField*> fields;
-    
-    unsigned long rows;
-    unsigned long affectedRows;
-    int getFieldIndex(std::string name);
-    
-    unsigned int columns;
-    std::vector<std::string> columnNames;
-    
+class SQLite3ResultSet {
 protected:
-    bool isClosed(void);
-    
+	SQLite3Db* parent;
+	unsigned long c_row;
+	std::vector<std::string> row;
+	
+	
+	int getColumnIndex(std::string name);
 public:
-    MySQLResultSet(MySQL* mysql, std::string query);
-    virtual ~MySQLResultSet();
-    
-    unsigned long getRowCount();
-    
-    int getFieldCount(void);
+	/* UGLY hack: They are public so that the callback method may access them */
+	int columns;
+	unsigned long rowCount;
+	std::vector<std::string> columnNames;
+	std::vector<std::vector<std::string> > rowsData;
+
+	SQLite3ResultSet(SQLite3Db* sqlite, const char *query, size_t len);
+	virtual ~SQLite3ResultSet();
+	
+	int getFieldCount(void);
     std::string getColumnName(int index);
-    bool next();
-    
-    std::string getString(int col);
-    std::string getString(std::string name);
-    
-    unsigned long getAffectedRows();
-    
-    void close(void);
+	
+	unsigned long getRowCount();
+	bool next();
+
+	void close(void);
+
+	std::string getString(int col);
+	std::string getString(std::string name);
+	std::string getString(const char* name) { 
+		std::string s_name(name);
+		return this->getString(s_name);
+	}
+	
+	int getInt(int col) {
+		std::string s = getString(col);
+		return ::atoi(s.c_str());
+	}
+	
+	int getInt(const char* name) {
+		std::string s = getString(name);
+		return ::atoi(s.c_str());
+	}
+	int getInt(const std::string &name) {
+		std::string s = getString(name);
+		return ::atoi(s.c_str());
+	}
+	
+	long getLong(int col) {
+		std::string s = getString(col);
+		return ::atol(s.c_str());
+	}
+	
+	long getLong(const char* name) {
+		std::string s = getString(name);
+		return ::atol(s.c_str());
+	}
+	long getLong(const std::string &name) {
+		std::string s = getString(name);
+		return ::atol(s.c_str());
+	}
+	
+	std::string operator[](const char* name) { return this->getString(name); }
+	std::string operator[](const std::string &name) { return this->getString(name); }
 };
+
 
 #endif

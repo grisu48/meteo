@@ -9,8 +9,8 @@
 #include "Adafruit_TSL2561.h"
 
 
-const char* ssid = "feldspaten";
-const char* password = "4theGloryOfThe3ofUs";
+const char* ssid = "";
+const char* password = "";
 
 // Quite simple server
 WiFiServer server(80);

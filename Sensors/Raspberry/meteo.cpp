@@ -39,7 +39,7 @@
 #include "sensors.hpp"
 #include "config.hpp"
 #include "string.hpp"
-
+#include "mosquitto.hpp"
 
 using namespace std;
 using namespace sensors;
@@ -360,7 +360,34 @@ public:
 	}
 };
 
-
+class MeteoMosquitto {
+public:
+	MeteoMosquitto() {}
+	virtual ~MeteoMosquitto() {}
+	Mosquitto mosquitto;
+	string topic = "meteo/raspberry";
+	int id = -1;
+	
+	void publish(const map<string, float> &values, const map<string, int> &status) {
+		// Build JSON package
+		stringstream ss;
+		
+		ss << "{\"node_id\":" << id;
+		for(map<string,int>::const_iterator it = status.begin(); it != status.end(); ++it) {
+			ss << " ,";
+			ss << "\"" << it->first << "\":" << it->second;
+		}
+		for(map<string,float>::const_iterator it = values.begin(); it != values.end(); ++it) {
+			ss << " ,";
+			ss << "\"" << it->first << "\":" << it->second;
+		}
+		
+		ss << "}";
+		
+		string packet = ss.str();
+		mosquitto.publish(topic, packet);
+	}
+};
 
 struct {
 	bool enabled_BMP180 = false;
@@ -384,6 +411,8 @@ static volatile bool running = true;
 static vector<UdpBroadcast> broadcasts;
 /** All attached tcp-broadcast instances */
 static vector<TcpBroadcast> tcp_broadcasts;
+/** Mosquitto instances */
+static vector<MeteoMosquitto*> mosquittos;
 /** Static meteo configuration */
 static config_t config;
 
@@ -605,17 +634,23 @@ int main(int argc, char** argv) {
     	// Determine also average temperature
     	vector<double> avg_temperature;
     	
-	int ret;
-	Average temperature;
-	Average humidity;
-	Average pressure;
+		int ret;
+		Average temperature;
+		Average humidity;
+		Average pressure;
+	
+		map<string, float> data;
+		map<string, int> status;
 #if SENSOR_BMP180 == 1
 		if (config.enabled_BMP180) {
 			ret = readSensor(bmp180);
 			buffer << " bmp180=\"" << ret << "\" temperature_bmp180=\"" << bmp180.temperature() << "\" pressure=\"" << bmp180.pressure() << "\"";
+			status["bmp180"] = ret;
 			if (ret == 0) {
 				temperature << bmp180.temperature();
 				pressure << bmp180.pressure();
+				data["bmp180_t"] = bmp180.temperature();
+				data["bmp180_p"] = bmp180.pressure();
 			}
 		}
 #endif
@@ -623,36 +658,52 @@ int main(int argc, char** argv) {
 		if (config.enabled_HTU21DF) {
 			ret = readSensor(htu21df);
 			buffer << " htu21df=\"" << ret << "\" temperature_htu21df=\"" << htu21df.temperature() << "\" humidity=\"" << htu21df.humidity() << "\"";
+			status["htu21df"] = ret;
 			if (ret == 0) {
 				temperature << htu21df.temperature();
 				humidity << htu21df.humidity();
+				data["htu21df_t"] = htu21df.temperature();
+				data["htu21df_h"] = htu21df.humidity();
 			}
 		}
 #endif
 #if SENSOR_MCP9808 == 1
 		if (config.enabled_MCP9808) {
 			ret = readSensor(mcp9808);
+			status["mcp9808"] = ret;
 			buffer << " mcp9808=\"" << ret << "\" temperature_mcp9808=\"" << mcp9808.temperature() << "\"";
 			if(ret == 0) {
 				temperature << mcp9808.temperature();
+				data["mcp9808_t"] = mcp9808.temperature();
 			}
 		}
 #endif
 #if SENSOR_TSL2561 == 1
 		 if (config.enabled_TSL2561) {
 			ret = readSensor(tsl2561);
+			status["tsl2561"] = ret;
 			buffer << " tsl2561=\"" << ret << "\" lux_visible=\"" << tsl2561.visible() << "\" lux_infrared=\"" << tsl2561.ir() << "\"";
+			if(ret == 0) {
+				data["tsl2561_v"] = tsl2561.visible();
+				data["tsl2561_ir"] = tsl2561.ir();
+			}
 		}
 #endif
     	
     	if(temperature.size() > 0) {
-			buffer << " temperature=\"" << temperature.average() << "\"";
+    		double avg = temperature.average();
+			buffer << " temperature=\"" << avg << "\"";
+			data["temperature"] = avg;
 		}
 		if(humidity.size() > 0) {
-			buffer << " humidity=\"" << humidity.average() << "\"";
+    		double avg = humidity.average();
+			buffer << " humidity=\"" << avg << "\"";
+			data["humidity"] = avg;
 		}
 		if(pressure.size() > 0) {
-			buffer << " pressure=\"" << pressure.average() << "\"";
+    		double avg = pressure.average();
+			buffer << " pressure=\"" << avg << "\"";
+			data["pressure"] = avg;
 		}
     	
     	buffer << "/>";
@@ -676,6 +727,10 @@ int main(int argc, char** argv) {
     			ret = (*it).send(message);
     			if(ret < 0)
     				cerr << "Error sending data via tcp to " << (*it).getRemote() << ":" << (*it).getPort()<< " - " << strerror(errno) << endl;
+    		}
+    		if(mosquittos.size() > 0) {
+    			for(vector<MeteoMosquitto*>::const_iterator it = mosquittos.begin(); it != mosquittos.end(); ++it)
+    				(*it)->publish(data, status);
     		}
     	}
     	
@@ -946,6 +1001,35 @@ static void applyConfig(Config &conf) {
 			addBroadcast(temp.c_str());
 		} catch(const char *msg) {
 			cerr << "Error adding udp broadcast: " << temp << " - " << msg << endl;
+		}
+	}
+	
+	// Mosquitto
+	temp = conf.get("mosquitto_remote");
+	if(temp.size() > 0) {
+		MeteoMosquitto *mosquitto = NULL;
+		try {
+			string remote = temp;
+			int port = conf.getInt("mosquitto_port", 1883);
+			string username = conf.get("mosquitto_username");
+			string password = conf.get("mosquitto_password");
+			string topic = conf.get("mosquitto_topic");
+		
+			// Try to connect
+			mosquitto = new MeteoMosquitto();
+			if(topic.size() > 0)
+				mosquitto->topic = topic;
+			mosquitto->mosquitto.connect(remote.c_str(), port);
+			if(username.size() > 0 && password.size() > 0)
+				mosquitto->mosquitto.set_username_password(username.c_str(), password.c_str());
+			mosquitto->mosquitto.loopStart();
+			
+			mosquittos.push_back(mosquitto);
+			cout << "Mosquitto setup for " << remote << ":" << port << "." << endl;
+		} catch (const char* msg) {
+			if(mosquitto != NULL) delete mosquitto;
+			cerr << "Error setting up mosquitto: " << msg << endl;
+			exit(EXIT_FAILURE);
 		}
 	}
 	
@@ -1265,6 +1349,9 @@ void cleanup() {
 		const pid_t pid = *it;
 		kill(pid, SIGTERM);
 	}
+	for(vector<MeteoMosquitto*>::iterator it = mosquittos.begin(); it != mosquittos.end(); ++it)
+		delete (*it);
+	mosquittos.clear();
 	children.clear();
 }
 

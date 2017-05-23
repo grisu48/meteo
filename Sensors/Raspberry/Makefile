@@ -13,7 +13,7 @@ CC_FLAGS=$(O_FLAGS) -std=c99
 
 
 # Binaries, object files, libraries and stuff
-LIBS=-lm -pthread
+LIBS=-lm -pthread -lmosquitto
 INCLUDE=
 OBJS=sensor.o bmp180.o tsl2561.o mcp9808.o htu21df.o config.o string.o
 BINS=bmp180 tsl2561 mcp9808 htu21df meteo
@@ -56,4 +56,6 @@ htu21df:	read_htu21df.cpp htu21df.o sensor.o
 
 meteo:	meteo.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) $(OBJS)
-	
+
+meteo2:	meteo2.cpp $(OBJS)
+	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) -lmosquitto $(OBJS)

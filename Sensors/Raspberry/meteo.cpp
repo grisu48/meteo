@@ -545,6 +545,10 @@ int main(int argc, char** argv) {
 		if(!displaySet) {
 			if(!config.daemonize) config.display = true;
 		}
+		
+		// Apply id to all mosquitto interfaces
+		for(vector<MeteoMosquitto*>::const_iterator it = mosquittos.begin(); it != mosquittos.end(); ++it)
+			(*it)->id = config.station_id;
 	} catch (const char* msg) {
 		cerr << "Error in program parameters: " << msg << endl;
 		cout << "Type " << argv[0] << " --help if you need help" << endl;
@@ -1017,6 +1021,7 @@ static void applyConfig(Config &conf) {
 		
 			// Try to connect
 			mosquitto = new MeteoMosquitto();
+			mosquitto->id = config.station_id;
 			if(topic.size() > 0)
 				mosquitto->topic = topic;
 			mosquitto->mosquitto.connect(remote.c_str(), port);

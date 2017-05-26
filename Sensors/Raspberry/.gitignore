@@ -1,4 +1,4 @@
 *.o
-meteo.cf
 meteo
 meteod
+*.cf

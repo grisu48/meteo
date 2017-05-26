@@ -4,10 +4,10 @@ CXX=g++
 CXX_FLAGS=$(O_FLAGS) -std=c++11
 
 INCLUDE=
-LIBS=-pthread -lsqlite3
+LIBS=-pthread -lsqlite3 -lmosquitto
 
 
-OBJS=string.o tcp.o udp.o node.o server.o parser.o serial.o database.o
+OBJS=string.o tcp.o udp.o node.o server.o parser.o serial.o database.o config.o mosquitto.o
 
 
 default:	all
@@ -17,6 +17,9 @@ clean:
 
 
 main:	main.cpp $(OBJS)
+	$(CXX) $(CXX_FLAGS) -o meteod $< $(OBJS) $(INCLUDE) $(LIBS) 
+
+meteo_v2:	main_v2.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o meteod $< $(OBJS) $(INCLUDE) $(LIBS) 
 
 %.o:	%.cpp %.hpp

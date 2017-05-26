@@ -8,7 +8,11 @@
 server
 meteo
 meteod
+run.sh
 
 # Other debugging files
 .gdb_history
 
+# Config files
+*.db
+*.cf

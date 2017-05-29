@@ -11,7 +11,7 @@ OBJS=string.o tcp.o udp.o node.o server.o parser.o serial.o database.o config.o 
 
 
 default:	all
-all:	main
+all:	main reader
 clean:
 	rm -rf *.o
 
@@ -19,6 +19,9 @@ clean:
 main:	main.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o meteod $< $(OBJS) $(INCLUDE) $(LIBS) 
 
+reader:	reader.cpp $(OBJS)
+	$(CXX) $(CXX_FLAGS) -o $@ $< $(OBJS) $(INCLUDE) $(LIBS) 
+	
 meteo_v2:	main_v2.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o meteod $< $(OBJS) $(INCLUDE) $(LIBS) 
 

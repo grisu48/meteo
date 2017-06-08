@@ -114,7 +114,14 @@ void Mosquitto::mosq_log_callback(int level, const char *str) {
 	(void)str;
 }
 	
-void Mosquitto::mosq_message_callback(const struct mosquitto_message *message) {
-	(void)message;
+void Mosquitto::mosq_message_callback(const struct mosquitto_message *mosq_message) {
+    string topic(mosq_message->topic);
+    this->onMessageReceived(topic, (char*)mosq_message->payload, mosq_message->payloadlen);
+}
+
+void Mosquitto::start() {
+    int rc = mosquitto_loop_start(this->mosq);
+    if(rc != MOSQ_ERR_SUCCESS)
+        throw "Error starting thread";
 }
 

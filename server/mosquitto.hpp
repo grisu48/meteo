@@ -34,6 +34,8 @@ private:
 	/** Connected flag */
 	bool connected = false;
 	
+	void(*recv_callback)(const std::string &topic, char* buffer, size_t len) = NULL;
+	
 protected:
 	
 public:
@@ -61,6 +63,9 @@ public:
 	void publish(const std::string &topic, const std::string &message);
 	
 	
+	/** Start the looper */
+	void start();
+	
 	
 	/** Logging callback */
 	virtual void mosq_log_callback(int level, const char *str);
@@ -68,10 +73,15 @@ public:
 	/** Message callback */
 	virtual void mosq_message_callback(const struct mosquitto_message *message);
 	
-	
+	void setReceiveCallback(void(*callback)(const std::string &topic, char* buffer, size_t len)) {
+		this->recv_callback = callback;
+	}
 	
 	/** Called when a new message has been received */
-	virtual void onMessageReceived(const std::string &topic, char* buffer, size_t len);
+	virtual void onMessageReceived(const std::string &topic, char* buffer, size_t len) {
+		if(recv_callback != NULL)
+			recv_callback(topic, buffer, len);
+	}
 };
 
 

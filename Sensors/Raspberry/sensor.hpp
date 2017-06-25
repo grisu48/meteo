@@ -15,6 +15,8 @@
  
 #include <iostream>
 #include <string>
+#include <sstream>
+#include <map>
 
 #include <cstdlib>
 #include <unistd.h>
@@ -53,6 +55,22 @@ public:
 	  */
 	virtual int read(void) = 0;
 
+	/** Get a values map from the sensor */
+	virtual std::map<std::string,float> values(void) const = 0;
+	
+	std::string toString(void) const {
+		std::stringstream ss;
+		
+		std::map<std::string,float> values = this->values();
+		bool first = true;
+		for(std::map<std::string,float>::const_iterator it = values.begin(); it != values.end(); ++it) {
+			if(first) first = false;
+			else ss << ", ";
+			ss << it->first << " = " << it->second;
+		}
+		
+		return ss.str();
+	}
 #if 0
 	/**
 	  * (Re)Initialize the device

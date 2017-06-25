@@ -44,6 +44,12 @@ public:
 	float temperature() { return this->t; }
 	float humidity() { return this->h; }
 	
+	virtual std::map<std::string,float> values(void) const {
+		std::map<std::string,float> ret;
+		ret["t"] = this->t;
+		ret["hum"] = this->h;
+		return ret;
+	}
 	
 	static const int DEVICE_ADDRESS = 0x40;
 };

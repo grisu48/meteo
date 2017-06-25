@@ -42,6 +42,13 @@ public:
 	float pressure() { return this->p; }
 	float altitude() { return this->alt; }
 	
+	virtual std::map<std::string,float> values(void) const {
+		std::map<std::string,float> ret;
+		ret["t"] = this->t;
+		ret["p"] = this->p;
+		ret["alt"] = this->alt;
+		return ret;
+	}
 	
 	static const int DEVICE_ADDRESS = 0x77;
 };

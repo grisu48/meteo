@@ -41,6 +41,12 @@ public:
 	float visible() { return this->_visible; }
 	float ir() { return this->_ir; }
 	
+	virtual std::map<std::string,float> values(void) const {
+		std::map<std::string,float> ret;
+		ret["l_vis"] = this->_visible;
+		ret["l_ir"] = this->_ir;
+		return ret;
+	}
 	
 	static const int DEVICE_ADDRESS = 0x39;
 };

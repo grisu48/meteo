@@ -121,8 +121,11 @@ static void cleanup() {
 
 int main(int argc, char** argv) {
 	string remote = "";
+	string topic = "meteo/#";
 	string db_filename = "meteo.db";
+	vector<string> topics;
 	bool daemon = false;
+	bool verbose = false;
 	
 	
 	for(int i=1;i<argc;i++) {
@@ -132,16 +135,27 @@ int main(int argc, char** argv) {
 			if(arg == "-h" || arg == "--help") {
 				cout << "Meteo Server instance" << endl;
 				cout << "  2017 - Felix Niederwanger" << endl;
-				cout << "Usage: " << argv[0] << " [OPTIONS]" << endl;
+				cout << "Usage: " << argv[0] << " [OPTIONS] REMOTE" << endl;
 				cout << "OPTIONS" << endl;
 				cout << "   -h    --help             Print this help message" << endl;
 				cout << "   -d    --daemon           Run as daemon" << endl;
 				cout << "   -q    --quiet            Quiet run" << endl;
+				cout << "   -v    --verbose          Verbose run (overrides quiet)" << endl;
+				cout << "   -t TOPIC  --topic TOPIC  Set TOPIC to subscribe from server" << endl;
+				cout << "                            If no topic is set, the program will use 'meteo/#' as default" << endl;
+				cout << endl;
+				cout << "REMOTE is the mosquitto remote end" << endl;
+				return EXIT_SUCCESS;
 			} else if(arg == "-d" || arg == "--daemon") 
 				daemon = true;
 			else if(arg == "-q" || arg == "--quiet")
 				quiet = true;
-			else {
+			else if(arg == "-v" || arg == "--verbose")
+				verbose = true;
+			else if(arg == "-t" || arg == "--topic") {
+				// XXX : Check if last argument
+				topics.push_back(string(argv[++i]));
+			} else {
 				cerr << "Illegal argument: " << arg << endl;
 				return EXIT_FAILURE;
 			}
@@ -149,9 +163,12 @@ int main(int argc, char** argv) {
 		} else
 			remote = arg;
 	}
+	if(verbose) quiet = false;		// Verbose overrides quiet
 
 	if(remote.size() == 0) {
-		cerr << "No remote set" << endl;
+		cerr << "No mosquitto remote set" << endl;
+		cerr << "  Usage: " << argv[0] << " [OPTIONS] REMOTE   where REMOTE is the mosquitto server" << endl;
+		cerr << "  Type " << argv[0] << " --help if you need help" << endl;
 		return EXIT_FAILURE;
 	}
 
@@ -160,9 +177,19 @@ int main(int argc, char** argv) {
 
 	Mosquitto mosq(remote);	
 	try {
+		if(verbose) cout << "Connecting to " << remote << " ... " << endl;
 		mosq.connect();
 		mosq.setReceiveCallback(recv_callback);
-		mosq.subscribe("meteo/#");
+		// Subscribe to topics or "meteo/#" if no topics are defined
+		if(topics.size() == 0) {
+			mosq.subscribe("meteo/#");
+			if(verbose) cout << "  Subscribing to 'meteo/#' as default topic" << endl;
+		} else {
+			for(vector<string>::const_iterator it = topics.begin(); it != topics.end(); ++it) {
+				mosq.subscribe(*it);
+				if(verbose) cout << "  Subscribing to '" << (*it) << "'" << endl;
+			}
+		}
 	} catch (const char *msg) {
 		cerr << "Error setting up mosquitto: " << msg << endl;
 		return EXIT_FAILURE;
@@ -174,6 +201,7 @@ int main(int argc, char** argv) {
 	signal(SIGTERM, sig_handler);
 	
 	try {
+		if(verbose) cout << "Mosquitto looper ... " << endl;
 		mosq.loop();
 	} catch (const char* msg) {
 		cerr << "Error looping in mosquitto: " << msg << endl;

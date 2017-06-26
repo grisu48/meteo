@@ -191,6 +191,11 @@ int main(int argc, char** argv) {
 			cout << "Usage: " << argv[0] << " [OPTIONS]" << endl;
 			cout << "OPTIONS:" << endl;
 			cout << "    -h     --help               Print this help message" << endl;
+			cout << "    -q     --quiet              Quiet mode" << endl;
+			cout << "    -d     --daemon             Daemon mode" << endl;
+			cout << "           --id ID              Set node ID" << endl;
+			cout << "           --delay SECONDS      Set delay between readouts" << endl;
+			return EXIT_SUCCESS;
 		} else if(arg == "--all") {
 			bmp180 = true;
 			htu21df = true;

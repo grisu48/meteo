@@ -2,7 +2,7 @@
 i2c = /dev/i2c-2
 
 # Station ID
-id = 1
+id = 0
 
 # Sensors for this instance
 bmp180 = 1
@@ -10,6 +10,5 @@ htu21df = 1
 mcp9808 = 0
 tsl2561 = 0
 
-# Broadcasts
-#tcp = 192.168.0.100:5232
-udp = 192.168.0.100:5232
+# Mosquitto configuration
+mosquitto = 127.0.0.1

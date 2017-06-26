@@ -213,6 +213,42 @@ Webserver::~Webserver() {
 }
 
 
+
+class WebserverThreadParams {
+public:
+	int port;
+	string db_filename;
+};
+
+static void alive_thread(void* arg) {
+	WebserverThreadParams *params = (WebserverThreadParams*)arg;
+	Webserver server(params->port, params->db_filename);
+	delete params;
+	
+	server.loop();
+	server.close();
+}
+
+pthread_t Webserver::startThreaded(const int port, const std::string &db_filename) {
+	WebserverThreadParams *params = new WebserverThreadParams();
+	params->port = port;
+	params->db_filename = db_filename;
+	
+	int ret;
+	pthread_t tid;
+	ret = pthread_create(&tid, NULL, (void* (*)(void*))alive_thread, params);	
+	if(ret < 0) {
+		delete params;
+		throw "Error create thread";
+	}
+	if(pthread_detach(tid) < 0) {
+		delete params;
+		throw "Error detaching thread";
+	}
+	return tid;
+}
+
+
 void Webserver::loop(void) {
 	while(running && this->sock > 0) {
 		const int fd = ::accept(sock, NULL, 0);
@@ -291,7 +327,6 @@ vector<Node> getNodes(SQLite3Db &db) {
 		Node node;
 		node.id = rs->getLong("id");
 		node.name = rs->getString("name");
-		node.print();
 		ret.push_back(node);
 	}
 	rs->close();
@@ -315,7 +350,7 @@ vector<DataPoint> getPoints(SQLite3Db &db, const long node, const long minTimest
 	query << ";";
 	
 	string str = query.str();
-	//cout << str << " = ";
+	cout << str << " = ";
 	
 	vector<DataPoint> ret;
 	SQLite3ResultSet *rs = db.doQuery(str);
@@ -331,7 +366,40 @@ vector<DataPoint> getPoints(SQLite3Db &db, const long node, const long minTimest
 		ret.push_back(dp);
 	}
 	rs->close();
-	//cout << ret.size() << endl;
+	cout << ret.size() << endl;
+	return ret;
+}
+
+vector<DataPoint> getPointsToday(SQLite3Db &db, const long node, const long limit = 1000, const long offset = 0L) {
+	lazy::DateTime today;
+	today.setMilliseconds(0);
+	today.setSecond(0);
+	today.setMinute(0);
+	today.setHour(0);
+	
+	const long minTimestamp = today.timestamp();
+	const long maxTimestamp = minTimestamp + 60L*60L*24L*1000L;
+	
+	return getPoints(db, node, minTimestamp, maxTimestamp, limit, offset);
+}
+
+
+/** Extract parameters to a parameter map */
+static map<String, String> extractParams(String param) {
+	vector<String> split = param.split("&");
+	
+	map<String, String> ret;
+	for(vector<String>::const_iterator it = split.begin(); it != split.end(); ++it) {
+		String t = (*it);
+		size_t index = t.find('=');
+		if(index == string::npos)
+			ret[t] = "";
+		else {
+			String name = t.left(index);
+			String value = t.mid(index+1);
+			ret[name] = value;
+		}
+	}
 	return ret;
 }
 
@@ -388,24 +456,74 @@ void Webserver::doHttpRequest(const int fd) {
 		if(nodes.size() == 0) {
 			socket << "No nodes present in the system";
 		} else {
-			socket << "<ul>\n";
+			socket << "<table border=\"1\">\n";
+			socket << "<tr><td><b>Node</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [% rel]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminosity (visible)</b></td><td><b>Luminosity (IR)</b></td></tr>\n";
 			for(vector<Node>::const_iterator it = nodes.begin(); it != nodes.end(); ++it) {
-				socket << "<li><a href=\"Node?id=" << (*it).id << "\">" << (*it).name << "</a>";
+				socket << "<tr><td><a href=\"Node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
 				vector<DataPoint> dp = getPoints(db, (*it).id, -1,-1, 1);
 				if(dp.size() > 0) {
 					DataPoint p = dp[0];
-					socket << " (" << p.t << " deg C, " << p.hum << " % rel., " << p.p << " hPa)";
+					socket << "<td>" << p.t << "</td><td>" << p.hum << "</td><td>" << p.p << "</td><td>" << p.l_vis << "</td><td>" << p.l_ir << "</td>";
 				}
-				socket << "</li>\n";
+				socket << "</tr>\n";
 			}
-			socket << "</ul>\n";
+			socket << "</table>\n";
 		}
+		
+	} else if(url == "/Node" || url == "/node") {
+		
+        socket.writeHttpHeader(403);
+        socket << "<html><head><title>meteo Sensor node</title></head>";
+        socket << "<body>";
+        socket << "<h1>Meteo Server</h1>\n";
+		socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
+		socket << "<b>Error</b>Missing parameter: Node id\n";
+		
+	} else if(url.startsWith("/Node?") || url.startsWith("/node?")) {
+		map<String, String> params = extractParams(url.mid(6));
+		
+		String sID = params["id"];
+		long id = sID.toLong();
+		
+        socket.writeHttpHeader();
+        socket << "<html><head><title>meteo Sensor node</title></head>";
+        socket << "<body>";
+        socket << "<h1>Meteo Server</h1>\n";
+		socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
+		socket << "<p><a href=\"Node?id=" << id << "&type=day\">[Today]</a> <a href=\"Node?id=" << id << "&type=week\">[7 days]</a> <a href=\"Node?id=" << id << "&type=month\">[Month]</a></p>";
+		
+		vector<DataPoint> datapoints;
+		
+		String type = params["type"];
+		string dt_format = "%H:%M:%S";
+		if(type == "day" || type == "") {
+			datapoints = getPointsToday(db, id);
+		} else if(type == "week") {
+		
+		} else if(type == "month") {
+		
+		} else {
+			// Custom range?
+			
+		}
+		
+		// Print datapoints
+		socket << "<table border=\"1\">\n";
+		socket << "<tr><td><b>Timestamp</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [% rel]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminosity (visible)</b></td><td><b>Luminosity (IR)</b></td></tr>\n";
+		for(vector<DataPoint>::const_iterator it = datapoints.begin(); it != datapoints.end(); ++it) {
+			DataPoint p = (*it);
+			lazy::DateTime dt(p.timestamp);
+			socket << "<td>" << dt.format(dt_format) << "</td><td>" << p.t << "</td><td>" << p.hum << "</td><td>" << p.p << "</td><td>" << p.l_vis << "</td><td>" << p.l_ir << "</td></tr>\n";
+		}
+		socket << "</table>\n";
+		
 		
 	} else {
 		// Not found
 		socket << "HTTP/1.1 404 Not Found\n";
 		socket << "Content-Type: text/html\n\n";
 		socket << "<html><head><title>Not found</title></head><body><h1>Not found</h1>";
-		socket << "<p>Error 404 - Page not found. Maybe you want to <a href=\"index.html\">go back to the homepage</a></p>";
+		socket << "<p>Error 404 - Page not found. Maybe you want to <a href=\"index.html\">go back to the homepage</a></p>\n";
+		socket << "<p><b>Illegal url:</b>" << url << "</p>\n";
 	}
 }

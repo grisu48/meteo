@@ -11,7 +11,10 @@
 
 #include <string>
 
+#include <pthread.h>
+
 #include "database.hpp"
+#include "time.hpp"
 
 
 /** Webserver instance for meteo */
@@ -40,5 +43,8 @@ public:
 		if(sock > 0)
 			::close(sock);
 	}
+	
+	/** Start a webserver instance as a new POSIX thread */
+	static pthread_t startThreaded(const int port, const std::string &db_filename);
 };
 

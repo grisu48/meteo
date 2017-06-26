@@ -35,8 +35,8 @@
 #include "database.hpp"
 #include "mosquitto.hpp"
 #include "json.hpp"
-#include "time.hpp"
 #include "httpd.hpp"
+#include "time.hpp"
 
 using namespace std;
 using flex::String;
@@ -195,28 +195,8 @@ int main(int argc, char** argv) {
 	// At this point fork webserver
 	if(www > 0) {
 		if(verbose) cout << "Starting webserver on port " << www << " ... " << endl;
-		www_pid = fork();
-		if(www_pid < 0) {
-			cerr << "Cannot fork webserver: " << strerror(errno) << endl;
-			return EXIT_FAILURE;
-		} else if(www_pid == 0) {
-			// Child
-			try {
-				Webserver webserver(www, db_filename);
-				webserver.loop();
-				return EXIT_FAILURE;		// Should never terminate	
-			} catch(const char* msg) {
-				cerr << "Webserver error: " << msg << endl;
-				return EXIT_FAILURE;
-			} catch(...) {
-				cerr << "Unknown webserver error" << endl;
-				throw;
-				return EXIT_FAILURE;
-			}
-		} else {
-			if(verbose) cout << "Webserver running as pid " << www_pid << endl;
-		}
-		
+		pthread_t tid = Webserver::startThreaded(www, db_filename);
+		if(verbose) cout << "Webserver running as thread " << tid << endl;
 	}
 
 	db = new SQLite3Db(db_filename);

@@ -11,6 +11,8 @@
 
 #include <string>
 #include <sstream>
+#include <iostream>
+#include <vector>
 
 #include <string.h>
 #include <errno.h>
@@ -238,8 +240,103 @@ void Webserver::loop(void) {
 	this->close();
 }
 
+class Node {
+public:
+	long id;
+	string name;
+	
+	
+	Node() {
+		this->id = 0;
+		this->name = "";
+	}
+	Node(const Node &node) {
+		this->id = node.id;
+		this->name = node.name;
+	}
+	
+	void print(ostream &out = cout) {
+		out << this->id << " [" << this->name << "]" << endl;
+	}
+};
+
+class DataPoint {
+public:
+	long node = 0;
+	long timestamp = 0L;
+	
+	float t = 0.0F;
+	float p = 0.0F;
+	float hum = 0.0F;
+	float l_vis = 0.0F;
+	float l_ir = 0.0F;
+	
+	DataPoint() {}
+	DataPoint(const DataPoint &d) {
+		this->node = d.node;
+		this->timestamp = d.timestamp;
+
+		this->t = d.t;
+		this->p = d.p;
+		this->hum = d.hum;
+		this->l_vis = d.l_vis;
+		this->l_ir = d.l_ir;
+	}
+};
+
+vector<Node> getNodes(SQLite3Db &db) {
+	SQLite3ResultSet *rs = db.doQuery("SELECT * FROM `Nodes`;");
+	vector<Node> ret;
+	while(rs->next()) {
+		Node node;
+		node.id = rs->getLong("id");
+		node.name = rs->getString("name");
+		node.print();
+		ret.push_back(node);
+	}
+	rs->close();
+	return ret;
+}
+
+vector<DataPoint> getPoints(SQLite3Db &db, const long node, const long minTimestamp = -1L, const long maxTimestamp = -1L, const long limit = 100, const long offset = 0L) {
+	stringstream query;
+	
+	query << "SELECT `timestamp`,`t`,`hum`,`p`,`l_vis`,`l_ir` FROM `Node_" << node << "`";
+	if(minTimestamp >= 0L && maxTimestamp >= 0L) {
+		query << " WHERE `timestamp` >= " << minTimestamp << " AND `timestamp` <= " << maxTimestamp;
+	} else if(minTimestamp >= 0L) {
+		query << " WHERE `timestamp` >= " << minTimestamp;
+	} else if(maxTimestamp >= 0L) {
+		query << " WHERE `timestamp` <= " << maxTimestamp;
+	}
+	query << " ORDER BY `timestamp` DESC";
+	if (limit > 0L || offset > 0L) 
+		query << " LIMIT " << limit << " OFFSET " << offset;
+	query << ";";
+	
+	string str = query.str();
+	//cout << str << " = ";
+	
+	vector<DataPoint> ret;
+	SQLite3ResultSet *rs = db.doQuery(str);
+	while(rs->next()) {
+		DataPoint dp;
+		dp.node = node;
+		dp.timestamp = rs->getLong(0);
+		dp.t = rs->getFloat(1);
+		dp.hum = rs->getFloat(2);
+		dp.p = rs->getFloat(3);
+		dp.l_vis = rs->getFloat(4);
+		dp.l_ir = rs->getFloat(5);
+		ret.push_back(dp);
+	}
+	rs->close();
+	//cout << ret.size() << endl;
+	return ret;
+}
+
 void Webserver::doHttpRequest(const int fd) {
-	(void)fd;
+	SQLite3Db db(this->db_filename);		// Open database
 	
 	// Process http request
 	Socket socket(fd);
@@ -286,7 +383,23 @@ void Webserver::doHttpRequest(const int fd) {
         socket << "<body>";
         socket << "<h1>Meteo Server</h1>\n";
 		socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
-		socket << "<p>No contents yet available</p>";
+		// Get nodes
+		vector<Node> nodes = getNodes(db);
+		if(nodes.size() == 0) {
+			socket << "No nodes present in the system";
+		} else {
+			socket << "<ul>\n";
+			for(vector<Node>::const_iterator it = nodes.begin(); it != nodes.end(); ++it) {
+				socket << "<li><a href=\"Node?id=" << (*it).id << "\">" << (*it).name << "</a>";
+				vector<DataPoint> dp = getPoints(db, (*it).id, -1,-1, 1);
+				if(dp.size() > 0) {
+					DataPoint p = dp[0];
+					socket << " (" << p.t << " deg C, " << p.hum << " % rel., " << p.p << " hPa)";
+				}
+				socket << "</li>\n";
+			}
+			socket << "</ul>\n";
+		}
 		
 	} else {
 		// Not found

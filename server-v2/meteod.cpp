@@ -36,6 +36,7 @@
 #include "mosquitto.hpp"
 #include "json.hpp"
 #include "time.hpp"
+#include "httpd.hpp"
 
 using namespace std;
 using flex::String;
@@ -44,7 +45,8 @@ using namespace lazy;
 
 static SQLite3Db *db = NULL;
 static bool quiet = false;
-
+/** PID for webserver if present */
+static pid_t www_pid = 0;
 
 static void received(const int id, const string &name, float t, float hum, float p, float l_vis, float l_ir);
 
@@ -88,6 +90,12 @@ static void sig_handler(int signo) {
 		case SIGINT:
 		case SIGTERM:
 			exit(EXIT_FAILURE);
+			return;
+		case SIGCHLD:
+			// Webserver terminated
+			if(!quiet) cerr << "Error: Webserver terminated" << endl;
+			www_pid = 0;
+			return;
 	}
 }
 
@@ -117,6 +125,9 @@ static void fork_daemon(void) {
 static void cleanup() {
 	if(db != NULL) delete db;
 	db = NULL;
+	if(www_pid > 0) {
+		kill(www_pid, SIGTERM);
+	}
 }
 
 int main(int argc, char** argv) {
@@ -126,6 +137,7 @@ int main(int argc, char** argv) {
 	vector<string> topics;
 	bool daemon = false;
 	bool verbose = false;
+	int www = 0;			// if > 0 a webserver will be forked on that port
 	
 	
 	for(int i=1;i<argc;i++) {
@@ -143,6 +155,8 @@ int main(int argc, char** argv) {
 				cout << "   -v    --verbose          Verbose run (overrides quiet)" << endl;
 				cout << "   -t TOPIC  --topic TOPIC  Set TOPIC to subscribe from server" << endl;
 				cout << "                            If no topic is set, the program will use 'meteo/#' as default" << endl;
+				cout << "         --http PORT        Setup webserver on PORT" << endl;
+				cout << "         --db FILE          Set file for database" << endl;
 				cout << endl;
 				cout << "REMOTE is the mosquitto remote end" << endl;
 				return EXIT_SUCCESS;
@@ -155,6 +169,11 @@ int main(int argc, char** argv) {
 			else if(arg == "-t" || arg == "--topic") {
 				// XXX : Check if last argument
 				topics.push_back(string(argv[++i]));
+			} else if(arg == "--http") {
+				// XXX : Check if last argument
+				www = ::atoi(argv[++i]);
+			} else if(arg == "--db") {
+				db_filename = argv[++i];
 			} else {
 				cerr << "Illegal argument: " << arg << endl;
 				return EXIT_FAILURE;
@@ -167,9 +186,37 @@ int main(int argc, char** argv) {
 
 	if(remote.size() == 0) {
 		cerr << "No mosquitto remote set" << endl;
-		cerr << "  Usage: " << argv[0] << " [OPTIONS] REMOTE   where REMOTE is the mosquitto server" << endl;
+		cerr << "  Usage: " << argv[0] << " [OPTIONS] REMOTE" << endl;
+		cerr << "  REMOTE defines a mosquitto server" << endl;
 		cerr << "  Type " << argv[0] << " --help if you need help" << endl;
 		return EXIT_FAILURE;
+	}
+
+	// At this point fork webserver
+	if(www > 0) {
+		if(verbose) cout << "Starting webserver on port " << www << " ... " << endl;
+		www_pid = fork();
+		if(www_pid < 0) {
+			cerr << "Cannot fork webserver: " << strerror(errno) << endl;
+			return EXIT_FAILURE;
+		} else if(www_pid == 0) {
+			// Child
+			try {
+				Webserver webserver(www, db_filename);
+				webserver.loop();
+				return EXIT_FAILURE;		// Should never terminate	
+			} catch(const char* msg) {
+				cerr << "Webserver error: " << msg << endl;
+				return EXIT_FAILURE;
+			} catch(...) {
+				cerr << "Unknown webserver error" << endl;
+				throw;
+				return EXIT_FAILURE;
+			}
+		} else {
+			if(verbose) cout << "Webserver running as pid " << www_pid << endl;
+		}
+		
 	}
 
 	db = new SQLite3Db(db_filename);

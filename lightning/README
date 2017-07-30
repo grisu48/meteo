@@ -1,0 +1,4 @@
+Lightning detector system, based on a MOD-1016.
+
+daemon.cpp consists of a simple daemon program, that opens the serial connection
+and pushed all detected lightnings via mosquitto

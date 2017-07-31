@@ -32,10 +32,13 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF 
 THE POSSIBILITY OF SUCH DAMAGE.
 
+AS3935 MOD-1016 Lightning Sensor Arduino test sketch
+  Written originally by Embedded Adventures
+  Modified by phoenix, 2017
+
 */
 
-// AS3935 MOD-1016 Lightning Sensor Arduino test sketch
-// Written originally by Embedded Adventures
+
 
 
 #include <Wire.h>
@@ -47,26 +50,8 @@ THE POSSIBILITY OF SUCH DAMAGE.
 
 volatile bool detected = false;
 
-void setup() {
-  Serial.begin(115200);
-  while (!Serial) {}
-  Serial.println("# MOD-1016 (AS3935) Lightning Sensor Monitor System");
-  Serial.println("# 2017 Felix Niederwanger | phoenix");
-
-  //I2C
-  Wire.begin();
-  mod1016.init(IRQ_PIN);
-  //SPI
-  //SPI.begin();
-  //mod1016.init(IRQ_PIN, CS_PIN);
- 
-  //Tune Caps, Set AFE, Set Noise Floor
-  autoTuneCaps(IRQ_PIN);
-  
-  //mod1016.setTuneCaps(7);
-  mod1016.setOutdoors();
-  mod1016.setNoiseFloor(5);
-  
+void recalibrate(bool tune = true) {
+  if(tune) autoTuneCaps(IRQ_PIN);
   
   Serial.println("# TUNE\tIN/OUT\tNOISEFLOOR");
   Serial.print("# ");
@@ -75,12 +60,39 @@ void setup() {
   Serial.print(mod1016.getAFE(), BIN);
   Serial.print("\t");
   Serial.println(mod1016.getNoiseFloor(), HEX);
-  Serial.print("\n");
+  Serial.print("\n");  
+}
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial) {}
+  Serial.println("# MOD-1016 (AS3935) Lightning Sensor Monitor System");
+
+  //I2C
+  Wire.begin();
+  mod1016.init(IRQ_PIN);
+ 
+  //Tune Caps, Set AFE, Set Noise Floor
+  autoTuneCaps(IRQ_PIN);
+  
+  //mod1016.setTuneCaps(7);
+  //mod1016.setIndoors();
+  mod1016.setOutdoors();
+  mod1016.setNoiseFloor(3);
+  
+  Serial.println("# TUNE\tIN/OUT\tNOISEFLOOR");
+  Serial.print("# ");
+  Serial.print(mod1016.getTuneCaps(), HEX);
+  Serial.print("\t");
+  Serial.print(mod1016.getAFE(), BIN);
+  Serial.print("\t");
+  Serial.println(mod1016.getNoiseFloor(), HEX);
+  Serial.print("\n");  
 
   pinMode(IRQ_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(IRQ_PIN), alert, RISING);
   mod1016.getIRQ();
-  Serial.println("# Interrupt");
+  Serial.println("# Interrupt setup completed");
 }
 
 void loop() {
@@ -95,6 +107,8 @@ void alert() {
 }
 
 void translateIRQ(int irq) {
+  Serial.print(millis());
+  Serial.print(' ');
   switch(irq) {
       case 1:
         Serial.println("NOISE DETECTED");
@@ -111,18 +125,25 @@ void translateIRQ(int irq) {
 
 void printDistance() {
   int distance = mod1016.calculateDistance();
-  if (distance == -1)
+  if (distance == -1) {
     Serial.println("# Lightning out of range");
-  else if (distance == 1)
+    Serial.print(": -1");
+    Serial.println();
+  } else if (distance == 1) { 
     Serial.println("# Distance not in table");
-  else if (distance == 0)
+  } else if (distance == 0) {
     Serial.println("# Lightning overhead");
-  else {
+    Serial.print(": 0");
+    Serial.println();
+  } else {
     Serial.print("# Lightning ~");
     Serial.print(distance);
     Serial.println("km away\n");  
     Serial.print(distance);
     Serial.println(" km");
+    Serial.print(": ");
+    Serial.print(distance);
+    Serial.println();
   }
 }
 

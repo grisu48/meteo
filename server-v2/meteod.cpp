@@ -29,6 +29,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 #include "string.hpp"
 #include "config.hpp"
@@ -43,8 +44,14 @@ using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
+
+#define PID_FILE "/var/run/meteod.pid"
+
+
 static SQLite3Db *db = NULL;
 static bool quiet = false;
+static bool force = false;
+static string pid_file = "";
 /** PID for webserver if present */
 static pid_t www_pid = 0;
 
@@ -128,6 +135,54 @@ static void cleanup() {
 	if(www_pid > 0) {
 		kill(www_pid, SIGTERM);
 	}
+	if(pid_file.size() > 0)
+		::remove(pid_file.c_str());
+}
+
+bool process_exists(pid_t pid) {
+	struct stat sts;
+	stringstream ss;
+	ss << "/proc/" << pid;
+	string filename = ss.str();
+	if (stat(filename.c_str(), &sts) == -1 && errno == ENOENT)
+		return false;
+	else
+		return true;
+}
+
+bool check_pid_file(const char* filename) {
+	if( access( filename, F_OK ) == F_OK ) {
+		pid_t pid;
+		// Read file, read pid
+		ifstream i_pid(filename);
+		i_pid >> pid;
+		
+		if(pid > 0) {
+		
+			// Check if there is a process attached to it
+			if(process_exists(pid)) {
+				cout << "PID file exists and process with pid " << pid << " is running" << endl;
+				return false;
+			} else {
+				cout << "PID file exists but no such process is running" << endl;
+			}
+		
+		} else {
+			cerr << "PID file " << filename << " exists, but has illegal contents - Remove file" << endl;
+			if(force) 
+				::remove(filename);
+			return false;
+		}
+	}
+	
+	// Write pid
+	pid_t pid = getpid();
+	ofstream o_pid(filename);
+	if(o_pid.is_open()) 
+		o_pid << pid;
+	else
+		cerr << "Error writing pid to file " << filename << endl;
+	return true;
 }
 
 int main(int argc, char** argv) {
@@ -152,11 +207,13 @@ int main(int argc, char** argv) {
 				cout << "   -h    --help             Print this help message" << endl;
 				cout << "   -d    --daemon           Run as daemon" << endl;
 				cout << "   -q    --quiet            Quiet run" << endl;
+				cout << "   -f    --force            Force run" << endl;
 				cout << "   -v    --verbose          Verbose run (overrides quiet)" << endl;
 				cout << "   -t TOPIC  --topic TOPIC  Set TOPIC to subscribe from server" << endl;
 				cout << "                            If no topic is set, the program will use 'meteo/#' as default" << endl;
 				cout << "         --http PORT        Setup webserver on PORT" << endl;
 				cout << "         --db FILE          Set file for database" << endl;
+				cout << "   --pid-file FILE          Set PID-file (Default: " << PID_FILE << " when daemon)" << endl;
 				cout << endl;
 				cout << "REMOTE is the mosquitto remote end" << endl;
 				return EXIT_SUCCESS;
@@ -166,6 +223,8 @@ int main(int argc, char** argv) {
 				quiet = true;
 			else if(arg == "-v" || arg == "--verbose")
 				verbose = true;
+			else if(arg == "-f" || arg == "--force")
+				force = true;
 			else if(arg == "-t" || arg == "--topic") {
 				// XXX : Check if last argument
 				topics.push_back(string(argv[++i]));
@@ -173,7 +232,11 @@ int main(int argc, char** argv) {
 				// XXX : Check if last argument
 				www = ::atoi(argv[++i]);
 			} else if(arg == "--db") {
+				// XXX : Check if last argument
 				db_filename = argv[++i];
+			} else if(arg == "--pid-file") {
+				// XXX : Check if last argument
+				pid_file = argv[++i];
 			} else {
 				cerr << "Illegal argument: " << arg << endl;
 				return EXIT_FAILURE;
@@ -191,7 +254,15 @@ int main(int argc, char** argv) {
 		cerr << "  Type " << argv[0] << " --help if you need help" << endl;
 		return EXIT_FAILURE;
 	}
-
+	
+	// Check for PID file
+	if (daemon && pid_file == "") pid_file = PID_FILE;
+	if(pid_file.size() > 0) {
+		if (pid_file == "") pid_file = PID_FILE;
+		if(!check_pid_file(pid_file.c_str()) && !force)
+			return EXIT_FAILURE;
+	}
+	
 	// At this point fork webserver
 	if(www > 0) {
 		if(verbose) cout << "Starting webserver on port " << www << " ... " << endl;

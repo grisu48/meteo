@@ -16,7 +16,7 @@ CC_FLAGS=$(O_FLAGS) -std=c99
 LIBS=-lmosquitto
 INCLUDE=
 OBJS=
-BINS=daemon
+BINS=lightning
 
 
 # Default generic instructions
@@ -28,7 +28,7 @@ clean:
 %.o:	%.cpp %.hpp
 	$(CXX) $(CXX_FLAGS) -c -o $@ $< $(INCLUDE) $(LIBS)
 	
-daemon:	daemon.cpp
+lightning: lightning.cpp
 	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS)
 
 

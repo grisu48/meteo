@@ -63,6 +63,8 @@ void cleanup() {
 }
 
 int publish(const string &topic, const string &payload) {
+    if(mosq == NULL) return 0;
+    
 	size_t len = payload.size();
 	const void* buf = (void*)payload.c_str();
 	int rc = mosquitto_publish(mosq, 0, topic.c_str(), len, buf, 0, true);
@@ -85,7 +87,7 @@ string getTime(const char* format = "%Y-%m-%d %H:%M:%S") {
 
 int main(int argc, char** argv) {
     const char* device = "/dev/ttyUSB0";		// Serial port
-    const char* mqtt_host = "127.0.0.1";		// Mosquitto server
+    const char* mqtt_host = "";		            // Mosquitto server
     int mqtt_port = 1883;						// Mosquitto server port
     int rc;		// Return codes
     string topic = "lightning/1";				// Topic for publishing
@@ -109,28 +111,31 @@ int main(int argc, char** argv) {
     if(argc > 3) 
     	mqtt_port = ::atoi(argv[3]);
     
-    // Setting up mosquitto
-    mosquitto_lib_init();
-    mosq = mosquitto_new(NULL, true, NULL);
-    if(!mosq) {
-    	cerr << "Error setting up mosquitto instance" << endl;
-    	return EXIT_FAILURE;
-    }
     atexit(cleanup);
     
-    rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
-    if(rc != MOSQ_ERR_SUCCESS) {
-    	cerr << "Error connecting to mosquitto host " << mqtt_host << ":" << mqtt_port << endl;
-    	return EXIT_FAILURE;
-    }
+    // Setting up mosquitto
+    if(strlen(mqtt_host) > 0) {
+        mosquitto_lib_init();
+        mosq = mosquitto_new(NULL, true, NULL);
+        if(!mosq) {
+    	    cerr << "Error setting up mosquitto instance" << endl;
+    	    return EXIT_FAILURE;
+        }
     
+        rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
+        if(rc != MOSQ_ERR_SUCCESS) {
+        	cerr << "Error connecting to mosquitto host " << mqtt_host << ":" << mqtt_port << endl;
+        	return EXIT_FAILURE;
+        }
+        
+        // starting mosquitto loop
+        rc = mosquitto_loop_start(mosq);
+        if(rc != MOSQ_ERR_SUCCESS) {
+        	cerr << "Error starting mosquitto looper thread" << endl;
+        	exit(EXIT_FAILURE);
+        	return EXIT_FAILURE;
+        }
     
-    // starting mosquitto loop
-    rc = mosquitto_loop_start(mosq);
-    if(rc != MOSQ_ERR_SUCCESS) {
-    	cerr << "Error starting mosquitto looper thread" << endl;
-    	exit(EXIT_FAILURE);
-    	return EXIT_FAILURE;
     }
     
     // Open device
@@ -161,15 +166,16 @@ int main(int argc, char** argv) {
 	    			string s_message = line.substr(i+1);
 	    			
 	    			long millis = ::atol(s_millis.c_str());
-	    			// Not used at this point
-	    			(void)millis;
 	    			
 	    			// Publish
 	    			stringstream buf;
 	    			buf << '[' << getTime() << "]\t" << s_message;
 	    			string msg = buf.str();
-	    			cout << msg << endl;
-	    			publish(topic, msg);
+	    			
+	    			if(mosq != NULL)
+    	    			publish(topic, msg);
+	    			
+	    			cout << '[' << getTime() << "] " << millis << '\t' << s_message << endl;
 	    		}
 	    	}
     		

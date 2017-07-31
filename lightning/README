@@ -1,4 +1,26 @@
+# Lightning dector
+
 Lightning detector system, based on a MOD-1016.
 
-daemon.cpp consists of a simple daemon program, that opens the serial connection
+# Program description
+
+lightning.cpp consists of a simple daemon program, that opens the serial connection
 and pushed all detected lightnings via mosquitto
+
+The system is currently in testing phase.
+
+# Experiments
+
+## Experiment 1 / 2017-07-31
+
+''Serial connection ok, but no useful data''
+
+I've setup and soldered the system and put it in the garden with my BananaPi.
+Connected the Arduino with USB to the BananaPi.
+Readouts are clear, the system was running stable for 1 1/2 days without dropping the serial connection.
+
+I've disconnected the system, improved the readout daemon a bit and will try to read the system out on my laptop when a thunderstorm is approaching.
+
+
+
+

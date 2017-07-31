@@ -43,6 +43,16 @@ public:
     void setTemperatureRange(const int min, const int max);
     void setHumidity(const int min, const int max);
 
+    /**
+     * @brief addLightning Increase lightning number by one
+     * @return current lightning number
+     */
+    long addLightning();
+    void setLightningDisturberDetected();
+    void setLightningNoiseDetected();
+
+    long getLightnings() const { return this->lightnings; }
+
 private slots:
     void on_actionClear_triggered();
 
@@ -64,6 +74,7 @@ private:
     float humidity;
     float pressure;
     float light;
+    long lightnings = 0;
 
     // Averaged values
     float avg_temperature;

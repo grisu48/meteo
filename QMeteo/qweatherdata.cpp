@@ -180,3 +180,24 @@ void QWeatherData::updateTimestamp() {
     QDateTime now = QDateTime::currentDateTime();
     ui->lblTimestamp->setText("Update: [" + now.toString("hh:mm:ss") + "]");
 }
+
+
+long QWeatherData::addLightning() {
+    this->lightnings++;
+    ui->lblLightnings->setText("Lightnings: " + QString::number(this->lightnings));
+    return this->lightnings;
+}
+
+void QWeatherData::setLightningDisturberDetected() {
+    ui->lblLightnings->setText("Lightnings: " + QString::number(this->lightnings) + " [DISTURBER]");
+
+    QDateTime now = QDateTime::currentDateTime();
+    ui->lblStatus->setText("Lightning disturber detected [" + now.toString("hh:mm:ss") + "]");
+}
+
+void QWeatherData::setLightningNoiseDetected() {
+    ui->lblLightnings->setText("Lightnings: " + QString::number(this->lightnings) + " [NOISE]");
+
+    QDateTime now = QDateTime::currentDateTime();
+    ui->lblStatus->setText("Lightning noise detected [" + now.toString("hh:mm:ss") + "]");
+}

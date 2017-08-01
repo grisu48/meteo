@@ -71,14 +71,14 @@ void setup() {
   //I2C
   Wire.begin();
   mod1016.init(IRQ_PIN);
+
+  mod1016.setTuneCaps(7);
+  //mod1016.setIndoors();
+  mod1016.setOutdoors();
+  mod1016.setNoiseFloor(5);
  
   //Tune Caps, Set AFE, Set Noise Floor
   autoTuneCaps(IRQ_PIN);
-  
-  //mod1016.setTuneCaps(7);
-  //mod1016.setIndoors();
-  mod1016.setOutdoors();
-  mod1016.setNoiseFloor(3);
   
   Serial.println("# TUNE\tIN/OUT\tNOISEFLOOR");
   Serial.print("# ");

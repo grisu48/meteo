@@ -24,6 +24,7 @@
 #include <functional> 
 #include <cctype>
 #include <locale>
+#include <math.h>
 
 #include "serial.hpp"
 
@@ -62,12 +63,25 @@ void cleanup() {
 	mosquitto_lib_cleanup();
 }
 
+/** Publish the given message to the given topic */
 int publish(const string &topic, const string &payload) {
     if(mosq == NULL) return 0;
     
 	size_t len = payload.size();
 	const void* buf = (void*)payload.c_str();
-	int rc = mosquitto_publish(mosq, 0, topic.c_str(), len, buf, 0, true);
+	
+	int tries = 3;
+	int rc = 0;
+	while(tries-- > 0) {
+		rc = mosquitto_publish(mosq, 0, topic.c_str(), len, buf, 0, true);
+		if(rc == MOSQ_ERR_SUCCESS) return rc;
+		else {
+			if(mosquitto_reconnect(mosq) != MOSQ_ERR_SUCCESS) {
+				cerr << "Mosquitto reconnect failed: " << strerror(errno) << endl;
+				continue;
+			}
+		}
+	}
 	return rc;
 }
 
@@ -83,6 +97,46 @@ string getTime(const char* format = "%Y-%m-%d %H:%M:%S") {
 	strftime(stime,128, format, info);
 	stime[127] = '\0';
 	return string(stime);
+}
+
+static string getRate(const long delta) {
+	if (delta == 0) return "";
+	
+	stringstream buf;
+	
+	float rate = round(1000.0F / delta * 1e2) / 1e2;
+	if(rate <= 0.0F) {
+		const long seconds = delta/1000L;
+		buf << "each " << seconds << " s";
+	} else
+		buf << rate << "/s";
+	
+	return buf.str();
+}
+
+static void disturber_detected(const long millis) {
+	static long last_millis = millis;
+	long delta = millis - last_millis;
+	last_millis = millis;
+	
+	cerr << '[' << getTime() << "] " << millis << " Disturber detected";
+	if(delta > 0) {
+		static long avg = delta;
+		avg = (0.75*avg) + 0.25*delta;
+		cerr << " (Rate of ~ " << getRate(avg) << ')';
+	}
+	cerr << endl;
+}
+
+static void noise_detected(const long millis) {
+	static long last_millis = millis;
+	long delta = millis - last_millis;
+	last_millis = millis;
+	
+	cerr << '[' << getTime() << "] " << millis << " Noise detected";
+	if(delta > 0)
+		cerr << " (" << getRate(delta) << ')';
+	cerr << endl;
 }
 
 int main(int argc, char** argv) {
@@ -164,18 +218,29 @@ int main(int argc, char** argv) {
 	    			
 	    			string s_millis = line.substr(0,i);
 	    			string s_message = line.substr(i+1);
+	    			s_message = trim(s_message);
 	    			
 	    			long millis = ::atol(s_millis.c_str());
 	    			
-	    			// Publish
-	    			stringstream buf;
-	    			buf << '[' << getTime() << "]\t" << s_message;
-	    			string msg = buf.str();
+	    			// Check message
+	    			if(s_message == "NOISE DETECTED") {
+	    				noise_detected(millis);
+	    			} else if(s_message == "DISTURBER DETECTED") {
+	    				disturber_detected(millis);
+	    			} else {
+	    				// Assume it is lightning detected
+	    				// XXX: Maybe include a check?
 	    			
-	    			if(mosq != NULL)
-    	    			publish(topic, msg);
-	    			
-	    			cout << '[' << getTime() << "] " << millis << '\t' << s_message << endl;
+						// Publish
+						stringstream buf;
+						buf << '[' << getTime() << "]\t" << s_message;
+						string msg = buf.str();
+						
+						if(mosq != NULL)
+			    			publish(topic, msg);
+						
+						cout << '[' << getTime() << "] " << millis << '\t' << s_message << endl;
+	    			}
 	    		}
 	    	}
     		

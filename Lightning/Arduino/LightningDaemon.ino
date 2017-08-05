@@ -50,6 +50,11 @@ AS3935 MOD-1016 Lightning Sensor Arduino test sketch
 
 volatile bool detected = false;
 
+long lightnings = 0;
+long noises = 0;
+long disturbers = 0;
+
+
 void recalibrate(bool tune = true) {
   if(tune) autoTuneCaps(IRQ_PIN);
   
@@ -64,7 +69,7 @@ void recalibrate(bool tune = true) {
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial) {}
   Serial.println("# MOD-1016 (AS3935) Lightning Sensor Monitor System");
 
@@ -72,13 +77,14 @@ void setup() {
   Wire.begin();
   mod1016.init(IRQ_PIN);
 
-  mod1016.setTuneCaps(7);
-  //mod1016.setIndoors();
-  mod1016.setOutdoors();
-  mod1016.setNoiseFloor(5);
- 
   //Tune Caps, Set AFE, Set Noise Floor
   autoTuneCaps(IRQ_PIN);
+  
+  //mod1016.setTuneCaps(9);
+  mod1016.setIndoors();
+  //mod1016.setOutdoors();
+  mod1016.setNoiseFloor(5);
+ 
   
   Serial.println("# TUNE\tIN/OUT\tNOISEFLOOR");
   Serial.print("# ");
@@ -112,15 +118,28 @@ void translateIRQ(int irq) {
   switch(irq) {
       case 1:
         Serial.println("NOISE DETECTED");
+        noises++;
         break;
       case 4:
         Serial.println("DISTURBER DETECTED");
+        disturbers++;
         break;
       case 8: 
         Serial.println("LIGHTNING DETECTED");
+        lightnings++;
         printDistance();
         break;
+      default:
+        Serial.print("UNKNOWN INTERRUPT ");
+        Serial.println(irq);
+        return;
     }
+    //Serial.print(noises);
+    //Serial.print(' ');
+    //Serial.print(disturbers);
+    //Serial.print(' ');
+    //Serial.print(lightnings);
+    //Serial.println();
 }
 
 void printDistance() {
@@ -141,7 +160,7 @@ void printDistance() {
     Serial.println("km away\n");  
     Serial.print(distance);
     Serial.println(" km");
-    Serial.print(": ");
+    Serial.print("LIGTHNING ");
     Serial.print(distance);
     Serial.println();
   }

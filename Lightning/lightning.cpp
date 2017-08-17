@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
     		cout << "Lightning daemon" << endl << "  2017, phoenix" << endl << endl;
     		cout << "SYNPOSIS: " << argv[0] << " DEVICE [HOST] [TOPIC] [PORT]" << endl;
     		cout << "  DEVICE      Serial device (Default: " << device << ")" << endl;
-    		cout << "  HOST        Mosquitto server hostname (Default: " << mqtt_host << ")" << endl;
+    		cout << "  HOST        Mosquitto server hostname (Default: Disabled)" << endl;
     		cout << "  PORT        Mosquitto server port (Default: " << mqtt_port << ")" << endl;
     		return EXIT_SUCCESS;
     	}
@@ -163,7 +163,9 @@ int main(int argc, char** argv) {
     if(argc > 2)
     	mqtt_host = argv[2];
     if(argc > 3) 
-    	mqtt_port = ::atoi(argv[3]);
+    	topic = argv[3];
+    if(argc > 4)
+    	mqtt_port = ::atoi(argv[4]);
     
     atexit(cleanup);
     
@@ -195,6 +197,7 @@ int main(int argc, char** argv) {
     // Open device
     try {
     	Serial serial(device, false);
+    	serial.setSpeed(B115200);
     	
     	if(serial.isNonBlocking())
     		cerr << "WARNING: Device is nonblocking" << endl;

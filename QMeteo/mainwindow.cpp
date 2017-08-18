@@ -10,6 +10,14 @@ MainWindow::MainWindow(QWidget *parent) :
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
+
+    QList<Station> stations = db_manager->stations();
+    for(int i=0;i<stations.size();i++) {
+        Station station = stations[i];
+        QWeatherData *widget = this->station(station.id);
+        widget->setName(station.name);
+    }
 }
 
 MainWindow::~MainWindow()
@@ -66,6 +74,22 @@ void MainWindow::connectMosquitto(const QString &remote, const int port) {
     }
 }
 
+QWeatherData* MainWindow::station(const long id) {
+    QWeatherData *station = NULL;
+
+    if(!this->stations.contains(id)) {
+        station = new QWeatherData(ui->sclWidgets);
+        ui->lyStations->addWidget(station);
+        this->stations[id] = station;
+
+        // Insert station into db, if not existing
+        Station objStation(id, "", "");
+        db_manager->insertStation(objStation, true);
+    } else
+        station = this->stations[id];
+    return station;
+}
+
 void MainWindow::onMessage(QString topic, QString message) {
     // Check if meteo or lightning data
     if(topic.startsWith("lightning/")) {
@@ -82,15 +106,7 @@ void MainWindow::onMessage(QString topic, QString message) {
         message = message.mid(i+1).trimmed();
 
 
-        QWeatherData *station = NULL;
-        if(!this->stations.contains(id)) {
-            station = new QWeatherData(ui->sclWidgets);
-            ui->lyStations->addWidget(station);
-            QString name = "Station " + QString::number(id);
-            station->setName(name);
-            this->stations[id] = station;
-        } else
-            station = this->stations[id];
+        QWeatherData *station = this->station(id);
 
         if(message == "DISTURBER DETECTED") {
             station->setLightningDisturberDetected();
@@ -117,13 +133,8 @@ void MainWindow::onMessage(QString topic, QString message) {
             //const float l_vis = j["l_vis"].get<float>();
             //const float l_ir = j["l_ir"].get<float>();
 
-            QWeatherData *station = NULL;
-            if(!this->stations.contains(id)) {
-                station = new QWeatherData(ui->sclWidgets);
-                ui->lyStations->addWidget(station);
-                this->stations[id] = station;
-            } else
-                station = this->stations[id];
+            QWeatherData *station = this->station(id);
+            station->setName(name);
 
             station->setName(name);
             station->setTemperature(t);
@@ -131,6 +142,8 @@ void MainWindow::onMessage(QString topic, QString message) {
             station->setHumidity(hum);
             station->updateTimestamp();
 
+            const long timestamp = (QDateTime::currentMSecsSinceEpoch()/1000L);
+            db_manager->insertDatapoint(id, timestamp, t, hum, p, 0.0F);
 
             //ui->lblStatus->setText(QString::number(id) + " [" + name + "] - " + QString::number(t) + " deg C, " + QString::number(hum) + " % rel");
         } catch (std::exception &e) {

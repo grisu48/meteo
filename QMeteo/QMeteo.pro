@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui
+QT       += core gui sql
 
 LIBS += -lmosquitto
 
@@ -19,11 +19,15 @@ TEMPLATE = app
 SOURCES += main.cpp\
         mainwindow.cpp \
     qmosquitto.cpp \
-    qweatherdata.cpp
+    qweatherdata.cpp \
+    dbmanager.cpp \
+    entities.cpp
 
 HEADERS  += mainwindow.h \
     qmosquitto.h \
     qweatherdata.h \
-    json.hpp
+    json.hpp \
+    dbmanager.h \
+    entities.h
 
 FORMS    += mainwindow.ui qweatherdata.ui

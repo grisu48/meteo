@@ -4,14 +4,19 @@
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QInputDialog>
+#include <QString>
 #include <QList>
 #include <QMap>
+#include <QDir>
 
 #include "qmosquitto.h"
 #include "qweatherdata.h"
 #include "json.hpp"
+#include "entities.h"
+#include "dbmanager.h"
 
 namespace Ui {
+
 class MainWindow;
 }
 
@@ -35,9 +40,14 @@ private:
 
     void connectMosquitto(const QString &remote, const int port = 1883);
 
+    QWeatherData* station(const long id);
+
 
     QList<QMosquitto*> mosquittos;
     QMap<long, QWeatherData*> stations;
+
+    QString dbFilename = QDir::homePath() + QDir::separator() + ".qmeteo.db";
+    DbManager *db_manager = new DbManager(dbFilename);
 };
 
 #endif // MAINWINDOW_H

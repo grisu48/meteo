@@ -17,7 +17,6 @@ LIBS=-lm -pthread -lmosquitto
 INCLUDE=
 OBJS=sensor.o bmp180.o tsl2561.o mcp9808.o htu21df.o config.o string.o
 BINS=bmp180 tsl2561 mcp9808 htu21df meteo
-LIB_FILE=libmeteo.so
 
 # Default generic instructions
 default:	all
@@ -34,10 +33,8 @@ htu21df.o:	htu21df.cpp htu21df.hpp
 libmeteo.so:	sensors.cpp
 	$(CXX) -fPIC $(CXX_FLAGS) -shared -Wl,-soname,$(LIB_FILE) -o $@ $< $(INCLUDE) $(LIBS)
 
-install:
-	mkdir -p /usr/include/libmeteo
-	install *.hpp /usr/include/libmeteo/
-	install $(LIB_FILE) /usr/lib/
+install:        meteo
+	install meteo /usr/local/bin
 
 example:	example.cpp $(OBJS) 
 	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) bmp180.o
@@ -57,5 +54,3 @@ htu21df:	read_htu21df.cpp htu21df.o sensor.o
 meteo:	meteo.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) $(OBJS)
 
-meteo2:	meteo2.cpp $(OBJS)
-	$(CXX) $(CXX_FLAGS) -o $@ $< $(INCLUDE) $(LIBS) -lmosquitto $(OBJS)

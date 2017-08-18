@@ -48,7 +48,53 @@ AS3935 MOD-1016 Lightning Sensor Arduino test sketch
 #define IRQ_PIN 2
 #define CS_PIN 10
 
+#define PIN_LIGHTNING 0
+#define PIN_DISTURBER 0
+#define PIN_NOISE 0
+#define PIN_ERROR 0
+
 volatile bool detected = false;
+
+long lightnings = 0;
+long noises = 0;
+long disturbers = 0;
+
+// Timers for LEDS
+long led_t_lightning = 0L;
+long led_t_disturber = 0L;
+long led_t_noise = 0L;
+// LEDs on or off
+bool led_lightning = false;
+bool led_disturber = false;
+bool led_noise = false;
+bool led_error = false;
+
+static void led_handle(const long t, bool *led_status, long *timer, int pin) {
+  if (*led_status == false) return;
+  else {
+    if (t > *timer) {
+      *timer = 0L;
+      *led_status = false;
+      if(pin != 0) {
+        digitalWrite(pin, LOW);   // Turn off
+      }
+      Serial.print("# LED OFF (");
+      Serial.print(pin);
+      Serial.println(')');
+    }
+  }
+}
+
+static void led_on(int pin, bool *led_status, long *timer, long duration) {
+  if(pin > 0)
+    digitalWrite(pin, HIGH);
+  *led_status = true;
+  *timer = (millis() + duration);
+  
+    Serial.print("# LED ON (");
+    Serial.print(pin);
+    Serial.println(')');
+}
 
 void recalibrate(bool tune = true) {
   if(tune) autoTuneCaps(IRQ_PIN);
@@ -64,7 +110,7 @@ void recalibrate(bool tune = true) {
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial) {}
   Serial.println("# MOD-1016 (AS3935) Lightning Sensor Monitor System");
 
@@ -72,13 +118,14 @@ void setup() {
   Wire.begin();
   mod1016.init(IRQ_PIN);
 
-  mod1016.setTuneCaps(7);
-  //mod1016.setIndoors();
-  mod1016.setOutdoors();
-  mod1016.setNoiseFloor(5);
- 
   //Tune Caps, Set AFE, Set Noise Floor
   autoTuneCaps(IRQ_PIN);
+  
+  //mod1016.setTuneCaps(9);
+  mod1016.setIndoors();
+  //mod1016.setOutdoors();
+  mod1016.setNoiseFloor(5);
+ 
   
   Serial.println("# TUNE\tIN/OUT\tNOISEFLOOR");
   Serial.print("# ");
@@ -100,6 +147,14 @@ void loop() {
     translateIRQ(mod1016.getIRQ());
     detected = false;
   }
+
+
+  // LEDs
+  const long t = millis();
+  // XXX: TODO: Timer long overflow
+  led_handle(t, &led_lightning, &led_t_lightning, PIN_LIGHTNING);
+  led_handle(t, &led_disturber, &led_t_disturber, PIN_DISTURBER);
+  led_handle(t, &led_noise, &led_t_noise, PIN_NOISE);
 }
 
 void alert() {
@@ -109,20 +164,50 @@ void alert() {
 void translateIRQ(int irq) {
   Serial.print(millis());
   Serial.print(' ');
+  int distance = 0;
   switch(irq) {
       case 1:
         Serial.println("NOISE DETECTED");
+        noises++;
+        led_on(PIN_NOISE, &led_noise, &led_t_noise, 1000);
         break;
       case 4:
         Serial.println("DISTURBER DETECTED");
+        disturbers++;
+        led_on(PIN_DISTURBER, &led_disturber, &led_t_disturber, 200);
         break;
       case 8: 
-        Serial.println("LIGHTNING DETECTED");
-        printDistance();
+        led_on(PIN_LIGHTNING, &led_lightning, &led_t_lightning, 1000);
+        lightnings++;
+        distance = mod1016.calculateDistance();
+
+
+        
+        Serial.print("LIGHTNING DETECTED ");
+        if(distance < 0) {
+          Serial.println("??? km");
+        } else if(distance == 0) {
+          // Overhead. Special case for LED in future
+          Serial.println("0 km");
+        } else {
+          Serial.print(distance);
+          Serial.println(" km");
+        }
         break;
+      default:
+        Serial.print("UNKNOWN INTERRUPT ");
+        Serial.println(irq);
+        return;
     }
+    //Serial.print(noises);
+    //Serial.print(' ');
+    //Serial.print(disturbers);
+    //Serial.print(' ');
+    //Serial.print(lightnings);
+    //Serial.println();
 }
 
+#if 0
 void printDistance() {
   int distance = mod1016.calculateDistance();
   if (distance == -1) {
@@ -138,13 +223,11 @@ void printDistance() {
   } else {
     Serial.print("# Lightning ~");
     Serial.print(distance);
-    Serial.println("km away\n");  
-    Serial.print(distance);
-    Serial.println(" km");
-    Serial.print(": ");
+    Serial.println("km away");  
+    Serial.print("LIGTHNING ");
     Serial.print(distance);
     Serial.println();
   }
 }
-
+#endif
 

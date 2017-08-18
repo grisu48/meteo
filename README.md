@@ -7,7 +7,11 @@ Client can attach to this server instance in order to read out the different rea
 
 ## Instructions
 
-The project is currently in development and highly experimental. Build instructions are not yet given.
+The project is currently in development and experimental. Build instructions are not yet given.
+
+## Sensors
+
+This folder contains the different measurement clients.
 
 ## Server
 
@@ -30,7 +34,9 @@ A Arduino sketch for the JeeNode RoomNode is included as well (JeeNode)
 
 ## Client
 
-An experimental Qt client is included as well in QtMeteo
+An experimental Qt client is included as well in QMeteo. QtMeteo is the old, deprecated client that is not maintained anymore
+
+QMeteo utilizes Qt5
 
 
 

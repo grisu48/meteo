@@ -155,7 +155,7 @@ int main(int argc, char** argv) {
 	bool tsl2561 = false;
 	bool daemon = false;
 	bool quiet = false;			// Quiet mode
-	int delay = 5;				// Delay between pushes
+	int delay = 5;				// Delay between loops [Seconds]
 	int node_id = 0;			// ID of the node
 	
 	// Read config
@@ -176,8 +176,8 @@ int main(int argc, char** argv) {
 		mcp9808 = config.getBoolean("mcp9808", mcp9808);
 		tsl2561 = config.getBoolean("tsl2561", tsl2561);
 		node_id = config.getInt("id", node_id);
-		quiet = config.getBoolean("quiet", quiet);
-		daemon = config.getBoolean("daemon", daemon);
+		//quiet = config.getBoolean("quiet", quiet);
+		//daemon = config.getBoolean("daemon", daemon);
 		delay = config.getInt("delay", delay);
 		name = config.get("name", "");
 	}
@@ -195,6 +195,20 @@ int main(int argc, char** argv) {
 			cout << "    -d     --daemon             Daemon mode" << endl;
 			cout << "           --id ID              Set node ID" << endl;
 			cout << "           --delay SECONDS      Set delay between readouts" << endl;
+			cout << "  Sensor options  " << endl;
+			cout << "           --all                Enable all available sensors" << endl;
+			cout << endl;
+			cout << "The program will reads the config file '" << CONFIG_FILE << "' for the following values:" << endl;
+			cout << "  bmp180 = [true|false]         Enable bmp180 sensor" << endl;
+			cout << "  htu21df = [true|false]        Enable htu21df sensor" << endl;
+			cout << "  mcp9808 = [true|false]        Enable mcp9808 sensor" << endl;
+			cout << "  tsl2561 = [true|false]        Enable tsl2561 sensor" << endl;
+			cout << "  id = ID                       Set node ID" << endl;
+			//cout << "  quiet = [true|false]          Quiet mode" << endl;
+			cout << "  delay = T                     Set readout delay in seconds" << endl;
+			cout << "  name = NAME                   Set node name, if available" << endl;
+			cout << "  mosquitto = HOST              Enable mosquitto and set remote host to HOST" << endl;
+			cout << "  i2c = DEVICE                  Set i2c device to DEVICE" << endl;
 			return EXIT_SUCCESS;
 		} else if(arg == "--all") {
 			bmp180 = true;

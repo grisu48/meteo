@@ -66,6 +66,8 @@ public:
 	/** Start the looper */
 	void start();
 	
+	/** Loop */
+	void loop();
 	
 	/** Logging callback */
 	virtual void mosq_log_callback(int level, const char *str);

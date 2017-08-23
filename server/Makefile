@@ -7,22 +7,16 @@ INCLUDE=
 LIBS=-pthread -lsqlite3 -lmosquitto
 
 
-OBJS=string.o tcp.o udp.o node.o server.o parser.o serial.o database.o config.o mosquitto.o
+OBJS=database.o config.o mosquitto.o string.o httpd.o time.o
 
 
 default:	all
-all:	main reader
+all:	meteod
 clean:
 	rm -rf *.o
 
 
-main:	main.cpp $(OBJS)
-	$(CXX) $(CXX_FLAGS) -o meteod $< $(OBJS) $(INCLUDE) $(LIBS) 
-
-reader:	reader.cpp $(OBJS)
-	$(CXX) $(CXX_FLAGS) -o $@ $< $(OBJS) $(INCLUDE) $(LIBS) 
-	
-meteo_v2:	main_v2.cpp $(OBJS)
+meteod:	meteod.cpp $(OBJS)
 	$(CXX) $(CXX_FLAGS) -o meteod $< $(OBJS) $(INCLUDE) $(LIBS) 
 
 %.o:	%.cpp %.hpp

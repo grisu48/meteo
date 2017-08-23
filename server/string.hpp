@@ -36,11 +36,11 @@ public:
 	/** Initialize a String from a char array with a given length */
 	String(const char* str, size_t len) : std::string(str, len) {}
 	/** Initialize a new String from a given other string instance */
-	String(String &str) : std::string(str) {}
+	String(const String &str) : std::string(str) {}
 	/** Initialize a new String from a given other string instance */
 	String(String *str) : std::string(*str) {}
 	/** Initialize a new String from a given C++ standard string */
-	String(std::string str) : std::string(str) {}
+	String(const std::string &str) : std::string(str) {}
 
 	/** Destructor */
 	virtual ~String() {}
@@ -331,7 +331,6 @@ public:
 	 * @returns new String instance consisting of this string and the appended c string
 	 */
 	String operator+(const char*);
-
 
 	/**
 	 * Integer to String conversion

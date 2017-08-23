@@ -125,3 +125,9 @@ void Mosquitto::start() {
         throw "Error starting thread";
 }
 
+void Mosquitto::loop() {
+	int rc = mosquitto_loop_forever(this->mosq, 1000, 1);
+    if(rc != MOSQ_ERR_SUCCESS)
+        throw "Error looping";
+}
+

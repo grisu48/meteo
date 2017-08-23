@@ -18,8 +18,6 @@
 
 #include <sqlite3.h>
 
-#include "node.hpp"
-
 
 
 class SQLite3ResultSet;
@@ -89,17 +87,6 @@ public:
     std::string escapeString(std::string str);
     std::string escapeString(const char* str, size_t len);
 	
-	
-	/** Push the given node */
-	void push(const Node &node);
-	
-	/** Get all nodes that are registered in the database */
-	std::vector<DBNode> getNodes(void);
-	
-	void createNodeTable(const Node &node);
-	
-	void createTables(void);
-	
     friend class SQLite3ResultSet;
 };
 
@@ -149,6 +136,20 @@ public:
 	int getInt(const std::string &name) {
 		std::string s = getString(name);
 		return ::atoi(s.c_str());
+	}
+	
+	float getFloat(int col) {
+		std::string s = getString(col);
+		return (float)::atof(s.c_str());
+	}
+	
+	float getFloat(const char* name) {
+		std::string s = getString(name);
+		return (float)::atof(s.c_str());
+	}
+	float getFloat(const std::string &name) {
+		std::string s = getString(name);
+		return (float)::atof(s.c_str());
 	}
 	
 	long getLong(int col) {

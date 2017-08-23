@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <QDateTime>
 
+#include "qcustomplot.h"
 #include "entities.h"
 #include "dbmanager.h"
 
@@ -22,13 +23,21 @@ public:
 
 private slots:
 
-    void timerCall();
+    void replotGraphs();
+    void setAutoReplot(bool enable);
+    void setScatters(bool enable);
 
     void on_rbTime3h_toggled(bool checked);
 
     void on_rbTime12h_toggled(bool checked);
 
     void on_rbTime48_toggled(bool checked);
+
+    void on_rbTimeCustom_toggled(bool checked);
+
+    void on_btnSetCustomTime_clicked();
+
+    void on_plPlot_customContextMenuRequested(const QPoint &pos);
 
 private:
     Ui::DialogStation *ui;
@@ -42,6 +51,11 @@ private:
 
     /** Show plots 0 = Temperature, 1 = Humidity, 2 = Pressure, 3 = Light */
     bool showPlots[4] = { true, true, true, false };
+
+    bool scatters = true;
+    int lineWidth = 4;
+
+    QCPGraph *addGraph(QVector<double> &x, QVector<double> &y, QColor color, bool axis2 = false);
 };
 
 #endif // DIALOGSTATION_H

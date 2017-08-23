@@ -79,6 +79,8 @@ QWeatherData* MainWindow::station(const long id) {
 
     if(!this->stations.contains(id)) {
         station = new QWeatherData(ui->sclWidgets);
+        station->stationId(id);
+        connect(station, SIGNAL(onLinkClicked(QString, const long)), this, SLOT(onWeaterStationLinkClicked(QString, const long)));
         ui->lyStations->addWidget(station);
         this->stations[id] = station;
 
@@ -153,4 +155,11 @@ void MainWindow::onMessage(QString topic, QString message) {
         }
     }
 
+}
+
+void MainWindow::onWeaterStationLinkClicked(const QString &link, const long stationId) {
+    (void)link;
+
+    DialogStation *dialog = new DialogStation(stationId, this->db_manager, this);
+    dialog->show();
 }

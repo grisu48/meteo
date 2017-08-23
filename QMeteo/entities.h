@@ -28,4 +28,31 @@ public:
 };
 
 
+class DataPoint {
+private:
+
+public:
+    long timestamp = 0L;
+    float t = 0.0F;         // Temperature in deg. Celcius
+    float hum = 0.0F;       // Humidity in % rel
+    float p = 0.0F;         // Pressure in hPa
+    float light = 0.0F;     // Light value (uncalibrated currently)
+
+    DataPoint() {
+        this->timestamp = 0L;
+        this->t = 0.0F;
+        this->hum = 0.0F;
+        this->p = 0.0F;
+        this->light = 0.0F;
+    }
+    DataPoint(const DataPoint &dp) {
+        this->timestamp = dp.timestamp;
+        this->t = dp.t;
+        this->hum = dp.hum;
+        this->p = dp.p;
+        this->light = dp.light;
+    }
+};
+
+
 #endif // ENTITIES_H

@@ -53,6 +53,9 @@ public:
 
     long getLightnings() const { return this->lightnings; }
 
+    long stationId() const { return this->_stationId; }
+    void stationId(const long id) { this->_stationId = id; }
+
 private slots:
     void on_actionClear_triggered();
 
@@ -64,8 +67,10 @@ private slots:
 
     void on_actionShowAverage_triggered();
 
+    void on_lblTitle_linkActivated(const QString &link);
+
 signals:
-    void onLinkClicked(void);
+    void onLinkClicked(const QString &link, long station);
 
 private:
     Ui::QWeatherData *ui;
@@ -91,6 +96,7 @@ private:
     bool hasPressure = false;
 
     QString name;
+    long _stationId;       // Station id for the links
 };
 
 #endif // QWEATHERDATA_H

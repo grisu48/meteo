@@ -18,6 +18,17 @@ public:
     void insertDatapoint(const long station, const long timestamp, const float temperature, const float humidity, const float pressure, const float light);
 
     QList<Station> stations();
+    Station station(const long id, bool *ok = NULL);
+
+    /**
+     * @brief getDatapoints Fetch datapoints
+     * @param station Station id
+     * @param minTimestamp Lower time bounds in seconds or -1
+     * @param maxTimestamp High time bound in seconds or -1
+     * @param limit Maximum number of items to fetch
+     * @return
+     */
+    QList<DataPoint> getDatapoints(const long station, const long minTimestamp = -1L, const long maxTimestamp = -1L, const long limit = 100);
 private:
     QSqlDatabase m_db;
 

@@ -14,6 +14,7 @@
 #include "json.hpp"
 #include "entities.h"
 #include "dbmanager.h"
+#include "dialogstation.h"
 
 namespace Ui {
 
@@ -34,6 +35,7 @@ private slots:
 protected slots:
 
     void onMessage(QString topic, QString message);
+    void onWeaterStationLinkClicked(const QString &link, const long stationId);
 
 private:
     Ui::MainWindow *ui;

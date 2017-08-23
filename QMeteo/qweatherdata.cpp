@@ -201,3 +201,8 @@ void QWeatherData::setLightningNoiseDetected() {
     QDateTime now = QDateTime::currentDateTime();
     ui->lblStatus->setText("Lightning noise detected [" + now.toString("hh:mm:ss") + "]");
 }
+
+void QWeatherData::on_lblTitle_linkActivated(const QString &link)
+{
+    emit onLinkClicked(link, this->_stationId);
+}

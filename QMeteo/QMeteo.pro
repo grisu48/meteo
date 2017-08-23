@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui sql
+QT       += core gui sql printsupport
 
 LIBS += -lmosquitto
 
@@ -21,13 +21,18 @@ SOURCES += main.cpp\
     qmosquitto.cpp \
     qweatherdata.cpp \
     dbmanager.cpp \
-    entities.cpp
+    entities.cpp \
+    dialogstation.cpp \
+    qcustomplot.cpp
 
 HEADERS  += mainwindow.h \
     qmosquitto.h \
     qweatherdata.h \
     json.hpp \
     dbmanager.h \
-    entities.h
+    entities.h \
+    dialogstation.h \
+    qcustomplot.h
 
-FORMS    += mainwindow.ui qweatherdata.ui
+FORMS    += mainwindow.ui qweatherdata.ui \
+    dialogstation.ui

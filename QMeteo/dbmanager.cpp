@@ -59,3 +59,62 @@ QList<Station> DbManager::stations() {
 
     return stations;
 }
+
+Station DbManager::station(const long id, bool *ok) {
+    QString sql = "SELECT `id`,`name`,`desc` FROM `stations` WHERE `id` = " + QString::number(id) + ";";
+    QSqlQuery query(sql, this->m_db);
+    if(!query.exec()) throw "Error querying stations";
+
+    bool isOk = query.next();
+    if(ok != NULL) *ok = isOk;
+
+    Station station;
+    if(isOk) {
+        long id = (long)query.value(0).toLongLong();
+        QString name = query.value(1).toString();
+        QString desc = query.value(2).toString();
+
+        station.id = id;
+        station.name = name;
+        station.desc = desc;
+    }
+
+    return station;
+
+}
+
+QList<DataPoint> DbManager::getDatapoints(const long station, const long minTimestamp, const long maxTimestamp, const long limit) {
+    if(minTimestamp > maxTimestamp) return this->getDatapoints(station, maxTimestamp, minTimestamp, limit);
+
+    QString sql = "SELECT `timestamp`, `temperature`, `humidity`, `pressure`, `light` FROM `station_" + QString::number(station) + "`";
+
+    if(minTimestamp >= 0L || maxTimestamp >= 0L) {
+        sql += " WHERE ";
+        if(minTimestamp >= 0L && maxTimestamp >= 0L)
+            sql += "`timestamp` >= " + QString::number(minTimestamp) + " AND `timestamp` <= " + QString::number(maxTimestamp);
+        else if(minTimestamp >= 0L)
+            sql += "`timestamp` >= " + QString::number(minTimestamp);
+        else if(maxTimestamp >= 0L)
+            sql += "`timestamp` <= " + QString::number(maxTimestamp);
+    }
+
+
+    sql += ";";
+    QSqlQuery query(sql, this->m_db);
+    if(!query.exec(sql)) {
+        //cerr << "Invalid query: " << sql.toStdString() << endl;
+    }
+
+
+    QList<DataPoint> ret;
+    while(query.next()) {
+        DataPoint dp;
+        dp.timestamp = (long)query.value(0).toLongLong();
+        dp.t = query.value(1).toFloat();
+        dp.hum = query.value(2).toFloat();
+        dp.p = query.value(3).toFloat();
+        dp.light = query.value(4).toFloat();
+        ret.push_back(dp);
+    }
+    return ret;
+}

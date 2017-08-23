@@ -50,6 +50,9 @@ SQLite3Db::SQLite3Db(string filename) {
 
 SQLite3Db::~SQLite3Db() {
 	this->close();
+	if(pthread_mutex_destroy(&mutex) <0) {
+		cerr << "Error destroying pthread_mutex for sqlite3 db" << endl;
+	}
 }
 
 void SQLite3Db::initialize(void) {
@@ -62,8 +65,22 @@ void SQLite3Db::initialize(void) {
 		errmsg << "Error opening sqlite3 database " << sqlite3_errmsg(db);
 		throw SQLException(errmsg.str());
 	}
+	
+	if( pthread_mutex_init(&mutex, NULL) < 0) throw "Error creating thread mutex";
 }
    
+void SQLite3Db::lock() {
+#if 0		// Currently not used
+	if(pthread_mutex_lock(&mutex) < 0) throw "Error locking mutex";
+#endif
+}
+
+void SQLite3Db::unlock() {
+#if 0
+	if(pthread_mutex_unlock(&mutex) < 0) throw "Error unlocking mutex";
+#endif
+}
+
 void SQLite3Db::connect(void) {
 	if(isConnected()) return;
 	else
@@ -103,7 +120,9 @@ void SQLite3Db::cleanup(void) {
 }
 
 void SQLite3Db::commit(void) {
+	lock();
 	sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
+	unlock();
 }
 
 
@@ -113,7 +132,11 @@ SQLite3ResultSet* SQLite3Db::doQuery(string query) {
 
 SQLite3ResultSet* SQLite3Db::doQuery(const char* query, size_t len) {
 	this->cleanup();
-	this->rs = new SQLite3ResultSet(this, query, len);
+	lock();
+	try {
+		this->rs = new SQLite3ResultSet(this, query, len);
+	} catch (...) { unlock(); throw; }
+	unlock();
 	return this->rs;
 }
 
@@ -127,7 +150,17 @@ void SQLite3Db::execSql(const char* query, size_t len) {
 	this->rs = NULL;
 	char* zErrMsg;
 	if(len <= 0) return;
-	if (sqlite3_exec(db, query, NULL, NULL, &zErrMsg) != SQLITE_OK) {
+	
+	lock();
+	int rc;
+	while(true) {
+		rc = sqlite3_exec(db, query, NULL, NULL, &zErrMsg);
+		if(rc == SQLITE_BUSY) continue;
+		else break;
+	}
+	unlock();
+	
+	if (rc != SQLITE_OK) {
 		stringstream errmsg;
 		errmsg << "SQL error " << zErrMsg;
 		sqlite3_free(zErrMsg);
@@ -149,7 +182,11 @@ unsigned long SQLite3Db::execUpdate_ul(std::string sql) {
 
 unsigned long SQLite3Db::execUpdate_ul(const char* query, size_t len) {
 	this->cleanup();
-	this->rs = new SQLite3ResultSet(this, query, len);
+	lock();
+	try {
+		this->rs = new SQLite3ResultSet(this, query, len);
+		unlock();
+	} catch (...) { unlock(); throw; }
 	return 0L;
 }
    
@@ -161,10 +198,17 @@ void SQLite3Db::exec_noResultSet(const char* query, size_t len) {
 	if(db == NULL) throw SQLException("Sqlite connection closed ");
 	char *zErrMsg = 0;
 	int rc;	
+	
 	this->cleanup();
 	if(len <= 0) return;
 	
-	rc = sqlite3_exec(db, query, NULL, NULL, &zErrMsg);
+	lock();
+	while(true) {
+		rc = sqlite3_exec(db, query, NULL, NULL, &zErrMsg);
+		if(rc == SQLITE_BUSY) continue;
+		else break;
+	}
+	unlock();
 	if( rc != SQLITE_OK ) {
 		stringstream errmsg;
 		errmsg << "Error executing sqlite command: " << zErrMsg;
@@ -226,7 +270,12 @@ SQLite3ResultSet::SQLite3ResultSet(SQLite3Db* sqlite, const char *query, size_t 
 	
 	// Execute query. Keep in mind that this call MUST be after all
 	// variables have been initialized
-	rc = sqlite3_exec(db, query, rs_callback, this, &zErrMsg);
+	while(true) {
+		rc = sqlite3_exec(db, query, rs_callback, this, &zErrMsg);
+		if(rc == SQLITE_BUSY) continue;
+		else break;		// Currently busy waiting
+	}
+	
 	if( rc != SQLITE_OK ) {
 		stringstream errmsg;
 		errmsg << "Error executing sqlite command: " << zErrMsg;

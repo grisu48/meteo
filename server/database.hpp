@@ -18,7 +18,7 @@
 
 #include <sqlite3.h>
 
-
+#include <pthread.h>
 
 class SQLite3ResultSet;
 class SQLite3Db;
@@ -54,6 +54,12 @@ protected:
 	void initialize(void);
 	
 	void closeResultSet(void);
+	
+	// Mutex
+	pthread_mutex_t mutex;
+	
+	void lock();
+	void unlock();
 public:
 	SQLite3Db(const char* filename);
 	SQLite3Db(std::string filename);

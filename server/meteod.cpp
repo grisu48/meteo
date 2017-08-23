@@ -139,6 +139,7 @@ static void cleanup() {
 		::remove(pid_file.c_str());
 }
 
+
 bool process_exists(pid_t pid) {
 	struct stat sts;
 	stringstream ss;
@@ -324,26 +325,33 @@ static bool hasNode(const int id) {
 static void received(const int id, const string &name, float t, float hum, float p, float l_vis, float l_ir) {
 	(void)l_vis;
 	(void)l_ir;
+	
+	
 	if(!quiet) cout << id << " [" << name << "], t=" << t << " deg C, " << hum << " % rel. humidity, " << p << " hPa" << endl;
 	if(db == NULL) return;
 	
-	stringstream ss;
+	try {
 	
-	// Check if node is in node list
-	if(!hasNode(id)) {
-		ss << "INSERT OR REPLACE INTO `Nodes` (`id`, `name`) VALUES (" << id << ", '" << db->escapeString(name) << "');";
+		stringstream ss;
+	
+		// Check if node is in node list
+		if(!hasNode(id)) {
+			ss << "INSERT OR REPLACE INTO `Nodes` (`id`, `name`) VALUES (" << id << ", '" << db->escapeString(name) << "');";
+			db->exec_noResultSet(ss.str());
+		}
+	
+		// Create table if not exists	
+		ss << "CREATE TABLE IF NOT EXISTS `Node_" << id << "` (`timestamp` INT PRIMARY KEY, `t` REAL, `hum` REAL, `p` REAL, `l_vis` REAL, `l_ir` REAL);";
 		db->exec_noResultSet(ss.str());
+		ss.str("");
+	
+		const int64_t timestamp = getSystemTime();
+	
+		// Insert values into database
+		ss << "INSERT OR REPLACE INTO `Node_" << id << "` (`timestamp`, `t`, `hum`, `p`, `l_vis`, `l_ir`) VALUES (";
+		ss << timestamp << ", " << t << ", " << hum << ", " << p << ", " << l_vis << ", " << l_ir << ");";
+		db->exec_noResultSet(ss.str());
+	} catch(...) {
+		throw;
 	}
-	
-	// Create table if not exists	
-	ss << "CREATE TABLE IF NOT EXISTS `Node_" << id << "` (`timestamp` INT PRIMARY KEY, `t` REAL, `hum` REAL, `p` REAL, `l_vis` REAL, `l_ir` REAL);";
-	db->exec_noResultSet(ss.str());
-	ss.str("");
-	
-	const int64_t timestamp = getSystemTime();
-	
-	// Insert values into database
-	ss << "INSERT OR REPLACE INTO `Node_" << id << "` (`timestamp`, `t`, `hum`, `p`, `l_vis`, `l_ir`) VALUES (";
-	ss << timestamp << ", " << t << ", " << hum << ", " << p << ", " << l_vis << ", " << l_ir << ");";
-	db->exec_noResultSet(ss.str());
 }

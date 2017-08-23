@@ -248,10 +248,21 @@ pthread_t Webserver::startThreaded(const int port, const std::string &db_filenam
 	return tid;
 }
 
+static int fd;
+static void sig_handler(int sig_no) {
+	switch(sig_no) {
+	case SIGALRM:
+		cerr << "Terminating http request" << endl;
+		::close(fd);
+		exit(EXIT_FAILURE);
+		return;
+	}
+}
+	
 
 void Webserver::loop(void) {
 	while(running && this->sock > 0) {
-		const int fd = ::accept(sock, NULL, 0);
+		fd = ::accept(sock, NULL, 0);
 		if(fd < 0) break;		// Terminate
 		
 		const pid_t pid = fork();
@@ -260,16 +271,22 @@ void Webserver::loop(void) {
 			::close(sock);
 			exit(EXIT_FAILURE);
 		} else if(pid == 0) {
-			// Do http request
 			::close(sock);
+			// Do http request
+			alarm(2);		// Request max take at most 2 seconds
+			signal(SIGALRM, sig_handler);
 			this->doHttpRequest(fd);
 			::close(fd);
 			exit(EXIT_SUCCESS);
 		} else {
+			// Parent
+			
 			::close(fd);
+#if 0			// Don't wait, immediately ready again
 			int status;
 			// Wait for child
 			waitpid(pid, &status, 0);
+#endif
 		}
 	}
 	
@@ -350,7 +367,6 @@ vector<DataPoint> getPoints(SQLite3Db &db, const long node, const long minTimest
 	query << ";";
 	
 	string str = query.str();
-	cout << str << " = ";
 	
 	vector<DataPoint> ret;
 	SQLite3ResultSet *rs = db.doQuery(str);
@@ -366,7 +382,6 @@ vector<DataPoint> getPoints(SQLite3Db &db, const long node, const long minTimest
 		ret.push_back(dp);
 	}
 	rs->close();
-	cout << ret.size() << endl;
 	return ret;
 }
 
@@ -532,6 +547,8 @@ void Webserver::doHttpRequest(const int fd) {
 				long maxTimestamp = minTimestamp + 60L*60L*24L*1000L;
 			
 				vector<DataPoint> dp = getPoints(db, id, minTimestamp, maxTimestamp, limit, offset);
+				
+				socket.writeHttpHeader(200);
 				socket << "# Timestamp, Temperature, Humditiy, Pressure, Light (IR/Visible)\n";
 				socket << "# [Seconds since Epoc], [deg C], [% rel], [hPa], [1]\n";
 				socket << "# COUNT=" << (long)dp.size() << "\n";
@@ -608,6 +625,7 @@ void Webserver::doHttpRequest(const int fd) {
 	} catch (SQLException &e) {
 		socket.writeHttpHeader(500);
 		socket << "SQL Error : " << e.what() << "\n";
+		cerr << "SQL error in HTTP request: " << e.what() << endl;
 	}
 	
 }

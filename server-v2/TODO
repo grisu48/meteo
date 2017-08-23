@@ -1,0 +1,2 @@
+- Database mutex to avoid "Database locked" errors
+

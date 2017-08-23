@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
 	bool verbose = false;
 	int www = 0;			// if > 0 a webserver will be forked on that port
 	
-	
+	// XXX: Replace with getopt
 	for(int i=1;i<argc;i++) {
 		string arg(argv[i]);
 		if(arg.size() == 0) continue;

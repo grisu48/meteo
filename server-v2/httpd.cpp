@@ -383,6 +383,32 @@ vector<DataPoint> getPointsToday(SQLite3Db &db, const long node, const long limi
 	return getPoints(db, node, minTimestamp, maxTimestamp, limit, offset);
 }
 
+vector<DataPoint> getPointsLastWeek(SQLite3Db &db, const long node, const long limit = 1000, const long offset = 0L) {
+	lazy::DateTime today;
+	today.setMilliseconds(0);
+	today.setSecond(0);
+	today.setMinute(0);
+	today.setHour(0);
+	
+	const long maxTimestamp = today.timestamp() + 60L*60L*24L*1000L;
+	const long minTimestamp = maxTimestamp - 60L*60L*24L*1000L*7L;
+	
+	return getPoints(db, node, minTimestamp, maxTimestamp, limit, offset);
+}
+
+vector<DataPoint> getPointsLastMonth(SQLite3Db &db, const long node, const long limit = 1000, const long offset = 0L) {
+	lazy::DateTime today;
+	today.setMilliseconds(0);
+	today.setSecond(0);
+	today.setMinute(0);
+	today.setHour(0);
+	
+	const long maxTimestamp = today.timestamp() + 60L*60L*24L*1000L;
+	const long minTimestamp = maxTimestamp - 60L*60L*24L*1000L*31L;
+	
+	return getPoints(db, node, minTimestamp, maxTimestamp, limit, offset);
+}
+
 
 /** Extract parameters to a parameter map */
 static map<String, String> extractParams(String param) {
@@ -443,87 +469,145 @@ void Webserver::doHttpRequest(const int fd) {
 		return;
 	}
 	
-	// Switch requests uris
-	if(url == "/" || url == "/index.html" || url == "/index.html") {
 	
-        socket.writeHttpHeader();
-        socket << "<html><head><title>meteo Sensor node</title></head>";
-        socket << "<body>";
-        socket << "<h1>Meteo Server</h1>\n";
-		socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
-		// Get nodes
-		vector<Node> nodes = getNodes(db);
-		if(nodes.size() == 0) {
-			socket << "No nodes present in the system";
-		} else {
-			socket << "<table border=\"1\">\n";
-			socket << "<tr><td><b>Node</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [% rel]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminosity (visible)</b></td><td><b>Luminosity (IR)</b></td></tr>\n";
-			for(vector<Node>::const_iterator it = nodes.begin(); it != nodes.end(); ++it) {
-				socket << "<tr><td><a href=\"Node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
-				vector<DataPoint> dp = getPoints(db, (*it).id, -1,-1, 1);
-				if(dp.size() > 0) {
-					DataPoint p = dp[0];
-					socket << "<td>" << p.t << "</td><td>" << p.hum << "</td><td>" << p.p << "</td><td>" << p.l_vis << "</td><td>" << p.l_ir << "</td>";
+			
+	try {
+	
+		// Switch requests uris
+		if(url == "/" || url == "/index.html" || url == "/index.html") {
+	
+		    socket.writeHttpHeader();
+		    socket << "<html><head><title>meteo Sensor node</title></head>";
+		    socket << "<body>";
+		    socket << "<h1>Meteo Server</h1>\n";
+			socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
+			// Get nodes
+			vector<Node> nodes = getNodes(db);
+			if(nodes.size() == 0) {
+				socket << "No nodes present in the system";
+			} else {
+				socket << "<table border=\"1\">\n";
+				socket << "<tr><td><b>Node</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [% rel]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminosity (visible)</b></td><td><b>Luminosity (IR)</b></td></tr>\n";
+				for(vector<Node>::const_iterator it = nodes.begin(); it != nodes.end(); ++it) {
+					socket << "<tr><td><a href=\"Node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
+					vector<DataPoint> dp = getPoints(db, (*it).id, -1,-1, 1);
+					if(dp.size() > 0) {
+						DataPoint p = dp[0];
+						socket << "<td>" << p.t << "</td><td>" << p.hum << "</td><td>" << p.p << "</td><td>" << p.l_vis << "</td><td>" << p.l_ir << "</td>";
+					}
+					socket << "</tr>\n";
 				}
-				socket << "</tr>\n";
+				socket << "</table>\n";
+			}
+		
+		
+		} else if(url.startsWith("/api/")) {
+		
+			String apiRequest = url.mid(5);
+		
+			if(apiRequest == "nodes") {
+				socket.writeHttpHeader(200);
+			
+				socket << "# Node ID, Node Name\n";
+			
+				vector<Node> nodes = getNodes(db);
+				for(vector<Node>::const_iterator it = nodes.begin(); it != nodes.end(); ++it)
+					socket << (*it).id << "," << (*it).name << "\n";
+			
+			} else if(apiRequest.startsWith("node?")) {
+			
+				map<String, String> params = extractParams(apiRequest.mid(5));
+				long id = params["id"].toLong();
+			
+				long limit = 1000;
+				long offset = 0;
+			
+				// Default timestamp: today
+				lazy::DateTime today;
+				today.setMilliseconds(0);
+				today.setSecond(0);
+				today.setMinute(0);
+				today.setHour(0);
+				long minTimestamp = today.timestamp();
+				long maxTimestamp = minTimestamp + 60L*60L*24L*1000L;
+			
+				vector<DataPoint> dp = getPoints(db, id, minTimestamp, maxTimestamp, limit, offset);
+				socket << "# Timestamp, Temperature, Humditiy, Pressure, Light (IR/Visible)\n";
+				socket << "# [Seconds since Epoc], [deg C], [% rel], [hPa], [1]\n";
+				socket << "# COUNT=" << (long)dp.size() << "\n";
+				for( vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
+					socket << (*it).timestamp << ", ";
+					socket << (*it).t << ", ";
+					socket << (*it).hum << ", ";
+					socket << (*it).p << ", ";
+					socket << (*it).l_ir << '/' << (*it).l_vis << '\n';
+				}
+			
+			} else {
+		    	socket.writeHttpHeader(404);
+		    	socket << "Illegal API request\n";
+		    }
+		
+		} else if(url == "/Node" || url == "/node") {
+		
+		    socket.writeHttpHeader(403);
+		    socket << "<html><head><title>meteo Sensor node</title></head>";
+		    socket << "<body>";
+		    socket << "<h1>Meteo Server</h1>\n";
+			socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
+			socket << "<b>Error</b>Missing parameter: Node id\n";
+		
+		} else if(url.startsWith("/Node?") || url.startsWith("/node?")) {
+			map<String, String> params = extractParams(url.mid(6));
+		
+			String sID = params["id"];
+			long id = sID.toLong();
+		
+		    socket.writeHttpHeader();
+		    socket << "<html><head><title>meteo Sensor node</title></head>";
+		    socket << "<body>";
+		    socket << "<h1>Meteo Server</h1>\n";
+			socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
+			socket << "<p><a href=\"Node?id=" << id << "&type=day\">[Today]</a> <a href=\"Node?id=" << id << "&type=week\">[7 days]</a> <a href=\"Node?id=" << id << "&type=month\">[Month]</a></p>";
+		
+			vector<DataPoint> datapoints;
+		
+			String type = params["type"];
+			string dt_format = "%H:%M:%S";
+			if(type == "day" || type == "") {
+				datapoints = getPointsToday(db, id);
+			} else if(type == "week") {
+				datapoints = getPointsLastWeek(db, id);
+			} else if(type == "month") {
+				datapoints = getPointsLastMonth(db, id);
+			} else {
+				// Custom range?
+			
+			}
+		
+			// Print datapoints
+			socket << "<table border=\"1\">\n";
+			socket << "<tr><td><b>Timestamp</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [% rel]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminosity (visible)</b></td><td><b>Luminosity (IR)</b></td></tr>\n";
+			for(vector<DataPoint>::const_iterator it = datapoints.begin(); it != datapoints.end(); ++it) {
+				DataPoint p = (*it);
+				lazy::DateTime dt(p.timestamp);
+				socket << "<td>" << dt.format(dt_format) << "</td><td>" << p.t << "</td><td>" << p.hum << "</td><td>" << p.p << "</td><td>" << p.l_vis << "</td><td>" << p.l_ir << "</td></tr>\n";
 			}
 			socket << "</table>\n";
-		}
 		
-	} else if(url == "/Node" || url == "/node") {
-		
-        socket.writeHttpHeader(403);
-        socket << "<html><head><title>meteo Sensor node</title></head>";
-        socket << "<body>";
-        socket << "<h1>Meteo Server</h1>\n";
-		socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
-		socket << "<b>Error</b>Missing parameter: Node id\n";
-		
-	} else if(url.startsWith("/Node?") || url.startsWith("/node?")) {
-		map<String, String> params = extractParams(url.mid(6));
-		
-		String sID = params["id"];
-		long id = sID.toLong();
-		
-        socket.writeHttpHeader();
-        socket << "<html><head><title>meteo Sensor node</title></head>";
-        socket << "<body>";
-        socket << "<h1>Meteo Server</h1>\n";
-		socket << "<p><a href=\"index.html\">[Nodes]</a></p>";
-		socket << "<p><a href=\"Node?id=" << id << "&type=day\">[Today]</a> <a href=\"Node?id=" << id << "&type=week\">[7 days]</a> <a href=\"Node?id=" << id << "&type=month\">[Month]</a></p>";
-		
-		vector<DataPoint> datapoints;
-		
-		String type = params["type"];
-		string dt_format = "%H:%M:%S";
-		if(type == "day" || type == "") {
-			datapoints = getPointsToday(db, id);
-		} else if(type == "week") {
-		
-		} else if(type == "month") {
 		
 		} else {
-			// Custom range?
-			
+			// Not found
+			socket << "HTTP/1.1 404 Not Found\n";
+			socket << "Content-Type: text/html\n\n";
+			socket << "<html><head><title>Not found</title></head><body><h1>Not found</h1>";
+			socket << "<p>Error 404 - Page not found. Maybe you want to <a href=\"index.html\">go back to the homepage</a></p>\n";
+			socket << "<p><b>Illegal url:</b>" << url << "</p>\n";
 		}
-		
-		// Print datapoints
-		socket << "<table border=\"1\">\n";
-		socket << "<tr><td><b>Timestamp</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [% rel]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminosity (visible)</b></td><td><b>Luminosity (IR)</b></td></tr>\n";
-		for(vector<DataPoint>::const_iterator it = datapoints.begin(); it != datapoints.end(); ++it) {
-			DataPoint p = (*it);
-			lazy::DateTime dt(p.timestamp);
-			socket << "<td>" << dt.format(dt_format) << "</td><td>" << p.t << "</td><td>" << p.hum << "</td><td>" << p.p << "</td><td>" << p.l_vis << "</td><td>" << p.l_ir << "</td></tr>\n";
-		}
-		socket << "</table>\n";
-		
-		
-	} else {
-		// Not found
-		socket << "HTTP/1.1 404 Not Found\n";
-		socket << "Content-Type: text/html\n\n";
-		socket << "<html><head><title>Not found</title></head><body><h1>Not found</h1>";
-		socket << "<p>Error 404 - Page not found. Maybe you want to <a href=\"index.html\">go back to the homepage</a></p>\n";
-		socket << "<p><b>Illegal url:</b>" << url << "</p>\n";
+	
+	} catch (SQLException &e) {
+		socket.writeHttpHeader(500);
+		socket << "SQL Error : " << e.what() << "\n";
 	}
+	
 }

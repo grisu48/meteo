@@ -40,6 +40,8 @@ AS3935 MOD-1016 Lightning Sensor Arduino test sketch
 
 
 
+#define BAUD_RATE     9600   //115200
+
 
 #include <Wire.h>
 #include "AS3935.h"
@@ -110,7 +112,7 @@ void recalibrate(bool tune = true) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(BAUD_RATE);
   while (!Serial) {}
   Serial.println("# MOD-1016 (AS3935) Lightning Sensor Monitor System");
 

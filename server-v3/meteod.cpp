@@ -237,7 +237,8 @@ static void* http_thread_run(void *arg) {
 		if(url == "/" || url == "/index.html" || url == "/index.html") {
 	
 		    socket->writeHttpHeader();
-		    *socket << "<html><head><title>meteo Sensor node</title></head>";
+		    *socket << "<html><head><title>meteo Sensor node</title>";
+		    *socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
 		    *socket << "<body>";
 		    *socket << "<h1>Meteo Server</h1>\n";
 			*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";

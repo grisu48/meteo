@@ -248,7 +248,6 @@ static void* http_thread_run(void *arg) {
 		    *socket << "<body>";
 		    *socket << "<h1>Meteo Server</h1>\n";
 			*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
-			*socket << "</html>";
 			
 			vector<Station> stations = collector.activeStations();
 			*socket << "<table border=\"1\">";
@@ -420,6 +419,50 @@ static void* http_thread_run(void *arg) {
 				socket->writeHttpHeader(400);
 				*socket << "Illegal format";
 			}
+			
+		} else if(url.startsWith("/current") || url.startsWith("/current?")) {
+			
+			
+			map<String, String> params;
+			if(url.size() > 8) params = extractParams(url.mid(9));
+			
+			String format = "html";
+			if(params.find("format") != params.end()) format = params["format"];
+			
+			if(format == "" || format == "html") {
+				
+				socket->writeHttpHeader();
+				*socket << "<html><head><title>meteo Sensor node</title>";
+				*socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
+				*socket << "<body>";
+				*socket << "<h1>Meteo Server</h1>\n";
+			
+				vector<Station> stations = collector.activeStations();
+				*socket << "<table border=\"1\">";
+				*socket << "<tr><td><b>Stations</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [rel %]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminositry</b></td>\n";
+				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
+					*socket << "<tr><td><a href=\"node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
+					*socket << "<td>" << round_f((*it).t) << "</td>";
+					*socket << "<td>" << round_f((*it).hum) << "</td>";
+					*socket << "<td>" << round_f((*it).p) << "</td>";
+					*socket << "<td>" << round_f((*it).l_ir) << "/" << round_f((*it).l_vis) << "</td>";
+					*socket << "</tr>";
+				}
+				*socket << "</table>";
+			} else if(format == "csv" || format == "plain") {
+				vector<Station> stations = collector.activeStations();
+				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
+					*socket << (*it).id << ',' << (*it).name << ',';
+					*socket << round_f((*it).t) << ',';
+					*socket << round_f((*it).hum) << ',';
+					*socket << round_f((*it).p) << ',';
+					*socket << round_f((*it).l_ir) << "/" << round_f((*it).l_vis) << '\n';
+				}
+			} else {
+				socket->writeHttpHeader(400);
+				*socket << "Illegal format";
+			}
+				
 			
 		} else {
 			socket->writeHttpHeader(404);

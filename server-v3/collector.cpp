@@ -85,15 +85,11 @@ void Collector::mutex_unlock() const {
 }
 
 void Collector::run() {
-	cout << "Collector::run()" << endl;
-	
 	while(running) {
 		sleep(delay);
 		
 		mutex_lock();
 		this->purge_stations();
-		
-		cout << stations.size() << " stations remaining" << endl;
 		
 		int64_t timestamp = (lazy::getSystemTime()/1000L);
 		

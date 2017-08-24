@@ -142,6 +142,9 @@ public:
 	/** Get all currently active stations */
 	std::vector<Station> activeStations(void) const;
 	
+	/** Returns the station with the given id or a new instance, if not existing */
+	Station station(const long id) const;
+	
 	/** Query data from the database */
 	std::vector<DataPoint> query(const long station, const long minTimestamp = -1L, const long maxTimestamp = -1L, const long limit = 1000, const long offset = 0L);
 };

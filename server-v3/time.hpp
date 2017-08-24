@@ -120,6 +120,7 @@ public:
 	
 	/** Get the milliseconds since epoc */
 	long timestamp() const { return this->t; }
+	void timestamp(long t) { this->t = t; }
 	/** Get the milliseconds since epoc */
 	long getMilliSecondsSinceEpoc() const { return this->t; }
 	

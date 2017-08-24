@@ -52,6 +52,9 @@ void Collector::push(long id, std::string name, float t, float hum, float p, flo
 		stations[id] = Station();
 		stations[id].name = name;
 	}
+	if(stations[id].name == "" && name != "")
+		stations[id].name = name;
+	
 	stations[id].push(t, hum, p, l_ir, l_vis, f_alpha);
 }
 
@@ -129,6 +132,15 @@ vector<Station> Collector::activeStations(void) const {
 		stations.push_back(it->second);
 	mutex_unlock();
 	return stations;
+}
+
+Station Collector::station(const long id) const {
+	Station ret;
+	mutex_lock();
+	std::map<long, Station>::const_iterator it = stations.find(id);
+	if(it != stations.end()) ret = it->second;
+	mutex_unlock();
+	return ret;
 }
 
 void Collector::close() {

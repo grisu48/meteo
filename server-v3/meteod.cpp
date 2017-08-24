@@ -17,6 +17,7 @@
 
 #include <unistd.h>
 #include <signal.h>
+#include <math.h>
 
 #include "config.hpp"
 #include "json.hpp"
@@ -193,6 +194,11 @@ static map<String, String> extractParams(String param) {
 	return ret;
 }
 
+static float round_f(const float x, const int digits = 2) {
+	const float base = (float)::pow10(digits);
+	return ::roundf(x * base)/base;
+}
+
 static void* http_thread_run(void *arg) {
 	Socket *socket = (Socket*)arg;
 	
@@ -249,10 +255,10 @@ static void* http_thread_run(void *arg) {
 			*socket << "<tr><td><b>Stations</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [rel %]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminositry</b></td>\n";
 			for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
 				*socket << "<tr><td><a href=\"node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
-				*socket << "<td>" << (*it).t << "</td>";
-				*socket << "<td>" << (*it).hum << "</td>";
-				*socket << "<td>" << (*it).p << "</td>";
-				*socket << "<td>" << (*it).l_ir << "/" << (*it).l_vis << "</td>";
+				*socket << "<td>" << round_f((*it).t) << "</td>";
+				*socket << "<td>" << round_f((*it).hum) << "</td>";
+				*socket << "<td>" << round_f((*it).p) << "</td>";
+				*socket << "<td>" << round_f((*it).l_ir) << "/" << round_f((*it).l_vis) << "</td>";
 				*socket << "</tr>";
 			}
 			*socket << "</table>";
@@ -276,10 +282,12 @@ static void* http_thread_run(void *arg) {
 				if(params.find("limit") != params.end()) limit = ::atol(params["limit"].c_str());
 				if(params.find("offset") != params.end()) offset = ::atol(params["offset"].c_str());
 				if(limit < 0) limit = 100;
-				if(limit > 1000) limit = 1000;
+				if(limit > 10000) limit = 10000;
 				if(offset < 0) offset = 0L;
 				
 				vector<DataPoint> dp = collector.query(id, minTimestamp, maxTimestamp, limit, offset);
+				
+				Station station = collector.station(id);
 				
 				if(format == "" || format == "html") {
 					socket->writeHttpHeader();
@@ -288,28 +296,74 @@ static void* http_thread_run(void *arg) {
 					*socket << "<body>";
 					*socket << "<h1>Meteo Server</h1>\n";
 					*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
-					*socket << "</html>";
-			
-					vector<Station> stations = collector.activeStations();
+					string name = station.name;
+					if(name == "") name = "UNKNOWN";
+					*socket << "<h3>Station overview: " << name << "</h3>\n";
+					
+					// History
+					int64_t timestamp = getSystemTime()/1000L;
+					*socket << "<p>Display: ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-3*60*60L) << "&t_max=" << timestamp << "\">[3h]</a> ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-12*60*60L) << "&t_max=" << timestamp << "\">[12h]</a> ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-24*60*60L) << "&t_max=" << timestamp << "\">[24h]</a> ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-48*60*60L) << "&t_max=" << timestamp << "\">[48h]</a> ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-7L*24L*60L*60L) << "&t_max=" << timestamp << "\">[7d] </a>";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-30L*24L*60L*60L) << "&t_max=" << timestamp << "\">[30d]</a>";
+					*socket << "</p>\n";
+					
+					DataPoint avg;
+					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
+						avg.t += (*it).t;
+						avg.hum += (*it).hum;
+						avg.p += (*it).p;
+						avg.l_vis += (*it).l_vis;
+						avg.l_ir += (*it).l_ir;
+					}
+					if(dp.size() > 0) {
+						const float n = (float)dp.size();
+						avg.t /= n;
+						avg.hum /= n;
+						avg.p /= n;
+						avg.l_vis /= n;
+						avg.l_ir /= n;
+					}
+					
+					lazy::DateTime dateTime;
+					*socket << "<table border=\"1\">";
+					*socket << "<tr><td>Values</td><td>" <<(long)dp.size() << "</td></tr>\n";
+					*socket << "<tr><td>Time range</td><td>";
+					dateTime.timestamp(dp[dp.size()-1].timestamp*1000L); *socket << dateTime.format() << " - ";
+					dateTime.timestamp(dp[0].timestamp*1000L); *socket << dateTime.format();
+					*socket << "</td></tr>\n";
+					*socket << "<tr><td>Temperature</td><td>" << avg.t << " deg C</td></tr>\n";
+					*socket << "<tr><td>Humidity</td><td>" << avg.hum << " % rel</td></tr>\n";
+					*socket << "<tr><td>Pressure</td><td>" << avg.p << " hPa</td></tr>\n";
+					*socket << "<tr><td>Luminosity</td><td>" << avg.l_ir << "/" << avg.l_vis << "</td></tr>\n";
+					*socket << "</table>";
+					
+					*socket << "<h3>Data</h3>\n";
+					*socket << "<p><a href=\"node?id=" << id << "&t_min=" << minTimestamp << "&t_max=" << maxTimestamp << "&format=csv\">[Show CSV]</a></p>\n";
 					*socket << "<table border=\"1\">";
 			*socket << "<tr><td><b>Timestamp</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [rel %]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminositry</b></td>\n";
 					
 					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
-						*socket << "<tr><td>" << (*it).timestamp << "</td>";
-						*socket << "<td>" << (*it).t << "</td>";
-						*socket << "<td>" << (*it).hum << "</td>";
-						*socket << "<td>" << (*it).p << "</td>";
-						*socket << "<td>" << (*it).l_ir << "/" << (*it).l_vis << "</td>";
+						dateTime.timestamp((*it).timestamp*1000L);
+						*socket << "<tr><td>" << dateTime.format() << "</td>";
+						*socket << "<td>" << round_f((*it).t) << "</td>";
+						*socket << "<td>" << round_f((*it).hum) << "</td>";
+						*socket << "<td>" << round_f((*it).p) << "</td>";
+						*socket << "<td>" << round_f((*it).l_ir) << "/" << (*it).l_vis << "</td>";
 						*socket << "</tr>";
 					}
 					*socket << "</table>";
+					*socket << "</html>";
 				} else if(format == "csv") {
 					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
 						*socket << (*it).timestamp << ", ";
-						*socket << (*it).t << ", ";
-						*socket << (*it).hum << ", ";
-						*socket << (*it).p << ",";
-						*socket << (*it).l_ir << "/" << (*it).l_vis << "\n";
+						*socket << round_f((*it).t) << ", ";
+						*socket << round_f((*it).hum) << ", ";
+						*socket << round_f((*it).p) << ",";
+						*socket << round_f((*it).l_ir) << "/" << (*it).l_vis << "\n";
 					}
 				} else {
 					socket->writeHttpHeader(400);
@@ -340,16 +394,16 @@ static void* http_thread_run(void *arg) {
 				*socket << "<h1>Meteo Server</h1>\n";
 				*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
 				*socket << "</html>";
-			
+				
 				*socket << "<table border=\"1\">";
 				*socket << "<tr><td><b>Stations</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [rel %]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminositry</b></td>\n";
 				vector<Station> stations = collector.activeStations();
 				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
 					*socket << "<tr><td><a href=\"node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
-					*socket << "<td>" << (*it).t << "</td>";
-					*socket << "<td>" << (*it).hum << "</td>";
-					*socket << "<td>" << (*it).p << "</td>";
-					*socket << "<td>" << (*it).l_ir << "/" << (*it).l_vis << "</td>";
+					*socket << "<td>" << round_f((*it).t) << "</td>";
+					*socket << "<td>" << round_f((*it).hum) << "</td>";
+					*socket << "<td>" << round_f((*it).p) << "</td>";
+					*socket << "<td>" << round_f((*it).l_ir) << "/" << (*it).l_vis << "</td>";
 					*socket << "</tr>";
 				}
 				*socket << "</table>";

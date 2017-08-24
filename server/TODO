@@ -1,4 +1,0 @@
-- Database mutex to avoid "Database locked" errors
-- Some requests need to be terminated, the http server is thus not stable
-   - This needs to be corrected for production run!
-

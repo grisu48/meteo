@@ -7,7 +7,7 @@ INCLUDE=
 LIBS=-pthread -lsqlite3 -lmosquitto
 
 
-OBJS=database.o config.o mosquitto.o string.o httpd.o time.o
+OBJS=config.o mosquitto.o string.o time.o collector.o
 
 
 default:	all

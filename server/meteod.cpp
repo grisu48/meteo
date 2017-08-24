@@ -1,72 +1,184 @@
 /* =============================================================================
  * 
- * Title:         meteo Server
+ * Title:         meteod - Meteo data collector server
  * Author:        Felix Niederwanger
  * License:       Copyright (c), 2017 Felix Niederwanger
  *                MIT license (http://opensource.org/licenses/MIT)
- * Description:   Reception, collection and storage of meteo data
+ * Description:   Collects data via mosquitto interface and writes them to a
+ *                SQLite3 database. Provides HTTP access to clients
  * 
  * =============================================================================
  */
  
  
 #include <iostream>
-#include <fstream>
-#include <sstream>
 #include <cstdlib>
-#include <string>
 #include <vector>
-#include <map>
 
-#include <cstdio>
-#include <cstdlib>
 #include <unistd.h>
-#include <sys/time.h>
-#include <time.h>
-#include <errno.h>
-#include <errno.h>
-#include <string.h>
+#include <sys/types.h>
 #include <signal.h>
-#include <pthread.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
+#include <math.h>
+#include <sys/socket.h>
 
-#include "string.hpp"
 #include "config.hpp"
-#include "database.hpp"
-#include "mosquitto.hpp"
 #include "json.hpp"
-#include "httpd.hpp"
+#include "mosquitto.hpp"
+#include "string.hpp"
 #include "time.hpp"
+#include "collector.hpp"
+
+#include "httpd.cpp"
 
 using namespace std;
 using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
+#define VERSION "0.1"
+#define BUILD 100
 
-#define PID_FILE "/var/run/meteod.pid"
+
+/** Mosquitto instances */
+static vector<Mosquitto*> mosquittos;
+static Collector collector;
+static volatile bool running = true;
+static DateTime startupDateTime;
+static int verbose = 0;
+
+/** Mosquitto receive callback */
+static void mosq_receive(const std::string &topic, char* buffer, size_t len);
+/** Connect a mosquitto server */
+static Mosquitto* connectMosquitto(string remote, int port = 1883, string username = "", string password = "");
+/** Program cleanup */
+static void cleanup();
+/** Signal handler */
+static void sig_handler(int signo);
+/** Start and run www_server on the given port. This call shouldn't return */
+static void http_server_run(const int port);
+static void fork_daemon(void);
+
+int main(int argc, char** argv) {
+	const char* db_filename = "/var/lib/meteod.db";
+	const char* mosq_server = "localhost";
+	int http_port = 8900;
+	int uid = 0;		// UID or 0, if not set
+	int gid = 0;		// GID or 0, if not set
+	bool daemon = false;	// Daemon mode
+		
+	cout << "meteod - Meteo server | 2017, Felix Niederwanger" << endl;
+	cout << "  Version " << VERSION << " (Build " << BUILD << ")" << endl;
+	
+	// Parse program arguments
+	try {
+		for(int i=1;i<argc;i++) {
+			string arg(argv[i]);
+			if(arg.size() == 0) continue;
+			if(arg.at(0) == '-') {
+				if(arg == "-h" || arg == "--help") {
+					cout << endl;
+					cout << "Usage: " << argv[0] << " [OPTIONS] [REMOTE]" << endl;
+					cout << "OPTIONS" << endl;
+					cout << "  -h       --help                     Print this help message" << endl;
+					cout << "           --http PORT                Set PORT as webserver port" << endl;
+					cout << "  -f FILE  --db FILE                  Set FILE as Sqlite3 database" << endl;
+					cout << "  -d       --daemon                   Daemon mode" << endl;
+					cout << "           --uid UID                  Set UID" << endl;
+					cout << "           --gid GID                  Set group id (GID)" << endl;
+					cout << "  -v       --verbose                  Verbose run" << endl;
+					cout << "  -vv                                 Verbose include http requests" << endl;
+					cout << "REMOTE is the mosquitto server" << endl;
+				
+				} else if(arg == "-f" || arg == "--db") {
+					if(i >= argc-1) throw "Missing argument: Database";
+					db_filename = argv[++i];
+				} else if(arg == "-d" || arg == "--daemon") {
+					daemon = true;
+				} else if(arg == "-v" || arg == "--verbose") {
+					verbose = 1;
+				} else if(arg == "-vv") {
+					verbose = 2;
+				} else if(arg == "--http") {
+					if(i >= argc-1) throw "Missing argument: Http port";
+					http_port = ::atoi(argv[++i]);
+					if(http_port <= 0 || http_port > 65535) throw "Illegal port";
+				} else if(arg == "--uid") {
+					if(i >= argc-1) throw "Missing argument: UID";
+					uid = ::atoi(argv[++i]);
+				} else if(arg == "--gid") {
+					if(i >= argc-1) throw "Missing argument: UID";
+					gid = ::atoi(argv[++i]);
+				} else {
+					cerr << "Illegal argument: " << arg << endl;
+					exit(EXIT_FAILURE);
+				}		
+			} else {
+				mosq_server = argv[i];
+			}
+		}
+	} catch (const char* msg) {
+		cerr << "Error: " << msg << endl;
+		exit(EXIT_FAILURE);
+	}
+	
+	// Daemon and set gid/uid
+	if(daemon) fork_daemon();
+	if(gid > 0 && setgid(gid) < 0) {
+		cerr << "Error setting gid " << gid << ": " << strerror(errno) << endl;
+		exit(EXIT_FAILURE);
+	}
+	if(uid > 0 && setuid(uid) < 0) {
+		cerr << "Error setting uid " << uid << ": " << strerror(errno) << endl;
+		exit(EXIT_FAILURE);
+	}
+	
+	if( (uid > 0 || gid > 0) && verbose > 1)
+		cout << "Permissions dropped. uid=" << getuid() << " (" << geteuid() << "), gid = " << getgid() << endl;
+	
+	
+	// Open database
+	if(verbose > 0) cout << "Database file: " << db_filename << endl;
+	try {
+		collector.open_db(db_filename);
+    } catch (const char* msg) {
+    	cerr << "Error opening database: " << strerror(errno) << endl;
+    	exit(EXIT_FAILURE);
+    }
+	
+    try {
+    	if(verbose > 0) cout << "Connecting to " << mosq_server << " ... " << endl;
+    	connectMosquitto(mosq_server);
+    } catch (const char* msg) {
+    	cerr << "Error connecting to mosquitto remote: " << msg << endl;
+    	exit(EXIT_FAILURE);
+    }
+    
+    signal(SIGINT, sig_handler);
+    signal(SIGTERM, sig_handler);
+    signal(SIGUSR1, sig_handler);
+    atexit(cleanup);
+    collector.start();
+    
+    // Setup http server
+    if(verbose > 0) cout << "Setting up http server on port " << http_port << " ... " << endl;
+    http_server_run(http_port);
+    
+    return EXIT_SUCCESS;
+}
 
 
-static SQLite3Db *db = NULL;
-static bool quiet = false;
-static bool force = false;
-static string pid_file = "";
-/** PID for webserver if present */
-static pid_t www_pid = 0;
 
-static void received(const int id, const string &name, float t, float hum, float p, float l_vis, float l_ir);
-
-void recv_callback(const std::string &topic, char* buffer, size_t len) {
+static void mosq_receive(const std::string &topic, char* buffer, size_t len) {
 	(void)len;
 	(void)topic;
 	
+	// Parse the packet
 	try {
 		string packet(buffer);
 		json j = json::parse(packet);
 	
 		if (j.find("node") == j.end()) return;
-		const int id = j["node"].get<int>();		
+		const long id = j["node"].get<long>();		
 		string name = "";
 		float t = 0.0F;
 		float hum = 0.0F;
@@ -81,7 +193,7 @@ void recv_callback(const std::string &topic, char* buffer, size_t len) {
 		if (j.find("l_vis") != j.end()) l_vis = j["l_vis"].get<float>();
 		if (j.find("l_ir") != j.end()) l_ir = j["l_ir"].get<float>();
 		
-		received(id, name, t, hum, p, l_vis, l_ir);
+		collector.push(id, name, t, hum, p, l_vis, l_ir);
 	
 	} catch (std::exception &e) {
 		cerr << "Exception (" << e.what() << ") parsing packet" << endl << buffer << endl;
@@ -91,17 +203,68 @@ void recv_callback(const std::string &topic, char* buffer, size_t len) {
 	}
 }
 
+static Mosquitto* connectMosquitto(string remote, int port, string username, string password) {
+	Mosquitto *mosq = new Mosquitto(remote, port);
+	if(username.size() > 0 || password.size() > 0) {
+		mosq->setUsername(username);
+		mosq->setPassword(password);
+	}
+	
+	try {
+		mosq->connect();
+		mosq->setReceiveCallback(mosq_receive);
+		
+		mosq->subscribe("meteo/#");
+		mosq->start();
+	} catch (...) {
+		delete mosq;
+		throw;
+	}
+	mosquittos.push_back(mosq);
+	return mosq;
+}
+
+
+static void cleanup() {
+	if(verbose > 0) cerr << "Cleanup ... " << endl;
+	collector.close();
+	
+	for(vector<Mosquitto*>::iterator it = mosquittos.begin(); it != mosquittos.end(); ++it)
+		delete *it;
+	mosquittos.clear();
+}
+
 
 static void sig_handler(int signo) {
 	switch(signo) {
 		case SIGINT:
-		case SIGTERM:
+			if(verbose > 0) {
+				DateTime now;
+				cerr << "[" << now.format() << "] SIGINT received" << endl;
+			}
 			exit(EXIT_FAILURE);
 			return;
-		case SIGCHLD:
-			// Webserver terminated
-			if(!quiet) cerr << "Error: Webserver terminated" << endl;
-			www_pid = 0;
+		case SIGTERM:
+			if(verbose > 0) {
+				DateTime now;
+				cerr << "[" << now.format() << "] SIGTERM received" << endl;
+			}
+			exit(EXIT_FAILURE);
+			return;
+		case SIGUSR1:
+			// Print current readings
+			vector<Station> stations = collector.activeStations();
+	   		
+	   		for(vector<Station>::iterator it = stations.begin(); it != stations.end(); ++it) {
+				try {
+					vector<DataPoint> dp = collector.query((*it).id,-1,-1,1);
+					if(dp.size() > 0) {
+						cout << (*it).name << " - " << dp[0].t << " deg C, " << dp[0].hum << " % rel, " << dp[0].p << " hPa" << endl;
+					}
+				} catch (const char* msg) {
+					cerr << msg << endl;
+				}
+	   		}
 			return;
 	}
 }
@@ -129,229 +292,378 @@ static void fork_daemon(void) {
 }
 
 
-static void cleanup() {
-	if(db != NULL) delete db;
-	db = NULL;
-	if(www_pid > 0) {
-		kill(www_pid, SIGTERM);
+/** Extract parameters to a parameter map */
+static map<String, String> extractParams(String param) {
+	vector<String> split = param.split("&");
+	
+	map<String, String> ret;
+	for(vector<String>::const_iterator it = split.begin(); it != split.end(); ++it) {
+		String t = (*it);
+		size_t index = t.find('=');
+		if(index == string::npos)
+			ret[t] = "";
+		else {
+			String name = t.left(index);
+			String value = t.mid(index+1);
+			ret[name] = value;
+		}
 	}
-	if(pid_file.size() > 0)
-		::remove(pid_file.c_str());
+	return ret;
 }
 
-
-bool process_exists(pid_t pid) {
-	struct stat sts;
-	stringstream ss;
-	ss << "/proc/" << pid;
-	string filename = ss.str();
-	if (stat(filename.c_str(), &sts) == -1 && errno == ENOENT)
-		return false;
-	else
-		return true;
+static float round_f(const float x, const int digits = 2) {
+	const float base = (float)::pow10(digits);
+	return ::roundf(x * base)/base;
 }
 
-bool check_pid_file(const char* filename) {
-	if( access( filename, F_OK ) == F_OK ) {
-		pid_t pid;
-		// Read file, read pid
-		ifstream i_pid(filename);
-		i_pid >> pid;
-		
-		if(pid > 0) {
-		
-			// Check if there is a process attached to it
-			if(process_exists(pid)) {
-				cout << "PID file exists and process with pid " << pid << " is running" << endl;
-				return false;
-			} else {
-				cout << "PID file exists but no such process is running" << endl;
+static void* http_thread_run(void *arg) {
+	Socket *socket = (Socket*)arg;
+	
+	// Read request
+	String line;
+	vector<String> header;
+	while(true) {
+		line = socket->readLine();
+		line = line.trim();
+		if(line.size() == 0) break;
+		else
+			header.push_back(String(line));
+	}
+	
+	// Search request for URL
+	String url;
+	String protocol = "";
+	for(vector<String>::const_iterator it = header.begin(); it != header.end(); ++it) {
+		String line = *it;
+		vector<String> split = line.split(" ");
+		if(split[0].equalsIgnoreCase("GET")) {
+			if(split.size() < 2) 
+				url = "/";
+			else {
+				url = split[1];
+				if(split.size() > 2)
+					protocol = split[2];
 			}
-		
-		} else {
-			cerr << "PID file " << filename << " exists, but has illegal contents - Remove file" << endl;
-			if(force) 
-				::remove(filename);
-			return false;
 		}
 	}
 	
-	// Write pid
-	pid_t pid = getpid();
-	ofstream o_pid(filename);
-	if(o_pid.is_open()) 
-		o_pid << pid;
-	else
-		cerr << "Error writing pid to file " << filename << endl;
-	return true;
-}
-
-int main(int argc, char** argv) {
-	string remote = "";
-	string topic = "meteo/#";
-	string db_filename = "meteo.db";
-	vector<string> topics;
-	bool daemon = false;
-	bool verbose = false;
-	int www = 0;			// if > 0 a webserver will be forked on that port
+	// Now process request
+	if(! (protocol.equalsIgnoreCase("HTTP/1.1") || protocol.equalsIgnoreCase("HTTP/1.0"))) {
+		*socket << "Unsupported protocol";
+		delete socket;
+		return NULL;
+	}
 	
-	// XXX: Replace with getopt
-	for(int i=1;i<argc;i++) {
-		string arg(argv[i]);
-		if(arg.size() == 0) continue;
-		if(arg.at(0) == '-') {
-			if(arg == "-h" || arg == "--help") {
-				cout << "Meteo Server instance" << endl;
-				cout << "  2017 - Felix Niederwanger" << endl;
-				cout << "Usage: " << argv[0] << " [OPTIONS] REMOTE" << endl;
-				cout << "OPTIONS" << endl;
-				cout << "   -h    --help             Print this help message" << endl;
-				cout << "   -d    --daemon           Run as daemon" << endl;
-				cout << "   -q    --quiet            Quiet run" << endl;
-				cout << "   -f    --force            Force run" << endl;
-				cout << "   -v    --verbose          Verbose run (overrides quiet)" << endl;
-				cout << "   -t TOPIC  --topic TOPIC  Set TOPIC to subscribe from server" << endl;
-				cout << "                            If no topic is set, the program will use 'meteo/#' as default" << endl;
-				cout << "         --http PORT        Setup webserver on PORT" << endl;
-				cout << "         --db FILE          Set file for database" << endl;
-				cout << "   --pid-file FILE          Set PID-file (Default: " << PID_FILE << " when daemon)" << endl;
-				cout << endl;
-				cout << "REMOTE is the mosquitto remote end" << endl;
-				return EXIT_SUCCESS;
-			} else if(arg == "-d" || arg == "--daemon") 
-				daemon = true;
-			else if(arg == "-q" || arg == "--quiet")
-				quiet = true;
-			else if(arg == "-v" || arg == "--verbose")
-				verbose = true;
-			else if(arg == "-f" || arg == "--force")
-				force = true;
-			else if(arg == "-t" || arg == "--topic") {
-				// XXX : Check if last argument
-				topics.push_back(string(argv[++i]));
-			} else if(arg == "--http") {
-				// XXX : Check if last argument
-				www = ::atoi(argv[++i]);
-			} else if(arg == "--db") {
-				// XXX : Check if last argument
-				db_filename = argv[++i];
-			} else if(arg == "--pid-file") {
-				// XXX : Check if last argument
-				pid_file = argv[++i];
-			} else {
-				cerr << "Illegal argument: " << arg << endl;
-				return EXIT_FAILURE;
+	if(verbose > 1) {
+		DateTime now;
+		
+		cout << "[" << now.format() << "] " << socket->getRemoteAddress() << " " << protocol << " " << url << endl;
+	}
+	
+	try {
+		
+		// Switch requests uris
+		if(url == "/" || url == "/index.html" || url == "/index.html") {
+	
+		    socket->writeHttpHeader();
+		    *socket << "<html><head><title>meteo Server</title>";
+		    *socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
+		    *socket << "<body>";
+		    *socket << "<h1>Meteo</h1>\n";
+		    *socket << "<p>Meteo server v" << VERSION << " (Build " << BUILD << ") -- 2017, Felix Niederwanger<br/>";
+		    *socket << "Server started: " << startupDateTime.format() << "</p>";
+		    
+		    *socket << "<h2>Overview</h2>\n";
+			*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
+			
+			vector<Station> stations = collector.activeStations();
+			*socket << "<table border=\"1\">";
+			*socket << "<tr><td><b>Stations</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [rel %]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminositry</b></td>\n";
+			for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
+				*socket << "<tr><td><a href=\"node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
+				*socket << "<td>" << round_f((*it).t) << "</td>";
+				*socket << "<td>" << round_f((*it).hum) << "</td>";
+				*socket << "<td>" << round_f((*it).p) << "</td>";
+				*socket << "<td>" << round_f((*it).l_ir) << "/" << round_f((*it).l_vis) << "</td>";
+				*socket << "</tr>";
+			}
+			*socket << "</table>";
+			
+			DateTime now;
+			*socket << "</p>" << now.format() << "</p>";
+			
+		} else if(url.startsWith("/Node?") || url.startsWith("/node?")) {
+			
+			map<String, String> params = extractParams(url.mid(6));
+			
+			try {
+				long id = 0L;	
+				if(params.find("id") == params.end()) throw "id not found";
+				id = ::atol(params["id"].c_str());
+				long minTimestamp = -1L;
+				long maxTimestamp = -1L;
+				long limit = 1000L;
+				long offset = 0L;
+				String format = "html";
+				if(params.find("format") != params.end()) format = params["format"];
+				if(params.find("t_min") != params.end()) minTimestamp = ::atol(params["t_min"].c_str());
+				if(params.find("t_max") != params.end()) maxTimestamp = ::atol(params["t_max"].c_str());
+				if(params.find("limit") != params.end()) limit = ::atol(params["limit"].c_str());
+				if(params.find("offset") != params.end()) offset = ::atol(params["offset"].c_str());
+				if(limit < 0) limit = 100;
+				if(limit > 10000) limit = 10000;
+				if(offset < 0) offset = 0L;
+				
+				vector<DataPoint> dp = collector.query(id, minTimestamp, maxTimestamp, limit, offset);
+				
+				Station station = collector.station(id);
+				
+				if(format == "" || format == "html") {
+					socket->writeHttpHeader();
+										
+					*socket << "<html><head><title>meteo Server</title></head>";
+					*socket << "<body>";
+					*socket << "<h1>Meteo</h1>\n";
+					*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
+					string name = station.name;
+					if(name == "") name = "UNKNOWN";
+					*socket << "<h3>Station overview: " << name << "</h3>\n";
+					
+					// History
+					int64_t timestamp = getSystemTime()/1000L;
+					*socket << "<p>Display: ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-3*60*60L) << "&t_max=" << timestamp << "\">[3h]</a> ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-12*60*60L) << "&t_max=" << timestamp << "\">[12h]</a> ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-24*60*60L) << "&t_max=" << timestamp << "\">[24h]</a> ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-48*60*60L) << "&t_max=" << timestamp << "\">[48h]</a> ";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-7L*24L*60L*60L) << "&t_max=" << timestamp << "\">[7d] </a>";
+					*socket << "<a href=\"node?id=" << id << "&t_min=" << (timestamp-30L*24L*60L*60L) << "&t_max=" << timestamp << "\">[30d]</a>";
+					*socket << "</p>\n";
+					
+					DataPoint avg;
+					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
+						avg.t += (*it).t;
+						avg.hum += (*it).hum;
+						avg.p += (*it).p;
+						avg.l_vis += (*it).l_vis;
+						avg.l_ir += (*it).l_ir;
+					}
+					if(dp.size() > 0) {
+						const float n = (float)dp.size();
+						avg.t /= n;
+						avg.hum /= n;
+						avg.p /= n;
+						avg.l_vis /= n;
+						avg.l_ir /= n;
+					}
+					
+					lazy::DateTime dateTime;
+					*socket << "<table border=\"1\">";
+					*socket << "<tr><td>Values</td><td>" <<(long)dp.size() << "</td></tr>\n";
+					*socket << "<tr><td>Time range</td><td>";
+					dateTime.timestamp(dp[dp.size()-1].timestamp*1000L); *socket << dateTime.format() << " - ";
+					dateTime.timestamp(dp[0].timestamp*1000L); *socket << dateTime.format();
+					*socket << "</td></tr>\n";
+					*socket << "<tr><td>Temperature</td><td>" << avg.t << " deg C</td></tr>\n";
+					*socket << "<tr><td>Humidity</td><td>" << avg.hum << " % rel</td></tr>\n";
+					*socket << "<tr><td>Pressure</td><td>" << avg.p << " hPa</td></tr>\n";
+					*socket << "<tr><td>Luminosity</td><td>" << avg.l_ir << "/" << avg.l_vis << "</td></tr>\n";
+					*socket << "</table>";
+					
+					*socket << "<h3>Data</h3>\n";
+					*socket << "<p><a href=\"node?id=" << id << "&t_min=" << minTimestamp << "&t_max=" << maxTimestamp << "&format=csv\">[Show CSV]</a></p>\n";
+					*socket << "<table border=\"1\">";
+			*socket << "<tr><td><b>Timestamp</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [rel %]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminositry</b></td>\n";
+					
+					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
+						dateTime.timestamp((*it).timestamp*1000L);
+						*socket << "<tr><td>" << dateTime.format() << "</td>";
+						*socket << "<td>" << round_f((*it).t) << "</td>";
+						*socket << "<td>" << round_f((*it).hum) << "</td>";
+						*socket << "<td>" << round_f((*it).p) << "</td>";
+						*socket << "<td>" << round_f((*it).l_ir) << "/" << (*it).l_vis << "</td>";
+						*socket << "</tr>";
+					}
+					*socket << "</table>";
+					
+					DateTime now;
+					*socket << "</p>" << now.format() << "</p>";
+					
+					*socket << "</html>";
+				} else if(format == "csv" || format == "plain") {
+					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
+						*socket << (*it).timestamp << ", ";
+						*socket << round_f((*it).t) << ", ";
+						*socket << round_f((*it).hum) << ", ";
+						*socket << round_f((*it).p) << ",";
+						*socket << round_f((*it).l_ir) << "/" << (*it).l_vis << "\n";
+					}
+				} else {
+					socket->writeHttpHeader(400);
+					*socket << "Illegal format";
+				}
+			
+			} catch (const char* msg) {
+				socket->writeHttpHeader(500);
+				*socket << msg;
 			}
 			
-		} else
-			remote = arg;
-	}
-	if(verbose) quiet = false;		// Verbose overrides quiet
-
-	if(remote.size() == 0) {
-		cerr << "No mosquitto remote set" << endl;
-		cerr << "  Usage: " << argv[0] << " [OPTIONS] REMOTE" << endl;
-		cerr << "  REMOTE defines a mosquitto server" << endl;
-		cerr << "  Type " << argv[0] << " --help if you need help" << endl;
-		return EXIT_FAILURE;
-	}
-	
-	// Check for PID file
-	if (daemon && pid_file == "") pid_file = PID_FILE;
-	if(pid_file.size() > 0) {
-		if (pid_file == "") pid_file = PID_FILE;
-		if(!check_pid_file(pid_file.c_str()) && !force)
-			return EXIT_FAILURE;
-	}
-	
-	// At this point fork webserver
-	if(www > 0) {
-		if(verbose) cout << "Starting webserver on port " << www << " ... " << endl;
-		pthread_t tid = Webserver::startThreaded(www, db_filename);
-		if(verbose) cout << "Webserver running as thread " << tid << endl;
-	}
-
-	db = new SQLite3Db(db_filename);
-	db->exec_noResultSet("CREATE TABLE IF NOT EXISTS `Nodes` (`id` INT PRIMARY KEY, `name` TEXT);");
-
-	Mosquitto mosq(remote);	
-	try {
-		if(verbose) cout << "Connecting to " << remote << " ... " << endl;
-		mosq.connect();
-		mosq.setReceiveCallback(recv_callback);
-		// Subscribe to topics or "meteo/#" if no topics are defined
-		if(topics.size() == 0) {
-			mosq.subscribe("meteo/#");
-			if(verbose) cout << "  Subscribing to 'meteo/#' as default topic" << endl;
-		} else {
-			for(vector<string>::const_iterator it = topics.begin(); it != topics.end(); ++it) {
-				mosq.subscribe(*it);
-				if(verbose) cout << "  Subscribing to '" << (*it) << "'" << endl;
+			
+		} else if(url == "/nodes" || url == "/Nodes" || url.startsWith("/Nodes?") || url.startsWith("/nodes?")) {
+			
+			
+			map<String, String> params;
+			if(url.size() > 6) params = extractParams(url.mid(7));
+			
+			String format = "html";
+			if(params.find("format") != params.end()) format = params["format"];
+			
+				
+			if(format == "" || format == "html") {
+			
+				socket->writeHttpHeader();
+				*socket << "<html><head><title>meteo Server</title></head>";
+				*socket << "<body>";
+				*socket << "<h1>Meteo Server</h1>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
+				*socket << "</html>";
+				
+				*socket << "<table border=\"1\">";
+				*socket << "<tr><td><b>Stations</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [rel %]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminositry</b></td>\n";
+				vector<Station> stations = collector.activeStations();
+				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
+					*socket << "<tr><td><a href=\"node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
+					*socket << "<td>" << round_f((*it).t) << "</td>";
+					*socket << "<td>" << round_f((*it).hum) << "</td>";
+					*socket << "<td>" << round_f((*it).p) << "</td>";
+					*socket << "<td>" << round_f((*it).l_ir) << "/" << (*it).l_vis << "</td>";
+					*socket << "</tr>";
+				}
+				*socket << "</table>";
+			} else if(format == "csv" || format == "plain") {
+			
+				socket->writeHttpHeader();
+				vector<Station> stations = collector.activeStations();
+				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
+					*socket << (*it).id << "," << (*it).name << "\n";
+				}
+			
+			
+			} else {
+				socket->writeHttpHeader(400);
+				*socket << "Illegal format";
 			}
+			
+		} else if(url.startsWith("/current") || url.startsWith("/current?")) {
+			
+			
+			map<String, String> params;
+			if(url.size() > 8) params = extractParams(url.mid(9));
+			
+			String format = "html";
+			if(params.find("format") != params.end()) format = params["format"];
+			
+			if(format == "" || format == "html") {
+				
+				socket->writeHttpHeader();
+				*socket << "<html><head><title>meteo Server</title>";
+				*socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
+				*socket << "<body>";
+				*socket << "<h1>Meteo</h1>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
+				*socket << "<h2>Current readings</h2>\n";
+			
+				vector<Station> stations = collector.activeStations();
+				*socket << "<table border=\"1\">";
+				*socket << "<tr><td><b>Stations</b></td><td><b>Temperature [deg C]</b></td><td><b>Humidity [rel %]</b></td><td><b>Pressure [hPa]</b></td><td><b>Luminositry</b></td>\n";
+				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
+					*socket << "<tr><td><a href=\"node?id=" << (*it).id << "\">" << (*it).name << "</a></td>";
+					*socket << "<td>" << round_f((*it).t) << "</td>";
+					*socket << "<td>" << round_f((*it).hum) << "</td>";
+					*socket << "<td>" << round_f((*it).p) << "</td>";
+					*socket << "<td>" << round_f((*it).l_ir) << "/" << round_f((*it).l_vis) << "</td>";
+					*socket << "</tr>";
+				}
+				*socket << "</table>";
+				DateTime now;
+				*socket << "</p>" << now.format() << "</p>";
+			} else if(format == "csv" || format == "plain") {
+				vector<Station> stations = collector.activeStations();
+				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
+					*socket << (*it).id << ',' << (*it).name << ',';
+					*socket << round_f((*it).t) << ',';
+					*socket << round_f((*it).hum) << ',';
+					*socket << round_f((*it).p) << ',';
+					*socket << round_f((*it).l_ir) << "/" << round_f((*it).l_vis) << '\n';
+				}
+			} else {
+				socket->writeHttpHeader(400);
+				*socket << "Illegal format";
+			}
+				
+			
+		} else {
+			socket->writeHttpHeader(404);
+			*socket << "404 - Not found";
 		}
-	} catch (const char *msg) {
-		cerr << "Error setting up mosquitto: " << msg << endl;
-		return EXIT_FAILURE;
+		
+	} catch (...) {
+		delete socket;
+		cerr << "Unknown error in http request" << endl;
+		return NULL;
 	}
 	
-	if(daemon) fork_daemon();
-	atexit(cleanup);
-	signal(SIGINT, sig_handler);
-	signal(SIGTERM, sig_handler);
-	
-	try {
-		if(verbose) cout << "Mosquitto looper ... " << endl;
-		mosq.loop();
-	} catch (const char* msg) {
-		cerr << "Error looping in mosquitto: " << msg << endl;
-		return EXIT_FAILURE;
-	}
-	
-	cout << "Done" << endl;
-	return 0;
+	// Done
+	delete socket;
+	return NULL;
 }
 
-static bool hasNode(const int id) {
-	if(db == NULL) return false;
-	
-	stringstream ss;
-	ss << "SELECT * FROM `Nodes` WHERE `id` = " << id << ";";
-	SQLite3ResultSet *rs = db->doQuery(ss.str());
-	bool result = rs->next();
-	rs->close();
-	return result;
-}
+static void http_server_run(const int port) {
+	// Setup socket
+	const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+	if(sock < 0)
+		throw strerror(errno);
 
-static void received(const int id, const string &name, float t, float hum, float p, float l_vis, float l_ir) {
-	(void)l_vis;
-	(void)l_ir;
-	
-	
-	if(!quiet) cout << id << " [" << name << "], t=" << t << " deg C, " << hum << " % rel. humidity, " << p << " hPa" << endl;
-	if(db == NULL) return;
-	
 	try {
+		// Setup socket
+		struct sockaddr_in address;
+		address.sin_family = AF_INET;
+		address.sin_addr.s_addr = INADDR_ANY;
+		address.sin_port = htons (port);
+
+		// Set reuse address and port
+		int enable = 1;
+		if (::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+			throw strerror(errno);
+		#if 0
+		if (::setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) < 0)
+			throw strerror(errno);
+		#endif
 	
-		stringstream ss;
+		if (::bind(sock, (struct sockaddr *) &address, sizeof(address)) != 0)
+			throw strerror(errno);
 	
-		// Check if node is in node list
-		if(!hasNode(id)) {
-			ss << "INSERT OR REPLACE INTO `Nodes` (`id`, `name`) VALUES (" << id << ", '" << db->escapeString(name) << "');";
-			db->exec_noResultSet(ss.str());
+		// Listen
+		if( ::listen(sock, 10) != 0)
+			throw strerror(errno);
+	
+		// Server loop
+		while(running) {
+			const int fd = ::accept(sock, NULL, 0);
+		
+			// Socket will be destroyed by thread
+			Socket *socket = new Socket(fd);
+			// Create new thread for the socket
+			pthread_t tid;
+			if( pthread_create(&tid, NULL, http_thread_run, socket) < 0) throw "Error creating new http thread";
+			pthread_detach(tid);
 		}
 	
-		// Create table if not exists	
-		ss << "CREATE TABLE IF NOT EXISTS `Node_" << id << "` (`timestamp` INT PRIMARY KEY, `t` REAL, `hum` REAL, `p` REAL, `l_vis` REAL, `l_ir` REAL);";
-		db->exec_noResultSet(ss.str());
-		ss.str("");
-	
-		const int64_t timestamp = getSystemTime();
-	
-		// Insert values into database
-		ss << "INSERT OR REPLACE INTO `Node_" << id << "` (`timestamp`, `t`, `hum`, `p`, `l_vis`, `l_ir`) VALUES (";
-		ss << timestamp << ", " << t << ", " << hum << ", " << p << ", " << l_vis << ", " << l_ir << ");";
-		db->exec_noResultSet(ss.str());
+		::close(sock);
 	} catch(...) {
+		::close(sock);
 		throw;
 	}
 }
+
+

@@ -16,8 +16,10 @@
 #include <vector>
 
 #include <unistd.h>
+#include <sys/types.h>
 #include <signal.h>
 #include <math.h>
+#include <sys/socket.h>
 
 #include "config.hpp"
 #include "json.hpp"
@@ -33,12 +35,16 @@ using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
+#define VERSION "0.1"
+#define BUILD 100
+
 
 /** Mosquitto instances */
 static vector<Mosquitto*> mosquittos;
 static Collector collector;
 static volatile bool running = true;
-
+static DateTime startupDateTime;
+static int verbose = 0;
 
 /** Mosquitto receive callback */
 static void mosq_receive(const std::string &topic, char* buffer, size_t len);
@@ -50,20 +56,98 @@ static void cleanup();
 static void sig_handler(int signo);
 /** Start and run www_server on the given port. This call shouldn't return */
 static void http_server_run(const int port);
+static void fork_daemon(void);
 
-
-int main() { //int argc, char** argv) {
-	const char* db_filename = "meteod.db";
+int main(int argc, char** argv) {
+	const char* db_filename = "/var/lib/meteod.db";
 	const char* mosq_server = "localhost";
 	int http_port = 8900;
+	int uid = 0;		// UID or 0, if not set
+	int gid = 0;		// GID or 0, if not set
+	bool daemon = false;	// Daemon mode
+		
+	cout << "meteod - Meteo server | 2017, Felix Niederwanger" << endl;
+	cout << "  Version " << VERSION << " (Build " << BUILD << ")" << endl;
+	
+	// Parse program arguments
+	try {
+		for(int i=1;i<argc;i++) {
+			string arg(argv[i]);
+			if(arg.size() == 0) continue;
+			if(arg.at(0) == '-') {
+				if(arg == "-h" || arg == "--help") {
+					cout << endl;
+					cout << "Usage: " << argv[0] << " [OPTIONS] [REMOTE]" << endl;
+					cout << "OPTIONS" << endl;
+					cout << "  -h       --help                     Print this help message" << endl;
+					cout << "           --http PORT                Set PORT as webserver port" << endl;
+					cout << "  -f FILE  --db FILE                  Set FILE as Sqlite3 database" << endl;
+					cout << "  -d       --daemon                   Daemon mode" << endl;
+					cout << "           --uid UID                  Set UID" << endl;
+					cout << "           --gid GID                  Set group id (GID)" << endl;
+					cout << "  -v       --verbose                  Verbose run" << endl;
+					cout << "  -vv                                 Verbose include http requests" << endl;
+					cout << "REMOTE is the mosquitto server" << endl;
+				
+				} else if(arg == "-f" || arg == "--db") {
+					if(i >= argc-1) throw "Missing argument: Database";
+					db_filename = argv[++i];
+				} else if(arg == "-d" || arg == "--daemon") {
+					daemon = true;
+				} else if(arg == "-v" || arg == "--verbose") {
+					verbose = 1;
+				} else if(arg == "-vv") {
+					verbose = 2;
+				} else if(arg == "--http") {
+					if(i >= argc-1) throw "Missing argument: Http port";
+					http_port = ::atoi(argv[++i]);
+					if(http_port <= 0 || http_port > 65535) throw "Illegal port";
+				} else if(arg == "--uid") {
+					if(i >= argc-1) throw "Missing argument: UID";
+					uid = ::atoi(argv[++i]);
+				} else if(arg == "--gid") {
+					if(i >= argc-1) throw "Missing argument: UID";
+					gid = ::atoi(argv[++i]);
+				} else {
+					cerr << "Illegal argument: " << arg << endl;
+					exit(EXIT_FAILURE);
+				}		
+			} else {
+				mosq_server = argv[i];
+			}
+		}
+	} catch (const char* msg) {
+		cerr << "Error: " << msg << endl;
+		exit(EXIT_FAILURE);
+	}
+	
+	// Daemon and set gid/uid
+	if(daemon) fork_daemon();
+	if(gid > 0 && setgid(gid) < 0) {
+		cerr << "Error setting gid " << gid << ": " << strerror(errno) << endl;
+		exit(EXIT_FAILURE);
+	}
+	if(uid > 0 && setuid(uid) < 0) {
+		cerr << "Error setting uid " << uid << ": " << strerror(errno) << endl;
+		exit(EXIT_FAILURE);
+	}
+	
+	
 	// Open database
-	collector.open_db(db_filename);
+	if(verbose > 0) cout << "Database file: " << db_filename << endl;
+	try {
+		collector.open_db(db_filename);
+    } catch (const char* msg) {
+    	cerr << "Error opening database: " << strerror(errno) << endl;
+    	exit(EXIT_FAILURE);
+    }
 	
     try {
+    	if(verbose > 0) cout << "Connecting to " << mosq_server << " ... " << endl;
     	connectMosquitto(mosq_server);
     } catch (const char* msg) {
     	cerr << "Error connecting to mosquitto remote: " << msg << endl;
-    	return EXIT_FAILURE;
+    	exit(EXIT_FAILURE);
     }
     
     signal(SIGINT, sig_handler);
@@ -72,25 +156,8 @@ int main() { //int argc, char** argv) {
     atexit(cleanup);
     collector.start();
     
-    #if 0
-    while(true) {
-   		vector<Station> stations = collector.activeStations();
-   		
-   		for(vector<Station>::iterator it = stations.begin(); it != stations.end(); ++it) {
-			try {
-				vector<DataPoint> dp = collector.query((*it).id,-1,-1,1);
-				if(dp.size() > 0) {
-					cout << (*it).name << " - " << dp[0].t << " deg C, " << dp[0].hum << " % rel, " << dp[0].p << " hPa" << endl;
-				}
-			} catch (const char* msg) {
-				cerr << msg << endl;
-			}
-   		}
-	    sleep(5);
-    }
-    #endif
-    
     // Setup http server
+    if(verbose > 0) cout << "Setting up http server on port " << http_port << " ... " << endl;
     http_server_run(http_port);
     
     return EXIT_SUCCESS;
@@ -156,7 +223,7 @@ static Mosquitto* connectMosquitto(string remote, int port, string username, str
 
 
 static void cleanup() {
-	cerr << "Cleanup ... " << endl;
+	if(verbose > 0) cerr << "Cleanup ... " << endl;
 	collector.close();
 	
 	for(vector<Mosquitto*>::iterator it = mosquittos.begin(); it != mosquittos.end(); ++it)
@@ -168,9 +235,56 @@ static void cleanup() {
 static void sig_handler(int signo) {
 	switch(signo) {
 		case SIGINT:
-		case SIGTERM:
+			if(verbose > 0) {
+				DateTime now;
+				cerr << "[" << now.format() << "] SIGINT received" << endl;
+			}
 			exit(EXIT_FAILURE);
 			return;
+		case SIGTERM:
+			if(verbose > 0) {
+				DateTime now;
+				cerr << "[" << now.format() << "] SIGTERM received" << endl;
+			}
+			exit(EXIT_FAILURE);
+			return;
+		case SIGUSR1:
+			// Print current readings
+			vector<Station> stations = collector.activeStations();
+	   		
+	   		for(vector<Station>::iterator it = stations.begin(); it != stations.end(); ++it) {
+				try {
+					vector<DataPoint> dp = collector.query((*it).id,-1,-1,1);
+					if(dp.size() > 0) {
+						cout << (*it).name << " - " << dp[0].t << " deg C, " << dp[0].hum << " % rel, " << dp[0].p << " hPa" << endl;
+					}
+				} catch (const char* msg) {
+					cerr << msg << endl;
+				}
+	   		}
+			return;
+	}
+}
+
+static void fork_daemon(void) {
+	pid_t pid = fork();
+	if(pid < 0) {
+		cerr << "Fork daemon failed" << endl;
+		exit(EXIT_FAILURE);
+	} else if(pid > 0) {
+		// Success. The parent leaves here
+		exit(EXIT_SUCCESS);
+	}
+	
+	/* Fork off for the second time */
+	/* This is needed to detach the deamon from a terminal */
+	pid = fork();
+	if(pid < 0) {
+		cerr << "Fork daemon failed (step two)" << endl;
+		exit(EXIT_FAILURE);
+	} else if(pid > 0) {
+		// Success. The parent again leaves here
+		exit(EXIT_SUCCESS);
 	}
 }
 
@@ -231,10 +345,16 @@ static void* http_thread_run(void *arg) {
 	}
 	
 	// Now process request
-	if(!protocol.equalsIgnoreCase("HTTP/1.1")) {
+	if(! (protocol.equalsIgnoreCase("HTTP/1.1") || protocol.equalsIgnoreCase("HTTP/1.0"))) {
 		*socket << "Unsupported protocol";
 		delete socket;
 		return NULL;
+	}
+	
+	if(verbose > 1) {
+		DateTime now;
+		
+		cout << "[" << now.format() << "] " << socket->getRemoteAddress() << " " << protocol << " " << url << endl;
 	}
 	
 	try {
@@ -243,10 +363,14 @@ static void* http_thread_run(void *arg) {
 		if(url == "/" || url == "/index.html" || url == "/index.html") {
 	
 		    socket->writeHttpHeader();
-		    *socket << "<html><head><title>meteo Sensor node</title>";
+		    *socket << "<html><head><title>meteo Server</title>";
 		    *socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
 		    *socket << "<body>";
-		    *socket << "<h1>Meteo Server</h1>\n";
+		    *socket << "<h1>Meteo</h1>\n";
+		    *socket << "<p>Meteo server v" << VERSION << " (Build " << BUILD << ") -- 2017, Felix Niederwanger<br/>";
+		    *socket << "Server started: " << startupDateTime.format() << "</p>";
+		    
+		    *socket << "<h2>Overview</h2>\n";
 			*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
 			
 			vector<Station> stations = collector.activeStations();
@@ -261,6 +385,9 @@ static void* http_thread_run(void *arg) {
 				*socket << "</tr>";
 			}
 			*socket << "</table>";
+			
+			DateTime now;
+			*socket << "</p>" << now.format() << "</p>";
 			
 		} else if(url.startsWith("/Node?") || url.startsWith("/node?")) {
 			
@@ -291,9 +418,9 @@ static void* http_thread_run(void *arg) {
 				if(format == "" || format == "html") {
 					socket->writeHttpHeader();
 										
-					*socket << "<html><head><title>meteo Sensor node</title></head>";
+					*socket << "<html><head><title>meteo Server</title></head>";
 					*socket << "<body>";
-					*socket << "<h1>Meteo Server</h1>\n";
+					*socket << "<h1>Meteo</h1>\n";
 					*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
 					string name = station.name;
 					if(name == "") name = "UNKNOWN";
@@ -355,8 +482,12 @@ static void* http_thread_run(void *arg) {
 						*socket << "</tr>";
 					}
 					*socket << "</table>";
+					
+					DateTime now;
+					*socket << "</p>" << now.format() << "</p>";
+					
 					*socket << "</html>";
-				} else if(format == "csv") {
+				} else if(format == "csv" || format == "plain") {
 					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
 						*socket << (*it).timestamp << ", ";
 						*socket << round_f((*it).t) << ", ";
@@ -388,7 +519,7 @@ static void* http_thread_run(void *arg) {
 			if(format == "" || format == "html") {
 			
 				socket->writeHttpHeader();
-				*socket << "<html><head><title>meteo Sensor node</title></head>";
+				*socket << "<html><head><title>meteo Server</title></head>";
 				*socket << "<body>";
 				*socket << "<h1>Meteo Server</h1>\n";
 				*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
@@ -406,7 +537,7 @@ static void* http_thread_run(void *arg) {
 					*socket << "</tr>";
 				}
 				*socket << "</table>";
-			} else if(format == "csv") {
+			} else if(format == "csv" || format == "plain") {
 			
 				socket->writeHttpHeader();
 				vector<Station> stations = collector.activeStations();
@@ -432,10 +563,12 @@ static void* http_thread_run(void *arg) {
 			if(format == "" || format == "html") {
 				
 				socket->writeHttpHeader();
-				*socket << "<html><head><title>meteo Sensor node</title>";
+				*socket << "<html><head><title>meteo Server</title>";
 				*socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
 				*socket << "<body>";
-				*socket << "<h1>Meteo Server</h1>\n";
+				*socket << "<h1>Meteo</h1>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
+				*socket << "<h2>Current readings</h2>\n";
 			
 				vector<Station> stations = collector.activeStations();
 				*socket << "<table border=\"1\">";
@@ -449,6 +582,8 @@ static void* http_thread_run(void *arg) {
 					*socket << "</tr>";
 				}
 				*socket << "</table>";
+				DateTime now;
+				*socket << "</p>" << now.format() << "</p>";
 			} else if(format == "csv" || format == "plain") {
 				vector<Station> stations = collector.activeStations();
 				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
@@ -527,3 +662,5 @@ static void http_server_run(const int port) {
 		throw;
 	}
 }
+
+

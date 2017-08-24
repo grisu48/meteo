@@ -40,6 +40,18 @@ public:
 		}
 	}
 	
+	std::string getRemoteAddress() {
+		struct sockaddr address;
+		socklen_t address_len;
+		
+		if( getpeername(this->sock, &address, &address_len) < 0) return "";
+		struct sockaddr_in* pV4Addr = (struct sockaddr_in*)&address;
+		struct in_addr ipAddr = pV4Addr->sin_addr;
+		char str[INET_ADDRSTRLEN];
+		inet_ntop( AF_INET, &ipAddr, str, INET_ADDRSTRLEN );
+		return std::string(str);
+	}
+	
 	void print(const char* str) {
 	    const size_t len = strlen(str);
 		if(len == 0) return;

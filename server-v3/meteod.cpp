@@ -132,6 +132,9 @@ int main(int argc, char** argv) {
 		exit(EXIT_FAILURE);
 	}
 	
+	if( (uid > 0 || gid > 0) && verbose > 1)
+		cout << "Permissions dropped. uid=" << getuid() << " (" << geteuid() << "), gid = " << getgid() << endl;
+	
 	
 	// Open database
 	if(verbose > 0) cout << "Database file: " << db_filename << endl;

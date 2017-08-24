@@ -59,7 +59,7 @@ static void http_server_run(const int port);
 static void fork_daemon(void);
 
 int main(int argc, char** argv) {
-	const char* db_filename = "/var/lib/meteod.db";
+	const char* db_filename = ":memory:";   //  /var/lib/meteod.db";
 	const char* mosq_server = "localhost";
 	int http_port = 8900;
 	int uid = 0;		// UID or 0, if not set

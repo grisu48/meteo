@@ -55,7 +55,7 @@ Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO
 /****************************** Feeds ***************************************/
 
 // meteo publish path
-Adafruit_MQTT_Publish meteo = Adafruit_MQTT_Publish(&mqtt, "/meteo/" NODE_ID);
+Adafruit_MQTT_Publish meteo = Adafruit_MQTT_Publish(&mqtt, "meteo/" NODE_ID);
 
 /*************************** Sketch Code ************************************/
 

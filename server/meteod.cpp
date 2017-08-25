@@ -35,8 +35,8 @@ using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
-#define VERSION "0.1"
-#define BUILD 100
+#define VERSION "0.2"
+#define BUILD 200
 
 
 /** Mosquitto instances */
@@ -161,8 +161,15 @@ int main(int argc, char** argv) {
     
     // Setup http server
     if(verbose > 0) cout << "Setting up http server on port " << http_port << " ... " << endl;
-    http_server_run(http_port);
+    try {
+	    http_server_run(http_port);
+    } catch (const char* msg) {
+    	cerr << "Http server error: " << msg << endl;
+    	exit(EXIT_FAILURE);
+    }
     
+    // Should never happen
+    cout << "Bye" << endl;
     return EXIT_SUCCESS;
 }
 
@@ -370,11 +377,11 @@ static void* http_thread_run(void *arg) {
 		    *socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
 		    *socket << "<body>";
 		    *socket << "<h1>Meteo</h1>\n";
+			*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
 		    *socket << "<p>Meteo server v" << VERSION << " (Build " << BUILD << ") -- 2017, Felix Niederwanger<br/>";
 		    *socket << "Server started: " << startupDateTime.format() << "</p>";
 		    
 		    *socket << "<h2>Overview</h2>\n";
-			*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
 			
 			vector<Station> stations = collector.activeStations();
 			*socket << "<table border=\"1\">";
@@ -424,7 +431,7 @@ static void* http_thread_run(void *arg) {
 					*socket << "<html><head><title>meteo Server</title></head>";
 					*socket << "<body>";
 					*socket << "<h1>Meteo</h1>\n";
-					*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
+					*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
 					string name = station.name;
 					if(name == "") name = "UNKNOWN";
 					*socket << "<h3>Station overview: " << name << "</h3>\n";
@@ -533,7 +540,7 @@ static void* http_thread_run(void *arg) {
 				*socket << "<html><head><title>meteo Server</title></head>";
 				*socket << "<body>";
 				*socket << "<h1>Meteo Server</h1>\n";
-				*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
 				*socket << "</html>";
 				
 				*socket << "<table border=\"1\">";
@@ -578,7 +585,7 @@ static void* http_thread_run(void *arg) {
 				*socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
 				*socket << "<body>";
 				*socket << "<h1>Meteo</h1>\n";
-				*socket << "<p><a href=\"index.html\">[Nodes]</a></p>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
 				*socket << "<h2>Current readings</h2>\n";
 			
 				vector<Station> stations = collector.activeStations();
@@ -611,6 +618,35 @@ static void* http_thread_run(void *arg) {
 				*socket << "Illegal format";
 			}
 				
+		} else if(url.startsWith("/timestamp") || url.startsWith("/timestamp?")) {
+			
+			map<String, String> params;
+			if(url.size() > 10) params = extractParams(url.mid(11));
+			
+			String format = "html";
+			if(params.find("format") != params.end()) format = params["format"];
+			if(format == "html" || format == "") {
+				socket->writeHttpHeader();
+				*socket << "<html><head><title>meteo Server</title>";
+				*socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
+				*socket << "<body>";
+				*socket << "<h1>Meteo</h1>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
+				
+				*socket << "<h2>Timestamp</h2>\n";
+				DateTime now;
+				*socket << now.format() << " (" << now.timestamp() << ")";
+			
+			} else if(format == "plain" || format == "csv") {
+				socket->writeHttpHeader();
+				DateTime now;
+				*socket << now.timestamp() << ", " << now.format();
+				
+			} else {
+				socket->writeHttpHeader(400);
+				*socket << "Illegal format";
+			}
+			
 			
 		} else {
 			socket->writeHttpHeader(404);

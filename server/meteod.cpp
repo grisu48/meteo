@@ -59,7 +59,7 @@ static void http_server_run(const int port);
 static void fork_daemon(void);
 
 int main(int argc, char** argv) {
-	const char* db_filename = ":memory:";   //  /var/lib/meteod.db";
+	const char* db_filename = ":memory:";   // Default database in memory
 	const char* mosq_server = "localhost";
 	int http_port = 8900;
 	int uid = 0;		// UID or 0, if not set
@@ -461,8 +461,14 @@ static void* http_thread_run(void *arg) {
 					*socket << "<table border=\"1\">";
 					*socket << "<tr><td>Values</td><td>" <<(long)dp.size() << "</td></tr>\n";
 					*socket << "<tr><td>Time range</td><td>";
-					dateTime.timestamp(dp[dp.size()-1].timestamp*1000L); *socket << dateTime.format() << " - ";
-					dateTime.timestamp(dp[0].timestamp*1000L); *socket << dateTime.format();
+					if(dp.size() == 0) {
+						*socket << "-";
+					} else if(dp.size() == 1) {
+						dateTime.timestamp(dp[0].timestamp*1000L); *socket << dateTime.format();
+					} else {
+						dateTime.timestamp(dp[dp.size()-1].timestamp*1000L); *socket << dateTime.format() << " - ";
+						dateTime.timestamp(dp[0].timestamp*1000L); *socket << dateTime.format();
+					}
 					*socket << "</td></tr>\n";
 					*socket << "<tr><td>Temperature</td><td>" << avg.t << " deg C</td></tr>\n";
 					*socket << "<tr><td>Humidity</td><td>" << avg.hum << " % rel</td></tr>\n";
@@ -491,6 +497,8 @@ static void* http_thread_run(void *arg) {
 					
 					*socket << "</html>";
 				} else if(format == "csv" || format == "plain") {
+				
+					socket->writeHttpHeader();
 					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
 						*socket << (*it).timestamp << ", ";
 						*socket << round_f((*it).t) << ", ";
@@ -588,6 +596,8 @@ static void* http_thread_run(void *arg) {
 				DateTime now;
 				*socket << "</p>" << now.format() << "</p>";
 			} else if(format == "csv" || format == "plain") {
+			
+				socket->writeHttpHeader();
 				vector<Station> stations = collector.activeStations();
 				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
 					*socket << (*it).id << ',' << (*it).name << ',';

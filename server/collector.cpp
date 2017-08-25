@@ -211,9 +211,14 @@ vector<DataPoint> Collector::query(const long station, const long minTimestamp, 
 		else break;
 	}
 	if(rc != SQLITE_OK) {
-		cerr << "SQLITE3 error: " << strerror(errno) << endl;
 		mutex_unlock();
-		throw "SQL error";
+		
+		if(errno == ENOENT) {
+			return ret;
+		} else {
+			cerr << "SQLITE3 error: " << strerror(errno) << endl;
+			throw "SQL error";
+		}
 	}
 	
 	// Iterate over rows

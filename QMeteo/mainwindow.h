@@ -3,8 +3,10 @@
 
 #include <QMainWindow>
 #include <QDateTime>
+#include <QInputDialog>
 
 #include "qmeteo.h"
+#include "qweatherdata.h"
 
 namespace Ui {
 class MainWindow;
@@ -31,6 +33,12 @@ private:
     Ui::MainWindow *ui;
 
     QMeteo *meteo = NULL;
+
+    QMap<long, QWeatherData*> stations;
+
+
+    QWeatherData *station(const long id);
+    void clear();
 };
 
 #endif // MAINWINDOW_H

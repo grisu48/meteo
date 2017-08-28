@@ -10,17 +10,20 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 TARGET = QMeteo
 TEMPLATE = app
+CONFIG += c++11
 
 
 SOURCES += main.cpp\
         mainwindow.cpp \
     qmeteo.cpp \
     entities.cpp \
-    qcustomplot.cpp
+    qcustomplot.cpp \
+    qweatherdata.cpp
 
 HEADERS  += mainwindow.h \
     qmeteo.h \
     entities.h \
-    qcustomplot.h
+    qcustomplot.h \
+    qweatherdata.h
 
 FORMS    += mainwindow.ui

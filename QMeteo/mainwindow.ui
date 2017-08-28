@@ -36,7 +36,7 @@
              <x>0</x>
              <y>0</y>
              <width>490</width>
-             <height>350</height>
+             <height>327</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -70,6 +70,13 @@
         <string>Lightnings</string>
        </attribute>
       </widget>
+     </widget>
+    </item>
+    <item>
+     <widget class="QLabel" name="lblStatus">
+      <property name="text">
+       <string>Status: -</string>
+      </property>
      </widget>
     </item>
    </layout>

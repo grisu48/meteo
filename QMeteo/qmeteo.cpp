@@ -97,6 +97,19 @@ long QMeteo::timestamp() {
     return timestamp;
 }
 
+QList<DataPoint> QMeteo::query(long station, long minTimestamp, long maxTimestamp, long limit) {
+    QString link = "http://" + this->remote + "/node?id=" + QString::number(station) + "&format=plain";
+    QString data = fetch(link);
+    data = data.trimmed();
+    QStringList lines = data.split("\n");
+    foreach(QString line, lines) {
+        line = line.trimmed();
+        if(line.isEmpty() || line.at(0) == '#') continue;
+
+
+    }
+}
+
 void QMeteo::start() {
     // Evaluate delta T
     this->timestamp();

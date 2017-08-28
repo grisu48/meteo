@@ -17,7 +17,7 @@ MainWindow::~MainWindow()
 void MainWindow::on_actionConnect_triggered()
 {
     bool ok = false;
-    QString input = QInputDialog::getText(this, "Connect", "Remote host to connect to", QLineEdit::Normal, "localhost:8900", &ok);
+    QString input = QInputDialog::getText(this, "Connect", "Remote host to connect to", QLineEdit::Normal, remoteHost, &ok);
     if(!ok) return;
     input = input.trimmed();
     if(input.isEmpty()) return;
@@ -26,17 +26,31 @@ void MainWindow::on_actionConnect_triggered()
     if(this->meteo != NULL) {
         this->on_actionDisconnect_triggered();
     }
+
+    this->remoteHost = input;
     this->meteo = new QMeteo();
-    connect(this->meteo, SIGNAL(onDataUpdate(QList<DataPoint>)), this, SLOT(onDataReceived(QList<DataPoint>)));
+    try {
+        this->clear();
+        connect(this->meteo, SIGNAL(onDataUpdate(QList<DataPoint>)), this, SLOT(onDataReceived(QList<DataPoint>)));
 
-    meteo->setRemote(input);
-    meteo->setRefreshDelay(1000);
-    QList<Station> stations = meteo->stations();
-    foreach(const Station &station, stations) {
-        this->station(station.id)->setName(station.name);
+        meteo->setRemote(this->remoteHost);
+        meteo->setRefreshDelay(1000);
+        QList<Station> stations = meteo->stations();
+        foreach(const Station &station, stations) {
+            this->station(station.id)->setName(station.name);
+        }
+
+        meteo->start();
+        ui->lblStatus->setText("Status: Connected");
+    } catch (const char* msg) {
+        if(meteo != NULL) delete meteo;
+        meteo = NULL;
+        ui->lblStatus->setText("Status: " + QString(msg));
+    } catch(...) {
+        if(meteo != NULL) delete meteo;
+        meteo = NULL;
+        ui->lblStatus->setText("Unknown error occurred");
     }
-
-    meteo->start();
 }
 
 void MainWindow::on_actionDisconnect_triggered()
@@ -46,6 +60,7 @@ void MainWindow::on_actionDisconnect_triggered()
         delete this->meteo;
         this->meteo = NULL;
     }
+    ui->lblStatus->setText("Status: Disconnected");
 }
 
 void MainWindow::on_actionQuit_triggered()
@@ -70,6 +85,7 @@ QWeatherData* MainWindow::station(const long id) {
     QWeatherData *station = NULL;
     if(!this->stations.contains(id)) {
         station = new QWeatherData(ui->scMeteo);
+        connect(station, SIGNAL(onLinkClicked(QString,long)), this, SLOT(onStationClicked(QString,long)));
         ui->lyStations->addWidget(station);
         this->stations[id] = station;
     } else
@@ -83,4 +99,12 @@ void MainWindow::clear() {
     foreach(QWeatherData *station, this->stations)
         delete station;
     this->stations.clear();
+}
+
+void MainWindow::onStationClicked(QString link, const long station) {
+    (void)link;
+
+    DialogStation *dialog = new DialogStation(station, this->meteo->getRemote());
+    dialog->show();
+    dialog->exec();
 }

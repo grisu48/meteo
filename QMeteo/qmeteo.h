@@ -41,12 +41,15 @@ public:
     /** Fetch stations, block until received */
     QList<Station> stations();
     QList<DataPoint> currentReadings();
+    QList<DataPoint> query(long station, long minTimestamp, long maxTimestamp, long limit = 1000);
 
     /** Get the timestamp from the server and refresh the local delta */
     long timestamp();
 
     void setRemote(QString remote) { this->remote = remote; }
     void setRefreshDelay(const long millis) { this->refreshDelay = millis; }
+
+    QString getRemote() const { return this->remote; }
 
     /** Start worker thread on this remote */
     void start();

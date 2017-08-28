@@ -7,6 +7,7 @@
 
 #include "qmeteo.h"
 #include "qweatherdata.h"
+#include "dialogstation.h"
 
 namespace Ui {
 class MainWindow;
@@ -29,9 +30,12 @@ private slots:
 
     void onDataReceived(const QList<DataPoint> datapoints);
 
+    void onStationClicked(QString link, const long station);
+
 private:
     Ui::MainWindow *ui;
 
+    QString remoteHost = "localhost:8900";
     QMeteo *meteo = NULL;
 
     QMap<long, QWeatherData*> stations;

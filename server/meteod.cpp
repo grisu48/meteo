@@ -20,6 +20,7 @@
 #include <signal.h>
 #include <math.h>
 #include <sys/socket.h>
+#include <execinfo.h>
 
 #include "config.hpp"
 #include "json.hpp"
@@ -35,8 +36,8 @@ using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
-#define VERSION "0.2"
-#define BUILD 200
+#define VERSION "0.2.1"
+#define BUILD 210
 
 
 /** Mosquitto instances */
@@ -57,6 +58,9 @@ static void sig_handler(int signo);
 /** Start and run www_server on the given port. This call shouldn't return */
 static void http_server_run(const int port);
 static void fork_daemon(void);
+static void backtrace();
+static void terminateHandler();
+
 
 int main(int argc, char** argv) {
 	const char* db_filename = ":memory:";   // Default database in memory
@@ -157,7 +161,10 @@ int main(int argc, char** argv) {
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
     signal(SIGUSR1, sig_handler);
+    signal(SIGSEGV, sig_handler);
+    signal(SIGABRT, sig_handler);
     atexit(cleanup);
+    std::set_terminate(terminateHandler);
     collector.start();
     
     // Setup http server
@@ -260,19 +267,31 @@ static void sig_handler(int signo) {
 			exit(EXIT_FAILURE);
 			return;
 		case SIGUSR1:
-			// Print current readings
-			vector<Station> stations = collector.activeStations();
-	   		
-	   		for(vector<Station>::iterator it = stations.begin(); it != stations.end(); ++it) {
-				try {
-					vector<DataPoint> dp = collector.query((*it).id,-1,-1,1);
-					if(dp.size() > 0) {
-						cout << (*it).name << " - " << dp[0].t << " deg C, " << dp[0].hum << " % rel, " << dp[0].p << " hPa" << endl;
+			{
+				// Print current readings
+				vector<Station> stations = collector.activeStations();
+		   		
+		   		for(vector<Station>::iterator it = stations.begin(); it != stations.end(); ++it) {
+					try {
+						vector<DataPoint> dp = collector.query((*it).id,-1,-1,1);
+						if(dp.size() > 0) {
+							cout << (*it).name << " - " << dp[0].t << " deg C, " << dp[0].hum << " % rel, " << dp[0].p << " hPa" << endl;
+						}
+					} catch (const char* msg) {
+						cerr << msg << endl;
 					}
-				} catch (const char* msg) {
-					cerr << msg << endl;
-				}
+		   		}
+		   		return;
 	   		}
+		case SIGSEGV:
+			cerr << "Segmentation fault" << endl;
+			backtrace();
+			exit(EXIT_FAILURE);
+			return;
+		case SIGABRT:
+			cerr << "Abnormal program termination" << endl;
+			backtrace();
+			exit(EXIT_FAILURE);
 			return;
 	}
 }
@@ -327,48 +346,50 @@ static float round_f(const float x, const int digits = 2) {
 static void* http_thread_run(void *arg) {
 	Socket *socket = (Socket*)arg;
 	
-	// Read request
-	String line;
-	vector<String> header;
-	while(true) {
-		line = socket->readLine();
-		line = line.trim();
-		if(line.size() == 0) break;
-		else
-			header.push_back(String(line));
-	}
-	
-	// Search request for URL
-	String url;
-	String protocol = "";
-	for(vector<String>::const_iterator it = header.begin(); it != header.end(); ++it) {
-		String line = *it;
-		vector<String> split = line.split(" ");
-		if(split[0].equalsIgnoreCase("GET")) {
-			if(split.size() < 2) 
-				url = "/";
-			else {
-				url = split[1];
-				if(split.size() > 2)
-					protocol = split[2];
-			}
-		}
-	}
-	
-	// Now process request
-	if(! (protocol.equalsIgnoreCase("HTTP/1.1") || protocol.equalsIgnoreCase("HTTP/1.0"))) {
-		*socket << "Unsupported protocol";
-		delete socket;
-		return NULL;
-	}
-	
-	if(verbose > 1) {
-		DateTime now;
-		
-		cout << "[" << now.format() << "] " << socket->getRemoteAddress() << " " << protocol << " " << url << endl;
-	}
 	
 	try {
+	
+		// Read request
+		String line;
+		vector<String> header;
+		while(true) {
+			line = socket->readLine();
+			line = line.trim();
+			if(line.size() == 0) break;
+			else
+				header.push_back(String(line));
+		}
+	
+		// Search request for URL
+		String url;
+		String protocol = "";
+		for(vector<String>::const_iterator it = header.begin(); it != header.end(); ++it) {
+			String line = *it;
+			vector<String> split = line.split(" ");
+			if(split[0].equalsIgnoreCase("GET")) {
+				if(split.size() < 2) 
+					url = "/";
+				else {
+					url = split[1];
+					if(split.size() > 2)
+						protocol = split[2];
+				}
+			}
+		}
+	
+		// Now process request
+		if(! (protocol.equalsIgnoreCase("HTTP/1.1") || protocol.equalsIgnoreCase("HTTP/1.0"))) {
+			*socket << "Unsupported protocol";
+			delete socket;
+			return NULL;
+		}
+	
+		if(verbose > 1) {
+			DateTime now;
+		
+			cout << "[" << now.format() << "] " << socket->getRemoteAddress() << " " << protocol << " " << url << endl;
+		}
+	
 		
 		// Switch requests uris
 		if(url == "/" || url == "/index.html" || url == "/index.html") {
@@ -697,6 +718,10 @@ static void http_server_run(const int port) {
 		// Server loop
 		while(running) {
 			const int fd = ::accept(sock, NULL, 0);
+			if(fd <= 0) {
+				cerr << "Error accepting http socket: " << strerror(errno) << endl;
+				break;
+			}
 		
 			// Socket will be destroyed by thread
 			Socket *socket = new Socket(fd);
@@ -707,10 +732,26 @@ static void http_server_run(const int port) {
 		}
 	
 		::close(sock);
+	} catch(const char* msg) {
+		::close(sock);
+		cerr << "Exception in http server thread: " << msg << endl;
+		exit(EXIT_FAILURE);
 	} catch(...) {
 		::close(sock);
-		throw;
+		cerr << "Uncaught exception in http server thread" << endl;
+		exit(EXIT_FAILURE);
 	}
 }
 
+static void backtrace() {
+	// Print backtrace
+	void *array[20];
+	size_t size = backtrace(array, sizeof(array) / sizeof(array[0]));
+	backtrace_symbols_fd(array, size, STDERR_FILENO);
+}
 
+static void terminateHandler() {
+	cerr << "Terminating due to uncaught exception" << endl;
+	backtrace();
+	abort();
+}

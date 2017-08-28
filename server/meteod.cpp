@@ -86,8 +86,9 @@ int main(int argc, char** argv) {
 					cout << "           --uid UID                  Set UID" << endl;
 					cout << "           --gid GID                  Set group id (GID)" << endl;
 					cout << "  -v       --verbose                  Verbose run" << endl;
-					cout << "  -vv                                 Verbose include http requests" << endl;
+					cout << "  -vv                                 Verbose run including http requests" << endl;
 					cout << "REMOTE is the mosquitto server" << endl;
+					exit(EXIT_SUCCESS);
 				
 				} else if(arg == "-f" || arg == "--db") {
 					if(i >= argc-1) throw "Missing argument: Database";

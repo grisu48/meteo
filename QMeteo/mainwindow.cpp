@@ -85,6 +85,7 @@ QWeatherData* MainWindow::station(const long id) {
     QWeatherData *station = NULL;
     if(!this->stations.contains(id)) {
         station = new QWeatherData(ui->scMeteo);
+        station->stationId(id);
         connect(station, SIGNAL(onLinkClicked(QString,long)), this, SLOT(onStationClicked(QString,long)));
         ui->lyStations->addWidget(station);
         this->stations[id] = station;

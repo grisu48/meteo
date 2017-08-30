@@ -1,5 +1,8 @@
 #include "qmeteo.h"
 
+#include <iostream>
+using namespace std;
+
 QMeteo::QMeteo()
 {
     this->timer = new QTimer(this);
@@ -12,6 +15,9 @@ QMeteo::~QMeteo() {
 
 
 QString QMeteo::fetch(const QString &link) {
+    // cout << link.toStdString() << endl;
+
+
     // create custom temporary event loop on stack
     QEventLoop eventLoop;
 
@@ -98,16 +104,33 @@ long QMeteo::timestamp() {
 }
 
 QList<DataPoint> QMeteo::query(long station, long minTimestamp, long maxTimestamp, long limit) {
-    QString link = "http://" + this->remote + "/node?id=" + QString::number(station) + "&format=plain";
+    QString link = "http://" + this->remote + "/node?id=" + QString::number(station) + "&format=plain&t_min=" + QString::number(minTimestamp) + "&t_max=" + QString::number(maxTimestamp) + "&limit=" + QString::number(limit);
     QString data = fetch(link);
     data = data.trimmed();
     QStringList lines = data.split("\n");
+
+    QList<DataPoint> ret;
     foreach(QString line, lines) {
         line = line.trimmed();
         if(line.isEmpty() || line.at(0) == '#') continue;
 
+        QStringList splitted = line.split(",");
+        if(splitted.size() < 5) continue;
 
+        DataPoint dp;
+
+        dp.timestamp = splitted[0].toLong();
+        dp.t = splitted[1].toFloat();
+        dp.hum = splitted[2].toFloat();
+        dp.p = splitted[3].toFloat();
+        splitted = splitted[4].split("/");
+        if(splitted.size() > 1) {
+            dp.l_ir = splitted[0].toFloat();
+            dp.l_vis = splitted[1].toFloat();
+        }
+        ret.push_back(dp);
     }
+    return ret;
 }
 
 void QMeteo::start() {

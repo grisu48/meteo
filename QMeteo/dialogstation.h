@@ -21,11 +21,15 @@ public:
 private slots:
     void on_btnPlot_clicked();
 
+    void plot_mouseMove(QMouseEvent *event);
+
 private:
     Ui::DialogStation *ui;
 
     QMeteo *meteo;
     long station;
+
+    QVector<DataPoint> datapoints;
 
 
     void plot();

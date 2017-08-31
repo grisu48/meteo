@@ -9,6 +9,9 @@ DialogStation::DialogStation(long station, QString remote, QWidget *parent) :
     this->meteo = new QMeteo();
     ui->setupUi(this);
 
+    connect(ui->plot, SIGNAL(mouseMove(QMouseEvent*)), this, SLOT(plot_mouseMove(QMouseEvent*)));
+    ui->plot->yAxis2->setVisible(true);
+
     this->meteo->setRemote(remote);
     ui->cmbTimespan->addItem("3h");
     ui->cmbTimespan->addItem("12h");
@@ -19,9 +22,11 @@ DialogStation::DialogStation(long station, QString remote, QWidget *parent) :
     ui->cmbTimespan->addItem("30d");
     ui->cmbTimespan->addItem("Custom ...");
 
-    QSharedPointer<QCPAxisTickerTime> timeTicker(new QCPAxisTickerTime);
-    timeTicker->setTimeFormat("%d %h:%m:%s");
+    QSharedPointer<QCPAxisTickerDateTime> timeTicker(new QCPAxisTickerDateTime);
+    //timeTicker->setTimeFormat("%h:%m:%s");
     ui->plot->xAxis->setTicker(timeTicker);
+
+    this->plot();
 }
 
 DialogStation::~DialogStation()
@@ -63,14 +68,21 @@ void DialogStation::plot() {
 
 
     QList<DataPoint> datapoints = this->meteo->query(this->station, minTimestamp, maxTimestamp, limit);
+    this->datapoints.clear();
+    foreach(const DataPoint &dp, datapoints)
+        this->datapoints.append(dp);
+
     QVector<double> x,y;
     ui->plot->clearGraphs();
+    ui->plot->legend->setVisible(true);
+    ui->plot->legend->setAntialiased(true);
 
     QCPGraph *graph = ui->plot->addGraph(ui->plot->xAxis, ui->plot->yAxis);
     foreach(const DataPoint &dp, datapoints) {
         x.append(dp.timestamp);
         y.append(dp.t);
     }
+    graph->setName("Temperature [°C]");
     graph->setData(x,y);
     QPen pen = QPen(QColor::fromRgb(0,0, 128, 255));
     pen.setWidth(2);
@@ -82,6 +94,7 @@ void DialogStation::plot() {
         x.append(dp.timestamp);
         y.append(dp.hum);
     }
+    graph->setName("Humidity [% rel]");
     graph->setData(x,y);
     pen = QPen(QColor::fromRgb(0, 128, 0, 255));
     pen.setWidth(2);
@@ -91,4 +104,43 @@ void DialogStation::plot() {
     ui->plot->rescaleAxes(true);
     ui->plot->replot();
     ui->lblStatus->setText("Status: Fetched " + QString::number(datapoints.size()) + " datapoints");
+}
+
+
+void DialogStation::plot_mouseMove(QMouseEvent *event) {
+    if(this->datapoints.size() < 2) return;
+
+    QPoint bottomLeft = ui->plot->xAxis->axisRect()->bottomLeft();
+    QPoint bottomRight = ui->plot->xAxis->axisRect()->bottomRight();
+
+    double x0 = bottomLeft.x();
+    double extent = bottomRight.rx() - bottomLeft.x();
+
+    const int ix = event->x() - x0;
+    if(ix < 0) return;
+    if(ix > (extent)) return;
+
+    long t_0 = this->datapoints[0].timestamp;
+    long t_1 = this->datapoints[this->datapoints.size()-1].timestamp;
+    if(t_0 > t_1) {
+        long tmp = t_0;
+        t_0 = t_1;
+        t_1 = tmp;
+    }
+
+
+    const long timespan = t_1 - t_0;
+    const long timestamp = t_0 + (long)(((double)timespan/(double)extent) * (double)ix);
+
+    // Search the datatpoint that is nearest
+    DataPoint dp = this->datapoints[0];
+    foreach(const DataPoint &dp1, this->datapoints) {
+        if (::labs(dp1.timestamp - timestamp) < ::labs(dp.timestamp - timestamp)) {
+            dp = dp1;
+        }
+    }
+
+    QDateTime date;
+    date.setMSecsSinceEpoch(dp.timestamp*1000L);
+    ui->lblData->setText(date.toString() + " - " + QString::number(dp.t) + " °C, " + QString::number(dp.hum) + " % rel, " + QString::number(dp.p) + " hPa");
 }

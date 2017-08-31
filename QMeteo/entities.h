@@ -47,6 +47,17 @@ public:
         this->l_ir = src.l_ir;
         this->l_vis = src.l_vis;
     }
+
+    DataPoint &operator=(const DataPoint &src) {
+        this->station = src.station;
+        this->timestamp = src.timestamp;
+        this->t = src.t;
+        this->hum = src.hum;
+        this->p = src.p;
+        this->l_ir = src.l_ir;
+        this->l_vis = src.l_vis;
+        return *this;
+    }
 };
 
 

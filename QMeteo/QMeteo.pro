@@ -29,4 +29,5 @@ HEADERS  += mainwindow.h \
     dialogstation.h
 
 FORMS    += mainwindow.ui \
-    dialogstation.ui
+    dialogstation.ui \
+    qweatherdata.ui

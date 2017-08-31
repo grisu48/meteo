@@ -49,7 +49,7 @@ Collector::~Collector() {
 
 void Collector::push(long id, std::string name, float t, float hum, float p, float l_ir, float l_vis) {
 	if(stations.find(id) == stations.end()) {
-		stations[id] = Station();
+		stations[id] = Station(id);
 		stations[id].name = name;
 	}
 	if(stations[id].name == "" && name != "")

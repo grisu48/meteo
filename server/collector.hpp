@@ -24,8 +24,8 @@ public:
 	float l_ir = 0.0F;
 	float l_vis = 0.0F;
 	
-	Station() {
-		this->id = 0L;
+	Station(const long id = 0L) {
+		this->id = id;
 		this->name = "";
 		this->t = 0.0F;
 		this->hum = 0.0F;

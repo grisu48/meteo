@@ -294,8 +294,14 @@ int main(int argc, char** argv) {
 			ss << "meteo/" << node_id;
 			string topic = ss.str();
 			
-			mosq->publish(topic, json);
-			if(!quiet) cout << topic << " :: " << json << endl;
+			try {
+				mosq->publish(topic, json);
+				if(!quiet) cout << topic << " :: " << json << endl;
+			} catch (const char* msg) {
+				cerr << "Publish failed: " << msg << endl;
+			} catch (...) {
+				cerr << "Publish failed: Unknown exception caught" << endl;
+			}
 		}
 		
 		sleep(delay);

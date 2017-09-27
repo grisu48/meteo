@@ -126,6 +126,11 @@ static void disturber_detected(const long millis) {
 		cerr << " (Rate of ~ " << getRate(avg) << ')';
 	}
 	cerr << endl;
+	
+	// Publish but not more than 1x per second
+	if(delta > 1000L) {
+		// TODO: Implement me
+	}
 }
 
 static void noise_detected(const long millis) {
@@ -137,14 +142,20 @@ static void noise_detected(const long millis) {
 	if(delta > 0)
 		cerr << " (" << getRate(delta) << ')';
 	cerr << endl;
+	
+	// Publish but not more than 1x per second
+	if(delta > 1000L) {
+		// TODO: Implement me
+	}
 }
 
 int main(int argc, char** argv) {
     const char* device = "/dev/ttyUSB0";		// Serial port
     const char* mqtt_host = "";		            // Mosquitto server
     int mqtt_port = 1883;						// Mosquitto server port
+    int node_id = 1;							// This node id
     int rc;		// Return codes
-    string topic = "lightning/1";				// Topic for publishing
+    string topic = "";				// Topic for publishing
 	speed_t baud = B9600;						// Baud rate
     
     for(int i=1;i<argc;i++) {
@@ -167,6 +178,13 @@ int main(int argc, char** argv) {
     	topic = argv[3];
     if(argc > 4)
     	mqtt_port = ::atoi(argv[4]);
+    
+    // Build topic
+    if(topic.size() == 0) {
+    	stringstream buf;
+    	buf << "lightning/" << node_id;
+    	topic = buf.str();
+    }
     
     atexit(cleanup);
     
@@ -233,16 +251,29 @@ int main(int argc, char** argv) {
 	    				disturber_detected(millis);
 	    			} else {
 	    				// Assume it is lightning detected
-	    				// XXX: Maybe include a check?
-	    			
+	    				try {
+	    					// READ: "DETECTED 14 km"
+		    				if(s_message.size() < 12) throw "Too small";
+	    					if(s_message.substr(0,9) != "DETECTED ") throw "Illegal header";
+	    					string s_distance = s_message.substr(9, s_message.size()-9-3 );
+	    					float distance = (float)::atof(s_distance.c_str());
+	    					
+	    					
+							if(mosq != NULL) {
+	    						// Build package
+								stringstream buf;
+								long timestamp = 0L;
+								buf << "{\"station\":" << node_id << ",\"timestamp\":" << timestamp << ",\"distance\":" << distance << "}";
+								string msg = buf.str();
+								
+				    			publish(topic, msg);
+				    		}
+	    					
+	    				} catch(const char* msg) {
+	    					cerr << "Illegal packet read: " << msg << endl;
+	    				}
+	    				
 						// Publish
-						stringstream buf;
-						buf << '[' << getTime() << "]\t" << s_message;
-						string msg = buf.str();
-						
-						if(mosq != NULL)
-			    			publish(topic, msg);
-						
 						cout << '[' << getTime() << "] " << millis << '\t' << s_message << endl;
 	    			}
 	    		}

@@ -145,6 +145,7 @@ int main(int argc, char** argv) {
     int mqtt_port = 1883;						// Mosquitto server port
     int rc;		// Return codes
     string topic = "lightning/1";				// Topic for publishing
+	speed_t baud = B9600;						// Baud rate
     
     for(int i=1;i<argc;i++) {
     	string arg(argv[i]);
@@ -197,7 +198,7 @@ int main(int argc, char** argv) {
     // Open device
     try {
     	Serial serial(device, false);
-    	serial.setSpeed(B115200);
+    	serial.setSpeed(baud);
     	
     	if(serial.isNonBlocking())
     		cerr << "WARNING: Device is nonblocking" << endl;
@@ -207,9 +208,9 @@ int main(int argc, char** argv) {
     		line = trim(line);
     		if(line.size() == 0) continue;
     		
-    		if(line.at(0) == '#') {
+    		if(line.at(0) == '#') {		// Comment from device
     			cerr << line << endl;
-    			continue;		// Comment from device
+    			continue;
     		} else {
 	    		// Parse line
 	    		size_t i = line.find(' ');

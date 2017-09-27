@@ -72,6 +72,7 @@ public:
 	void alive(bool value) { this->aliveFlag = value; }
 };
 
+/** Datapoint for a meteo station */
 class DataPoint {
 public:
 	long station = 0L;
@@ -100,6 +101,36 @@ public:
 		this->p = src.p;
 		this->l_ir = src.l_ir;
 		this->l_vis = src.l_vis;
+	}
+};
+
+/** Lightning event */
+class Lightning {
+public:
+	/** Timestamp in seconds since EPOC */
+	long timestamp;
+	/** Distance from station in km */
+	float distance;
+	/** Station id */
+	long station;
+	
+	Lightning() {
+		this->station = 0L;
+		this->timestamp = 0L;
+		this->distance = 0.0F;
+	}
+	
+	Lightning(const Lightning &src) {
+		this->station = src.station;
+		this->timestamp = src.timestamp;
+		this->distance = src.distance;
+	}
+	
+	Lightning& operator=(const Lightning &src) {
+		this->station = src.station;
+		this->timestamp = src.timestamp;
+		this->distance = src.distance;
+		return *this;
 	}
 };
 
@@ -138,12 +169,16 @@ public:
 	
 	/** Push a dataset */
 	void push(long id, std::string name, float t, float hum, float p, float l_ir, float l_vis);
+	/** Push a lightning event */
+	void push(const Lightning &lightning);
 	
 	/** Get all currently active stations */
 	std::vector<Station> activeStations(void) const;
 	
 	/** Returns the station with the given id or a new instance, if not existing */
 	Station station(const long id) const;
+	
+	
 	
 	/** Query data from the database */
 	std::vector<DataPoint> query(const long station, const long minTimestamp = -1L, const long maxTimestamp = -1L, const long limit = 1000, const long offset = 0L);

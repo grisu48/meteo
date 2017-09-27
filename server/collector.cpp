@@ -124,6 +124,29 @@ void Collector::run() {
 	}
 }
 
+
+void Collector::push(const Lightning &lightning) {	
+	mutex_lock();
+	
+	// Push to database			
+	try {
+		stringstream sql;
+		
+		sql << "CREATE TABLE IF NOT EXISTS `lightnings_" << lightning.station << "` (`timestamp` INT PRIMARY KEY, `distance` REAL);";
+		sql_exec(sql.str());
+		sql.str("");
+	
+		sql << "INSERT OR REPLACE INTO `lightnings_" << lightning.station << "` (`timestamp`,`distance`) VALUES (";
+		sql << lightning.timestamp << ", " << lightning.distance << ");";
+		sql_exec(sql.str());
+		
+	} catch (...) {
+		mutex_unlock();
+		throw;
+	}
+	mutex_unlock();
+}
+
 vector<Station> Collector::activeStations(void) const {
 	vector<Station> stations;
 	

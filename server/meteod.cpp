@@ -183,38 +183,51 @@ int main(int argc, char** argv) {
 
 
 
-static void mosq_receive(const std::string &topic, char* buffer, size_t len) {
+static void mosq_receive(const std::string &s_topic, char* buffer, size_t len) {
 	(void)len;
-	(void)topic;
+	String topic = s_topic;
 	
-	// Parse the packet
-	try {
-		string packet(buffer);
-		json j = json::parse(packet);
-	
-		if (j.find("node") == j.end()) return;
-		const long id = j["node"].get<long>();		
-		string name = "";
-		float t = 0.0F;
-		float hum = 0.0F;
-		float p = 0.0F;
-		float l_vis = 0.0F;
-		float l_ir = 0.0F;
+	if(topic.startsWith("lightning/")) {
+		// Lightning packet
+		String packet(buffer);
 		
-		if (j.find("name") != j.end()) name = j["name"].get<string>();
-		if (j.find("t") != j.end()) t = j["t"].get<float>();
-		if (j.find("hum") != j.end()) hum = j["hum"].get<float>();
-		if (j.find("p") != j.end()) p = j["p"].get<float>();
-		if (j.find("l_vis") != j.end()) l_vis = j["l_vis"].get<float>();
-		if (j.find("l_ir") != j.end()) l_ir = j["l_ir"].get<float>();
+		// XXX NEED TO DEFINE JSON FOR LIGHTNING FIRST
+		cerr << "LIGHTNING RECEIVED: " << packet << endl;
 		
-		collector.push(id, name, t, hum, p, l_vis, l_ir);
+	} else if (topic.startsWith("meteo/")) {
+		// Meteo packet 
 	
-	} catch (std::exception &e) {
-		cerr << "Exception (" << e.what() << ") parsing packet" << endl << buffer << endl;
-	} catch (...) {
-		cerr << "Unknown error parsing packet " << buffer << endl;
-		return;
+		// Parse the packet
+		try {
+			string packet(buffer);
+			json j = json::parse(packet);
+	
+			if (j.find("node") == j.end()) return;
+			const long id = j["node"].get<long>();		
+			string name = "";
+			float t = 0.0F;
+			float hum = 0.0F;
+			float p = 0.0F;
+			float l_vis = 0.0F;
+			float l_ir = 0.0F;
+		
+			if (j.find("name") != j.end()) name = j["name"].get<string>();
+			if (j.find("t") != j.end()) t = j["t"].get<float>();
+			if (j.find("hum") != j.end()) hum = j["hum"].get<float>();
+			if (j.find("p") != j.end()) p = j["p"].get<float>();
+			if (j.find("l_vis") != j.end()) l_vis = j["l_vis"].get<float>();
+			if (j.find("l_ir") != j.end()) l_ir = j["l_ir"].get<float>();
+		
+			collector.push(id, name, t, hum, p, l_vis, l_ir);
+	
+		} catch (std::exception &e) {
+			cerr << "Exception (" << e.what() << ") parsing packet" << endl << buffer << endl;
+		} catch (...) {
+			cerr << "Unknown error parsing packet " << buffer << endl;
+			return;
+		}
+	} else {
+		cerr << "Illegal topic: " << topic << endl;
 	}
 }
 
@@ -230,6 +243,7 @@ static Mosquitto* connectMosquitto(string remote, int port, string username, str
 		mosq->setReceiveCallback(mosq_receive);
 		
 		mosq->subscribe("meteo/#");
+		mosq->subscribe("lightning/#");
 		mosq->start();
 	} catch (...) {
 		delete mosq;

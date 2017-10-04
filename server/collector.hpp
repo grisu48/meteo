@@ -63,8 +63,8 @@ public:
 			this->p = (f_alpha * this->p) + (1.0F-f_alpha) * p;
 			this->l_ir = (f_alpha * this->l_ir) + (1.0F-f_alpha) * l_ir;
 			this->l_vis = (f_alpha * this->l_vis) + (1.0F-f_alpha) * l_vis;
-			this->aliveFlag = true;
 		}
+		this->aliveFlag = true;
 	};
 	
 	/** @returns true if marked alive otherwise false */
@@ -149,6 +149,9 @@ private:
 	
 	sqlite3 *db = NULL;
 	
+	/** Verbosity level of the collector */
+	int _verbose = 0;
+	
 protected:
 	/** Purge the dead stations */
 	void purge_stations();
@@ -166,6 +169,9 @@ public:
 	
 	void start();
 	void run();
+	
+	int verbose(void) const { return this->_verbose; }
+	void verbose(int verbose) { this->_verbose = verbose; }
 	
 	/** Push a dataset */
 	void push(long id, std::string name, float t, float hum, float p, float l_ir, float l_vis);

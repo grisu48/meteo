@@ -55,6 +55,8 @@ void Collector::push(long id, std::string name, float t, float hum, float p, flo
 	if(stations[id].name == "" && name != "")
 		stations[id].name = name;
 	
+	if(this->_verbose > 1) cout << "Station pushed[" << id << ",\"" << name << "\"] = " << t << " deg C, " << hum << " % rel, " << p << " kPa, " << l_vis << "/" << l_ir << " light" << endl;
+	
 	stations[id].push(t, hum, p, l_ir, l_vis, f_alpha);
 }
 
@@ -98,7 +100,7 @@ void Collector::run() {
 		
 		// Push station data and mark as non-alive
 		for(map<long,Station>::iterator it = stations.begin(); it != stations.end(); ++it) {
-			it->second.alive(false);
+			it->second.alive(false);		// Mark as not alive for the next purge loop
 
 			// Push to database			
 			try {
@@ -114,6 +116,8 @@ void Collector::run() {
 				sql << "INSERT OR REPLACE INTO `station_" << it->second.id << "` (`timestamp`,`temperature`,`humidity`,`pressure`,`light_ir`,`light_vis`) VALUES (";
 				sql << timestamp << "," << it->second.t << "," << it->second.hum << "," << it->second.p << "," << it->second.l_ir << "," << it->second.l_vis << ");";
 				sql_exec(sql.str());
+				
+				if(this->_verbose > 0) cout << "Wrote station " << it->second.id << " [\"" << it->second.name << "\"] to database" << endl;
 			} catch (const char *msg) {
 				cerr << msg << endl;
 				continue;

@@ -36,8 +36,8 @@ using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
-#define VERSION "0.2.1"
-#define BUILD 210
+#define VERSION "0.2.2"
+#define BUILD 212
 
 
 /** Mosquitto instances */
@@ -125,6 +125,7 @@ int main(int argc, char** argv) {
 		cerr << "Error: " << msg << endl;
 		exit(EXIT_FAILURE);
 	}
+	collector.verbose(verbose);
 	
 	// Daemon and set gid/uid
 	if(daemon) fork_daemon();
@@ -217,7 +218,9 @@ static void mosq_receive(const std::string &s_topic, char* buffer, size_t len) {
 			if (j.find("p") != j.end()) p = j["p"].get<float>();
 			if (j.find("l_vis") != j.end()) l_vis = j["l_vis"].get<float>();
 			if (j.find("l_ir") != j.end()) l_ir = j["l_ir"].get<float>();
-		
+			
+			if (verbose > 1) cout << "meteo[" << id << ",\"" << name << "\"] = " << t << " deg C, " << hum << " % rel, " << p << " kPa, " << l_vis << "/" << l_ir << " light" << endl;
+			
 			collector.push(id, name, t, hum, p, l_vis, l_ir);
 	
 		} catch (std::exception &e) {

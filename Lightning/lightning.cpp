@@ -25,6 +25,8 @@
 #include <cctype>
 #include <locale>
 #include <math.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "serial.hpp"
 
@@ -149,8 +151,15 @@ static void noise_detected(const long millis) {
 	}
 }
 
+
+static bool is_block(const char* device) {
+	struct stat s;
+	stat(device, &s );
+	return S_ISBLK(s.st_mode);
+}
+
 int main(int argc, char** argv) {
-    const char* device = "/dev/ttyUSB0";		// Serial port
+    string device = "";							// File or serial device
     const char* mqtt_host = "";		            // Mosquitto server
     int mqtt_port = 1883;						// Mosquitto server port
     int node_id = 1;							// This node id
@@ -161,23 +170,30 @@ int main(int argc, char** argv) {
     for(int i=1;i<argc;i++) {
     	string arg(argv[i]);
     	if(arg.size() == 0) continue;
-    	if(arg == "-h" || arg == "--help") {
-    		cout << "Lightning daemon" << endl << "  2017, phoenix" << endl << endl;
-    		cout << "SYNPOSIS: " << argv[0] << " DEVICE [HOST] [TOPIC] [PORT]" << endl;
-    		cout << "  DEVICE      Serial device (Default: " << device << ")" << endl;
-    		cout << "  HOST        Mosquitto server hostname (Default: Disabled)" << endl;
-    		cout << "  PORT        Mosquitto server port (Default: " << mqtt_port << ")" << endl;
-    		return EXIT_SUCCESS;
-    	}
+    	if(arg.at(0) == '-') {
+			if(arg == "-h" || arg == "--help") {
+				cout << "Lightning daemon" << endl << "  2017, phoenix" << endl << endl;
+				cout << "SYNPOSIS: " << argv[0] << " DEVICE/FILE [OPTIONS]" << endl;
+				cout << "  DEVICE/FILE     Serial device or input file (Default: " << device << ")" << endl;
+				cout << "OPTIONS:" << endl;
+				cout << "   -h      --help          Print help message" << endl;
+				cout << "   -t TOPIC                Manually set topic for mosquitto publish" << endl;
+				cout << "   -h HOST                 Mosquitto server hostname (Default: Disabled)" << endl;
+				cout << "   -p PORT                 Mosquitto server port (Default: " << mqtt_port << ")" << endl;
+				return EXIT_SUCCESS;
+			} else if(arg == "-t" || arg == "--topic") {
+				topic = argv[++i];
+			} else if(arg == "-h" || arg == "--host" || arg == "--mosquitto") {
+				mqtt_host = argv[++i];
+			} else if(arg == "-p" || arg == "--port") {
+				mqtt_port = ::atoi(argv[++i]);
+			} else {
+				cerr << "Illegal argument: " << arg << endl;
+				exit(EXIT_FAILURE);
+			}
+    	} else
+    		device = argv[i];
     }
-    if(argc > 1) 
-    	device = argv[1];
-    if(argc > 2)
-    	mqtt_host = argv[2];
-    if(argc > 3) 
-    	topic = argv[3];
-    if(argc > 4)
-    	mqtt_port = ::atoi(argv[4]);
     
     // Build topic
     if(topic.size() == 0) {
@@ -214,15 +230,31 @@ int main(int argc, char** argv) {
     }
     
     // Open device
+   	Serial *serial = NULL;
     try {
-    	Serial serial(device, false);
-    	serial.setSpeed(baud);
+    	bool isBlockDevice = (device != "") && is_block(device.c_str());
+    	if(isBlockDevice) {
+    		serial = new Serial(device.c_str(),false);
+    		serial->setSpeed(baud);
+	    	if(serial->isNonBlocking())
+    			cerr << "WARNING: Device is nonblocking" << endl;
+    	}
     	
-    	if(serial.isNonBlocking())
-    		cerr << "WARNING: Device is nonblocking" << endl;
     	
-    	while(!serial.eof()) {
-    		string line = serial.readLine();
+    	while(true) {
+    		string line;
+    		
+    		if(serial != NULL) {
+    			if(serial->eof()) break;
+    			line = serial->readLine();
+    		} else {
+    			if(device == "" || device == "-") {
+    				if(cin.eof()) break;
+    				getline(cin, line);
+    			} else {
+    				throw "File read not yet supported";
+    			}
+    		}
     		line = trim(line);
     		if(line.size() == 0) continue;
     		
@@ -252,14 +284,19 @@ int main(int argc, char** argv) {
 	    			} else {
 	    				// Assume it is lightning detected
 	    				try {
-	    					// READ: "DETECTED 14 km"
+	    					// READ: "DETECTED 14 km" or "MILLIS DETECTED 14 km"
+	    					size_t i = s_message.find("DETECTED");
+	    					if(i == string::npos)
+	    						throw "Illegal lightning packet";
+	    					s_message = s_message.substr(i);
+	    					
 		    				if(s_message.size() < 12) throw "Too small";
 	    					if(s_message.substr(0,9) != "DETECTED ") throw "Illegal header";
 	    					string s_distance = s_message.substr(9, s_message.size()-9-3 );
 	    					float distance = (float)::atof(s_distance.c_str());
 	    					
 	    					
-							if(mosq != NULL) {
+							if(mosq != NULL || true) {
 	    						// Build package
 								stringstream buf;
 								long timestamp = 0L;
@@ -285,10 +322,11 @@ int main(int argc, char** argv) {
     	
     } catch(const char* msg) {
     	cerr << "Serial port error: " << msg << endl;
+	    if(serial != NULL) delete serial;
     	exit(EXIT_FAILURE);
-    	return EXIT_FAILURE;
     }
     
+    if(serial != NULL) delete serial;
     cout << "Bye" << endl;
     return EXIT_SUCCESS;
 }

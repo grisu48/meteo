@@ -55,7 +55,8 @@ void Collector::push(long id, std::string name, float t, float hum, float p, flo
 	if(stations[id].name == "" && name != "")
 		stations[id].name = name;
 	
-	if(this->_verbose > 1) cout << "Station pushed[" << id << ",\"" << name << "\"] = " << t << " deg C, " << hum << " % rel, " << p << " kPa, " << l_vis << "/" << l_ir << " light" << endl;
+	// This is unnecessary verbosity and will be removed soon.
+	//if(this->_verbose > 1) cout << "Station pushed[" << id << ",\"" << name << "\"] = " << t << " deg C, " << hum << " % rel, " << p << " kPa, " << l_vis << "/" << l_ir << " light" << endl;
 	
 	stations[id].push(t, hum, p, l_ir, l_vis, f_alpha);
 }
@@ -91,7 +92,7 @@ void Collector::mutex_unlock() const {
 
 void Collector::run() {
 	while(running) {
-		sleep(delay);
+		sleep(this->_delay);
 		
 		mutex_lock();
 		this->purge_stations();

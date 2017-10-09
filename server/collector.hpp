@@ -140,7 +140,7 @@ private:
 	std::map<long, Station> stations;
 	
 	float f_alpha = 0.9F;
-	int delay = 5*60;		// Push Every 5 minutes by default
+	int _delay = 5*60;		// Push Every 5 minutes by default
 	
 	volatile bool running = false;
 	
@@ -172,6 +172,9 @@ public:
 	
 	int verbose(void) const { return this->_verbose; }
 	void verbose(int verbose) { this->_verbose = verbose; }
+	
+	int delay() const { return this->_delay; }
+	void delay(int delay) { this->_delay = delay; }
 	
 	/** Push a dataset */
 	void push(long id, std::string name, float t, float hum, float p, float l_ir, float l_vis);

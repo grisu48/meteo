@@ -36,8 +36,8 @@ using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
-#define VERSION "0.2.2"
-#define BUILD 212
+#define VERSION "0.2.3"
+#define BUILD 230
 
 
 /** Mosquitto instances */
@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
 					cout << "           --uid UID                  Set UID" << endl;
 					cout << "           --gid GID                  Set group id (GID)" << endl;
 					cout << "  -v       --verbose                  Verbose run" << endl;
+					cout << "           --delay SECONDS            Delay between write cycles in seconds" << endl;
 					cout << "  -vv                                 Verbose run including http requests" << endl;
 					cout << "REMOTE is the mosquitto server" << endl;
 					exit(EXIT_SUCCESS);
@@ -103,6 +104,11 @@ int main(int argc, char** argv) {
 					verbose = 1;
 				} else if(arg == "-vv") {
 					verbose = 2;
+				} else if(arg == "--delay") {
+					if(i >= argc-1) throw "Missing argument: Delay";
+					int delay = ::atoi(argv[++i]);
+					if(delay <= 0) throw "Invalid delay";
+					collector.delay(delay);
 				} else if(arg == "--http") {
 					if(i >= argc-1) throw "Missing argument: Http port";
 					http_port = ::atoi(argv[++i]);

@@ -27,6 +27,7 @@
 #include <math.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <time.h>
 
 #include "serial.hpp"
 
@@ -297,7 +298,9 @@ int main(int argc, char** argv) {
 							if(mosq != NULL || true) {
 	    						// Build package
 								stringstream buf;
-								long timestamp = millis;
+								time_t mytime;
+								mytime = time(NULL);
+								long timestamp = (long)mytime;		// Get system time
 								buf << "{\"station\":" << node_id << ",\"timestamp\":" << timestamp << ",\"distance\":" << distance << "}";
 								string msg = buf.str();
 								

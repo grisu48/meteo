@@ -36,8 +36,8 @@ using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
-#define VERSION "0.2.3"
-#define BUILD 230
+#define VERSION "0.2.4"
+#define BUILD 240
 
 
 /** Mosquitto instances */
@@ -189,6 +189,21 @@ int main(int argc, char** argv) {
 }
 
 
+Lightning parseLightning(const std::string packet) {
+	json j = json::parse(packet);
+	
+	Lightning ret;
+	
+	//buf << "{\"station\":" << node_id << ",\"timestamp\":" << timestamp << ",\"distance\":" << distance << "}";
+	
+	if (j.find("station") == j.end()) throw "No station";
+	if (j.find("timestamp") == j.end()) throw "No timestamp";
+	if (j.find("distance") == j.end()) throw "No distance";
+	ret.station = j["station"].get<long>();	
+	ret.timestamp = j["timestamp"].get<long>();	
+	ret.distance = j["distance"].get<float>();	
+	return ret;
+}
 
 static void mosq_receive(const std::string &s_topic, char* buffer, size_t len) {
 	(void)len;
@@ -198,7 +213,15 @@ static void mosq_receive(const std::string &s_topic, char* buffer, size_t len) {
 		// Lightning packet
 		String packet(buffer);
 		
-		// XXX NEED TO DEFINE JSON FOR LIGHTNING FIRST
+		try {
+			
+			Lightning lightning = parseLightning(packet);
+			if(verbose > 1) cerr << "LIGHTNING RECEIVED: " << lightning.toString() << endl;
+			collector.push(lightning);
+			
+		} catch (const char* msg) {
+			cerr << "Error parsing lightning packet: " << msg << endl;
+		}
 		cerr << "LIGHTNING RECEIVED: " << packet << endl;
 		
 	} else if (topic.startsWith("meteo/")) {

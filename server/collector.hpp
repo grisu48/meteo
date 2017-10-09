@@ -1,6 +1,7 @@
 /** Collector instance */
 
 #include <string>
+#include <sstream>
 #include <vector>
 #include <map>
 
@@ -131,6 +132,13 @@ public:
 		this->timestamp = src.timestamp;
 		this->distance = src.distance;
 		return *this;
+	}
+	
+	std::string toString() const {
+		std::stringstream ss;
+		
+		ss << "Lightning (" << this->timestamp << ") [Station " << this->station << "] " << this->distance << " km";
+		return ss.str();
 	}
 };
 

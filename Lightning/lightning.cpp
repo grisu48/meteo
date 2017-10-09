@@ -154,12 +154,6 @@ static void noise_detected(const long millis) {
 }
 
 
-static bool is_block(const char* device) {
-	struct stat s;
-	stat(device, &s );
-	return S_ISBLK(s.st_mode);
-}
-
 int main(int argc, char** argv) {
     string device = "-";							// File or serial device
     const char* mqtt_host = "";		            // Mosquitto server
@@ -178,14 +172,15 @@ int main(int argc, char** argv) {
 				if(arg == "-h" || arg == "--help") {
 					cout << "Lightning daemon | Reads serial output from a AS3935 Arduino and publish data on mosquitto" << endl;
 					cout << "  2017, Felix Niederwanger" << endl << endl;
-					cout << "SYNPOSIS: " << argv[0] << " DEVICE/FILE [OPTIONS]" << endl;
-					cout << "  DEVICE/FILE     Serial device or input file (Default: " << device << ") - Use '-' for stdin" << endl;
+					cout << "SYNPOSIS: " << argv[0] << " DEVICE [OPTIONS]" << endl;
+					cout << "  DEVICE                    Serial device (Default: stdin) - Use '-' for stdin" << endl;
 					cout << "OPTIONS:" << endl;
-					cout << "   -h      --help          Print help message" << endl;
-					cout << "   -t TOPIC                Manually set topic for mosquitto publish" << endl;
-					cout << "   -h HOST                 Mosquitto server hostname (Default: Disabled)" << endl;
-					cout << "   -p PORT                 Mosquitto server port (Default: " << mqtt_port << ")" << endl;
-					cout << "   -d      --daemon        Run as daemon" << endl;
+					cout << "   -h      --help           Print help message" << endl;
+					cout << "   -t TOPIC                 Manually set topic for mosquitto publish" << endl;
+					cout << "           --host HOST      Mosquitto server hostname (Default: Disabled)" << endl;
+					cout << "   -p PORT                  Mosquitto server port (Default: " << mqtt_port << ")" << endl;
+					cout << "   -d      --daemon         Run as daemon" << endl;
+					cout << "           --device DEVICE  Set serial device to DEVICE - Use '-' for stdin" << endl;
 					return EXIT_SUCCESS;
 				} else if(arg == "-t" || arg == "--topic") {
 					topic = argv[++i];
@@ -195,6 +190,8 @@ int main(int argc, char** argv) {
 					mqtt_port = ::atoi(argv[++i]);
 				} else if(arg == "-d" || arg == "--daemon") {
 					daemonize = true;
+				} else if(arg == "--device") {
+					device = argv[++i];
 				} else {
 					cerr << "Illegal argument: " << arg << endl;
 					exit(EXIT_FAILURE);
@@ -247,8 +244,7 @@ int main(int argc, char** argv) {
     // Open device
    	Serial *serial = NULL;
     try {
-    	bool isBlockDevice = (device != "" && device != "-") && is_block(device.c_str());
-    	if(isBlockDevice) {
+    	if((device != "" && device != "-")) {
     		serial = new Serial(device.c_str(),false);
     		serial->setSpeed(baud);
 	    	if(serial->isNonBlocking())
@@ -263,12 +259,8 @@ int main(int argc, char** argv) {
     			if(serial->eof()) break;
     			line = serial->readLine();
     		} else {
-    			if(device == "" || device == "-") {
-    				if(cin.eof()) break;
-    				getline(cin, line);
-    			} else {
-    				throw "File read not yet supported";
-    			}
+				if(cin.eof()) break;
+				getline(cin, line);
     		}
     		line = trim(line);
     		if(line.size() == 0) continue;

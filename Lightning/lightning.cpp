@@ -36,6 +36,8 @@ struct mosquitto *mosq = NULL;
 
 
 
+static void fork_daemon(void);
+
 // trim from start
 static inline std::string &ltrim(std::string &s) {
     s.erase(s.begin(), std::find_if(s.begin(), s.end(),
@@ -109,7 +111,7 @@ static string getRate(const long delta) {
 	float rate = round(1000.0F / delta * 1e2) / 1e2;
 	if(rate <= 0.0F) {
 		const long seconds = delta/1000L;
-		buf << "each " << seconds << " s";
+		buf << "1 every " << seconds << " s";
 	} else
 		buf << rate << "/s";
 	
@@ -125,7 +127,7 @@ static void disturber_detected(const long millis) {
 	if(delta > 0) {
 		static long avg = delta;
 		avg = (0.75*avg) + 0.25*delta;
-		cerr << " (Rate of ~ " << getRate(avg) << ')';
+		cerr << " (Rate: " << getRate(avg) << ')';
 	}
 	cerr << endl;
 	
@@ -142,7 +144,7 @@ static void noise_detected(const long millis) {
 	
 	cerr << '[' << getTime() << "] " << millis << " Noise detected";
 	if(delta > 0)
-		cerr << " (" << getRate(delta) << ')';
+		cerr << " (Rate: " << getRate(delta) << ')';
 	cerr << endl;
 	
 	// Publish but not more than 1x per second
@@ -159,40 +161,50 @@ static bool is_block(const char* device) {
 }
 
 int main(int argc, char** argv) {
-    string device = "";							// File or serial device
+    string device = "-";							// File or serial device
     const char* mqtt_host = "";		            // Mosquitto server
     int mqtt_port = 1883;						// Mosquitto server port
     int node_id = 1;							// This node id
-    int rc;		// Return codes
-    string topic = "";				// Topic for publishing
+    int rc;										// Return codes
+    string topic = "";							// Topic for publishing
 	speed_t baud = B9600;						// Baud rate
+	bool daemonize = false;
     
-    for(int i=1;i<argc;i++) {
-    	string arg(argv[i]);
-    	if(arg.size() == 0) continue;
-    	if(arg.at(0) == '-') {
-			if(arg == "-h" || arg == "--help") {
-				cout << "Lightning daemon" << endl << "  2017, phoenix" << endl << endl;
-				cout << "SYNPOSIS: " << argv[0] << " DEVICE/FILE [OPTIONS]" << endl;
-				cout << "  DEVICE/FILE     Serial device or input file (Default: " << device << ")" << endl;
-				cout << "OPTIONS:" << endl;
-				cout << "   -h      --help          Print help message" << endl;
-				cout << "   -t TOPIC                Manually set topic for mosquitto publish" << endl;
-				cout << "   -h HOST                 Mosquitto server hostname (Default: Disabled)" << endl;
-				cout << "   -p PORT                 Mosquitto server port (Default: " << mqtt_port << ")" << endl;
-				return EXIT_SUCCESS;
-			} else if(arg == "-t" || arg == "--topic") {
-				topic = argv[++i];
-			} else if(arg == "-h" || arg == "--host" || arg == "--mosquitto") {
-				mqtt_host = argv[++i];
-			} else if(arg == "-p" || arg == "--port") {
-				mqtt_port = ::atoi(argv[++i]);
-			} else {
-				cerr << "Illegal argument: " << arg << endl;
-				exit(EXIT_FAILURE);
-			}
-    	} else
-    		device = argv[i];
+    try {
+		for(int i=1;i<argc;i++) {
+			string arg(argv[i]);
+			if(arg.size() == 0) continue;
+			if(arg.at(0) == '-') {
+				if(arg == "-h" || arg == "--help") {
+					cout << "Lightning daemon | Reads serial output from a AS3935 Arduino and publish data on mosquitto" << endl;
+					cout << "  2017, Felix Niederwanger" << endl << endl;
+					cout << "SYNPOSIS: " << argv[0] << " DEVICE/FILE [OPTIONS]" << endl;
+					cout << "  DEVICE/FILE     Serial device or input file (Default: " << device << ") - Use '-' for stdin" << endl;
+					cout << "OPTIONS:" << endl;
+					cout << "   -h      --help          Print help message" << endl;
+					cout << "   -t TOPIC                Manually set topic for mosquitto publish" << endl;
+					cout << "   -h HOST                 Mosquitto server hostname (Default: Disabled)" << endl;
+					cout << "   -p PORT                 Mosquitto server port (Default: " << mqtt_port << ")" << endl;
+					cout << "   -d      --daemon        Run as daemon" << endl;
+					return EXIT_SUCCESS;
+				} else if(arg == "-t" || arg == "--topic") {
+					topic = argv[++i];
+				} else if(arg == "-h" || arg == "--host" || arg == "--mosquitto") {
+					mqtt_host = argv[++i];
+				} else if(arg == "-p" || arg == "--port") {
+					mqtt_port = ::atoi(argv[++i]);
+				} else if(arg == "-d" || arg == "--daemon") {
+					daemonize = true;
+				} else {
+					cerr << "Illegal argument: " << arg << endl;
+					exit(EXIT_FAILURE);
+				}
+			} else
+				device = argv[i];
+		}
+    } catch (const char* msg) {
+    	cerr << msg << endl;
+    	exit(EXIT_FAILURE);
     }
     
     // Build topic
@@ -201,6 +213,9 @@ int main(int argc, char** argv) {
     	buf << "lightning/" << node_id;
     	topic = buf.str();
     }
+    
+    if(daemonize)
+    	fork_daemon();
     
     atexit(cleanup);
     
@@ -232,7 +247,7 @@ int main(int argc, char** argv) {
     // Open device
    	Serial *serial = NULL;
     try {
-    	bool isBlockDevice = (device != "") && is_block(device.c_str());
+    	bool isBlockDevice = (device != "" && device != "-") && is_block(device.c_str());
     	if(isBlockDevice) {
     		serial = new Serial(device.c_str(),false);
     		serial->setSpeed(baud);
@@ -281,17 +296,8 @@ int main(int argc, char** argv) {
 	    				noise_detected(millis);
 	    			} else if(s_message == "DISTURBER DETECTED") {
 	    				disturber_detected(millis);
-	    			} else {
-	    				// Assume it is lightning detected
+	    			} else if (s_message.substr(0,9) == "DETECTED ") {
 	    				try {
-	    					// READ: "DETECTED 14 km" or "MILLIS DETECTED 14 km"
-	    					size_t i = s_message.find("DETECTED");
-	    					if(i == string::npos)
-	    						throw "Illegal lightning packet";
-	    					s_message = s_message.substr(i);
-	    					
-		    				if(s_message.size() < 12) throw "Too small";
-	    					if(s_message.substr(0,9) != "DETECTED ") throw "Illegal header";
 	    					string s_distance = s_message.substr(9, s_message.size()-9-3 );
 	    					float distance = (float)::atof(s_distance.c_str());
 	    					
@@ -299,19 +305,29 @@ int main(int argc, char** argv) {
 							if(mosq != NULL || true) {
 	    						// Build package
 								stringstream buf;
-								long timestamp = 0L;
+								long timestamp = millis;
 								buf << "{\"station\":" << node_id << ",\"timestamp\":" << timestamp << ",\"distance\":" << distance << "}";
 								string msg = buf.str();
 								
 				    			publish(topic, msg);
 				    		}
+				    		
+				    		cout << '[' << getTime() << "] " << millis << "\tDetected a lightning in " << distance << "km" << endl;
 	    					
 	    				} catch(const char* msg) {
 	    					cerr << "Illegal packet read: " << msg << endl;
 	    				}
 	    				
-						// Publish
-						cout << '[' << getTime() << "] " << millis << '\t' << s_message << endl;
+						//cout << '[' << getTime() << "] " << millis << '\t' << s_message << endl;
+					
+	    			} else if (s_message.substr(0,18) == "UNKNOWN INTERRUPT ") {
+	    				string s_interrupt = s_message.substr(18);
+	    				s_interrupt = trim(s_interrupt);
+	    				cerr << '[' << getTime() << "] " << millis << "\tUnknown interrupt: " << s_interrupt << endl;
+	    			} else {
+	    				
+						cerr << '[' << getTime() << "] Illegal packet: " << line << endl;
+	    				
 	    			}
 	    		}
 	    	}
@@ -329,4 +345,28 @@ int main(int argc, char** argv) {
     if(serial != NULL) delete serial;
     cout << "Bye" << endl;
     return EXIT_SUCCESS;
+}
+
+
+
+static void fork_daemon(void) {
+	pid_t pid = fork();
+	if(pid < 0) {
+		cerr << "Fork daemon failed" << endl;
+		exit(EXIT_FAILURE);
+	} else if(pid > 0) {
+		// Success. The parent leaves here
+		exit(EXIT_SUCCESS);
+	}
+	
+	/* Fork off for the second time */
+	/* This is needed to detach the deamon from a terminal */
+	pid = fork();
+	if(pid < 0) {
+		cerr << "Fork daemon failed (step two)" << endl;
+		exit(EXIT_FAILURE);
+	} else if(pid > 0) {
+		// Success. The parent again leaves here
+		exit(EXIT_SUCCESS);
+	}
 }

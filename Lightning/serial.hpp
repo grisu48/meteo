@@ -48,7 +48,7 @@ private:
 public:
 	Serial(const char* device, bool nonBlocking = false);
 	Serial(std::string device, bool nonBlocking = false);
-	~Serial();
+	virtual ~Serial();
 
 
 	/** Set baud rate

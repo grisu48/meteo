@@ -222,7 +222,6 @@ static void mosq_receive(const std::string &s_topic, char* buffer, size_t len) {
 		} catch (const char* msg) {
 			cerr << "Error parsing lightning packet: " << msg << endl;
 		}
-		cerr << "LIGHTNING RECEIVED: " << packet << endl;
 		
 	} else if (topic.startsWith("meteo/")) {
 		// Meteo packet 

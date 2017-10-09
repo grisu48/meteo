@@ -24,7 +24,10 @@ static bool replace(std::string& str, const std::string& from, const std::string
 string escapeString(std::string str) {
 	string result(str);
 	
-	replace(result, "'", "\\'");
+	// The SQL standard specifies that single-quotes in strings are escaped by putting
+	// two single quotes in a row. SQL works like the Pascal programming language in the regard.
+	// SQLite follows this standard.
+	replace(result, "'", "''");
 	return result;
 }
 

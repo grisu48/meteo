@@ -175,7 +175,7 @@ void QMeteo::timerCall() {
     try {
         QList<DataPoint> readings = currentReadings();
         emit onDataUpdate(readings);
-        QList<Lightning> lightnings = queryLightnings();
+        QList<Lightning> lightnings = queryLightnings(-1,-1,10);
         emit onLightningsUpdate(lightnings);
     } catch (...) {
         // Ignore

@@ -17,7 +17,7 @@ Config::Config(const QString filename)
 
             int i = line.indexOf('=');
             if(i < 0) continue;
-            QString key = line.left(i-1).trimmed();
+            QString key = line.left(i).trimmed();
             QString value = line.mid(i+1).trimmed();
             if(key.isEmpty()) continue;
 

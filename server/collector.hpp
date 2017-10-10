@@ -199,4 +199,6 @@ public:
 	
 	/** Query data from the database */
 	std::vector<DataPoint> query(const long station, const long minTimestamp = -1L, const long maxTimestamp = -1L, const long limit = 1000, const long offset = 0L);
+	
+	std::vector<Lightning> query_lightnings(const long station, const long minTimestamp = -1L, const long maxTimestamp = -1L, const long limit = 1000, const long offset = 0L);
 };

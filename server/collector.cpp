@@ -140,12 +140,8 @@ void Collector::push(const Lightning &lightning) {
 	try {
 		stringstream sql;
 		
-		sql << "CREATE TABLE IF NOT EXISTS `lightnings_" << lightning.station << "` (`timestamp` INT PRIMARY KEY, `distance` REAL);";
-		sql_exec(sql.str());
-		sql.str("");
-	
-		sql << "INSERT OR REPLACE INTO `lightnings_" << lightning.station << "` (`timestamp`,`distance`) VALUES (";
-		sql << lightning.timestamp << ", " << lightning.distance << ");";
+		sql << "INSERT OR IGNORE INTO `lightnings` (`timestamp`,`station`,`distance`) VALUES (";
+		sql << lightning.timestamp << ", " << lightning.station << ", " << lightning.distance << ");";
 		sql_exec(sql.str());
 		
 	} catch (...) {
@@ -194,6 +190,8 @@ void Collector::open_db(const char* filename) {
 	if(rc != SQLITE_OK) throw strerror(errno);
 	
 	sql_exec("CREATE TABLE IF NOT EXISTS `stations` (`id` INT PRIMARY KEY, `name` TEXT, `desc` TEXT);");
+	sql_exec("CREATE TABLE IF NOT EXISTS `lightning_stations` (`id` INT PRIMARY KEY, `name` TEXT, `desc` TEXT, `lon` REAL, `lat` REAL, `alt`, REAL);");
+	sql_exec("CREATE TABLE IF NOT EXISTS `lightnings` (`timestamp` INT, `station` INT, `distance` REAL, PRIMARY KEY(`timestamp`,`station`));");
 }
 
 void Collector::sql_exec(const std::string sql) {
@@ -266,6 +264,73 @@ vector<DataPoint> Collector::query(const long station, const long minTimestamp, 
 		dp.p = (float)sqlite3_column_double(res, 3);
 		dp.l_ir = (float)sqlite3_column_double(res, 4);
 		dp.l_vis = (float)sqlite3_column_double(res, 5);
+		
+		ret.push_back(dp);
+	}
+	
+	if(rc != SQLITE_DONE) {
+		cerr << "SQLITE3 error: " << strerror(errno) << endl;
+		
+		mutex_unlock();
+		throw "SQL error";
+	}
+	
+	if(sqlite3_finalize(res) != SQLITE_OK) {
+		cerr << "SQLITE3 finalize failed" << endl;
+		mutex_unlock();
+		throw "SQL error";
+	}
+	
+	mutex_unlock();
+	return ret;
+}
+
+vector<Lightning> Collector::query_lightnings(const long station, const long minTimestamp, const long maxTimestamp, const long limit, const long offset) {
+	if(this->db == NULL) throw "No database opened";
+	
+	vector<Lightning> ret;
+	mutex_lock();
+	
+	stringstream sql;
+	sql << "SELECT `timestamp`,`distance` FROM `lightnings` WHERE `station` = " << station;
+	if(minTimestamp >= 0L)
+		sql << " AND `timestamp` >= " << minTimestamp;
+	if(maxTimestamp >= 0L)
+		sql << " AND `timestamp` <= " << maxTimestamp;
+	sql << " ORDER BY `timestamp` DESC LIMIT " << limit << " OFFSET " << offset << ";";
+	
+	
+	int rc;
+    sqlite3_stmt *res;
+    
+	string query = sql.str();
+	cerr << query << endl;
+	while(true) {
+		rc = sqlite3_prepare_v2(this->db, query.c_str(), -1, &res, NULL);    
+		if(rc == SQLITE_BUSY) continue;		// Retry if busy
+		else break;
+	}
+	if(rc != SQLITE_OK) {
+		mutex_unlock();
+		
+		if(errno == ENOENT) {
+			return ret;
+		} else {
+			cerr << "SQLITE3 error: " << strerror(errno) << endl;
+			throw "SQL error";
+		}
+	}
+	
+	// Iterate over rows
+	while( (rc = sqlite3_step(res)) == SQLITE_ROW) {
+		// double sqlite3_column_double(sqlite3_stmt*, int iCol);
+		// sqlite3_int64 sqlite3_column_int64(sqlite3_stmt*, int iCol);
+		
+		Lightning dp;
+		
+		dp.station = station;
+		dp.timestamp = (long)sqlite3_column_int64(res, 0);
+		dp.distance = (float)sqlite3_column_double(res, 1);
 		
 		ret.push_back(dp);
 	}

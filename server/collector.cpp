@@ -351,3 +351,75 @@ vector<Lightning> Collector::query_lightnings(const long station, const long min
 	mutex_unlock();
 	return ret;
 }
+
+
+
+vector<Lightning> Collector::query_all_lightnings(const long minTimestamp, const long maxTimestamp, const long limit, const long offset) {
+	if(this->db == NULL) throw "No database opened";
+	
+	vector<Lightning> ret;
+	mutex_lock();
+	
+	stringstream sql;
+	sql << "SELECT `timestamp`,`station`,`distance` FROM `lightnings`;";
+	if(minTimestamp >= 0L && maxTimestamp >= 0L) {
+		sql << " WHERE `timestamp` >= " << minTimestamp << " AND `timestamp` <= " << maxTimestamp;
+	} else if(minTimestamp >= 0L) {
+		sql << " WHERE `timestamp` >= " << minTimestamp;
+	} else if(maxTimestamp >= 0L) {
+	sql << " WHERE `timestamp` <= " << maxTimestamp;
+	}
+	sql << " ORDER BY `timestamp` DESC LIMIT " << limit << " OFFSET " << offset << ";";
+	
+	
+	int rc;
+    sqlite3_stmt *res;
+    
+	string query = sql.str();
+	cerr << query << endl;
+	while(true) {
+		rc = sqlite3_prepare_v2(this->db, query.c_str(), -1, &res, NULL);    
+		if(rc == SQLITE_BUSY) continue;		// Retry if busy
+		else break;
+	}
+	if(rc != SQLITE_OK) {
+		mutex_unlock();
+		
+		if(errno == ENOENT) {
+			return ret;
+		} else {
+			cerr << "SQLITE3 error: " << strerror(errno) << endl;
+			throw "SQL error";
+		}
+	}
+	
+	// Iterate over rows
+	while( (rc = sqlite3_step(res)) == SQLITE_ROW) {
+		// double sqlite3_column_double(sqlite3_stmt*, int iCol);
+		// sqlite3_int64 sqlite3_column_int64(sqlite3_stmt*, int iCol);
+		
+		Lightning dp;
+		
+		dp.timestamp = (long)sqlite3_column_int64(res, 0);
+		dp.station = (long)sqlite3_column_int64(res, 1);
+		dp.distance = (float)sqlite3_column_double(res, 2);
+		
+		ret.push_back(dp);
+	}
+	
+	if(rc != SQLITE_DONE) {
+		cerr << "SQLITE3 error: " << strerror(errno) << endl;
+		
+		mutex_unlock();
+		throw "SQL error";
+	}
+	
+	if(sqlite3_finalize(res) != SQLITE_OK) {
+		cerr << "SQLITE3 finalize failed" << endl;
+		mutex_unlock();
+		throw "SQL error";
+	}
+	
+	mutex_unlock();
+	return ret;
+}

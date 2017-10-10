@@ -444,7 +444,7 @@ static void* http_thread_run(void *arg) {
 		    *socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
 		    *socket << "<body>";
 		    *socket << "<h1>Meteo</h1>\n";
-			*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
+			*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a> <a href=\"lightnings?format=html\">[Lightnings]</a></p>\n";
 		    *socket << "<p>Meteo server v" << VERSION << " (Build " << BUILD << ") -- 2017, Felix Niederwanger<br/>";
 		    *socket << "Server started: " << startupDateTime.format() << "</p>";
 		    
@@ -466,14 +466,12 @@ static void* http_thread_run(void *arg) {
 			DateTime now;
 			*socket << "</p>" << now.format() << "</p>";
 			
-		} else if(url.startsWith("/Lightnings?") || url.startsWith("/lightnings?")) {
+		} else if(url.startsWith("/Lightnings?") || url.startsWith("/lightnings?") || url == "/Lightnings" || url == "/lightnings") {
 			
-			map<String, String> params = extractParams(url.mid(12));
+			map<String, String> params;
+			if(url.size() > 11) params = extractParams(url.mid(12));
 			
 			try {
-				long id = 0L;	
-				if(params.find("id") == params.end()) throw "id not found";
-				id = ::atol(params["id"].c_str());
 				long minTimestamp = -1L;
 				long maxTimestamp = -1L;
 				long limit = 1000L;
@@ -487,45 +485,65 @@ static void* http_thread_run(void *arg) {
 				if(limit < 0) limit = 100;
 				if(limit > 10000) limit = 10000;
 				if(offset < 0) offset = 0L;
+				long id = 0L;
+				vector<Lightning> dp;
+				if(params.find("id") == params.end()) {
+					// No id given, means general overview
+					id = -1;
+					dp = collector.query_all_lightnings(minTimestamp, maxTimestamp, limit, offset);	
+				} else {
+					id = ::atol(params["id"].c_str());
+					if(id < 0) throw "Illegal id";
+					dp = collector.query_lightnings(id, minTimestamp, maxTimestamp, limit, offset);	
+				}
 			
-				vector<Lightning> dp = collector.query_lightnings(id, minTimestamp, maxTimestamp, limit, offset);	
 				
+			
 				if(format == "" || format == "html") {
 					socket->writeHttpHeader();
-										
+									
 					*socket << "<html><head><title>meteo Server</title></head>";
 					*socket << "<body>";
 					*socket << "<h1>Meteo</h1>\n";
-					*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
+					*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a> <a href=\"lightnings?format=html\">[Lightnings]</a></p>\n";
+					
+					if(id < 0) {
+						// List also stations
+						*socket << "<h3>Lightning Stations</h3>\n";
+						
+						// TODO: Implement me
+					}
 					
 					*socket << "<h3>Lightnings</h3>\n";
-					
+				
 					if(dp.size() == 0) {
 						*socket << "<p>No lightnings fetched</p>\n";
-					
+				
 					} else {
-					
-						*socket << "<p>" << dp.size() << " lightnings</p>\n";
-					
+						
+						*socket << "<p>" << dp.size() << " lightnings fetched</p>\n";
+				
 						*socket << "<table border=\"1\">";
-						*socket << "<tr><td><b>Timestamp</b></td><td><b>Distance [km]</b></td></tr>\n";
-					
+						*socket << "<tr><td><b>Timestamp</b></td><td><b>Station</b></td><td><b>Distance [km]</b></td></tr>\n";
+				
 						lazy::DateTime dateTime;
 						for(vector<Lightning>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
 							dateTime.timestamp((*it).timestamp*1000L);
 							*socket << "<tr><td>" << dateTime.format() << "</td>";
+							*socket << "<td><a href=\"lightnings?id=" << (*it).station << "\">Station " << (*it).station << "</a></td>";
 							*socket << "<td>" << round_f((*it).distance) << "</td>";
 							*socket << "</tr>";
 						}
 						*socket << "</table>";
-					
-					}
-					
-				} else if(format == "csv" || format == "plain") {
 				
-					socket->writeHttpHeader();
+					}
+				
+				} else if(format == "csv" || format == "plain") {
+			
+					socket->writeHttpHeader(200,"text/plain");
 					for(vector<Lightning>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
 						*socket << (*it).timestamp << ", ";
+						*socket << (*it).station << ", ";
 						*socket << round_f((*it).distance) << "\n";
 					}
 				} else {
@@ -569,7 +587,7 @@ static void* http_thread_run(void *arg) {
 					*socket << "<html><head><title>meteo Server</title></head>";
 					*socket << "<body>";
 					*socket << "<h1>Meteo</h1>\n";
-					*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
+					*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a> <a href=\"lightnings?format=html\">[Lightnings]</a></p>\n";
 					string name = station.name;
 					if(name == "") name = "UNKNOWN";
 					*socket << "<h3>Station overview: " << name << "</h3>\n";
@@ -643,7 +661,7 @@ static void* http_thread_run(void *arg) {
 					*socket << "</html>";
 				} else if(format == "csv" || format == "plain") {
 				
-					socket->writeHttpHeader();
+					socket->writeHttpHeader(200,"text/plain");
 					for(vector<DataPoint>::const_iterator it = dp.begin(); it != dp.end(); ++it) {
 						*socket << (*it).timestamp << ", ";
 						*socket << round_f((*it).t) << ", ";
@@ -678,7 +696,7 @@ static void* http_thread_run(void *arg) {
 				*socket << "<html><head><title>meteo Server</title></head>";
 				*socket << "<body>";
 				*socket << "<h1>Meteo Server</h1>\n";
-				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a> <a href=\"lightnings?format=html\">[Lightnings]</a></p>\n";
 				*socket << "</html>";
 				
 				*socket << "<table border=\"1\">";
@@ -695,7 +713,7 @@ static void* http_thread_run(void *arg) {
 				*socket << "</table>";
 			} else if(format == "csv" || format == "plain") {
 			
-				socket->writeHttpHeader();
+				socket->writeHttpHeader(200,"text/plain");
 				vector<Station> stations = collector.activeStations();
 				for( vector<Station>::const_iterator it = stations.begin(); it != stations.end(); ++it) {
 					*socket << (*it).id << "," << (*it).name << "\n";
@@ -723,7 +741,7 @@ static void* http_thread_run(void *arg) {
 				*socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
 				*socket << "<body>";
 				*socket << "<h1>Meteo</h1>\n";
-				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a> <a href=\"lightnings?format=html\">[Lightnings]</a></p>\n";
 				*socket << "<h2>Current readings</h2>\n";
 			
 				vector<Station> stations = collector.activeStations();
@@ -769,14 +787,14 @@ static void* http_thread_run(void *arg) {
 				*socket << "<meta http-equiv=\"refresh\" content=\"5\"></head>";
 				*socket << "<body>";
 				*socket << "<h1>Meteo</h1>\n";
-				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a></p>\n";
+				*socket << "<p><a href=\"index.html\">[Nodes]</a> <a href=\"current?format=html\">[Current]</a> <a href=\"lightnings?format=html\">[Lightnings]</a></p>\n";
 				
 				*socket << "<h2>Timestamp</h2>\n";
 				DateTime now;
 				*socket << now.format() << " (" << now.timestamp() << ")";
 			
 			} else if(format == "plain" || format == "csv") {
-				socket->writeHttpHeader();
+				socket->writeHttpHeader(200,"text/plain");
 				DateTime now;
 				*socket << now.timestamp() << ", " << now.format();
 				

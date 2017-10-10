@@ -133,12 +133,13 @@ public:
 		return ret;
 	}
 	
-	void writeHttpHeader(const int statusCode = 200) {
+	void writeHttpHeader(const int statusCode = 200, std::string contentType = "text/html") {
             this->print("HTTP/1.1 ");
             this->print(std::to_string(statusCode));
             this->print(" OK\n");
-            this->print("Content-Type:text/html\n");
-            this->print("\n");
+            this->print("Content-Type:");
+            this->print(contentType);
+            this->print("\n\n");
 	}
 };
 

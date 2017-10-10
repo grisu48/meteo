@@ -231,7 +231,7 @@ vector<DataPoint> Collector::query(const long station, const long minTimestamp, 
 	
 	
 	int rc;
-    sqlite3_stmt *res;
+	sqlite3_stmt *res;
     
 	string query = sql.str();
 	while(true) {
@@ -304,7 +304,6 @@ vector<Lightning> Collector::query_lightnings(const long station, const long min
     sqlite3_stmt *res;
     
 	string query = sql.str();
-	cerr << query << endl;
 	while(true) {
 		rc = sqlite3_prepare_v2(this->db, query.c_str(), -1, &res, NULL);    
 		if(rc == SQLITE_BUSY) continue;		// Retry if busy
@@ -361,7 +360,7 @@ vector<Lightning> Collector::query_all_lightnings(const long minTimestamp, const
 	mutex_lock();
 	
 	stringstream sql;
-	sql << "SELECT `timestamp`,`station`,`distance` FROM `lightnings`;";
+	sql << "SELECT `timestamp`,`station`,`distance` FROM `lightnings`";
 	if(minTimestamp >= 0L && maxTimestamp >= 0L) {
 		sql << " WHERE `timestamp` >= " << minTimestamp << " AND `timestamp` <= " << maxTimestamp;
 	} else if(minTimestamp >= 0L) {
@@ -376,7 +375,6 @@ vector<Lightning> Collector::query_all_lightnings(const long minTimestamp, const
     sqlite3_stmt *res;
     
 	string query = sql.str();
-	cerr << query << endl;
 	while(true) {
 		rc = sqlite3_prepare_v2(this->db, query.c_str(), -1, &res, NULL);    
 		if(rc == SQLITE_BUSY) continue;		// Retry if busy

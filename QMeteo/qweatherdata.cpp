@@ -12,6 +12,9 @@ QWeatherData::QWeatherData(QWidget *parent) :
     ui->actionShowCurrent->setChecked(true);
     this->clear();
     this->setContextMenuPolicy(Qt::CustomContextMenu);
+
+    ui->prgHumidity->setStyleSheet("QProgressBar::chunk { background-color: #1da33e; width: 1px; } QProgressBar { border: 2px solid grey; border-radius: 0px; text-align: center; }");
+    ui->prgTemperature->setStyleSheet("QProgressBar::chunk { background-color: #4286f4; width: 1px; } QProgressBar { border: 2px solid grey; border-radius: 0px; text-align: center; }");
 }
 
 QWeatherData::~QWeatherData()
@@ -174,32 +177,6 @@ void QWeatherData::on_QWeatherData_customContextMenuRequested(const QPoint &pos)
     menu->addSeparator();
     menu->addAction(ui->actionClear);
     menu->popup(this->mapToGlobal(pos));
-}
-
-void QWeatherData::updateTimestamp() {
-    QDateTime now = QDateTime::currentDateTime();
-    ui->lblTimestamp->setText("Update: [" + now.toString("hh:mm:ss") + "]");
-}
-
-
-long QWeatherData::addLightning() {
-    this->lightnings++;
-    ui->lblLightnings->setText("Lightnings: " + QString::number(this->lightnings));
-    return this->lightnings;
-}
-
-void QWeatherData::setLightningDisturberDetected() {
-    ui->lblLightnings->setText("Lightnings: " + QString::number(this->lightnings) + " [DISTURBER]");
-
-    QDateTime now = QDateTime::currentDateTime();
-    ui->lblStatus->setText("Lightning disturber detected [" + now.toString("hh:mm:ss") + "]");
-}
-
-void QWeatherData::setLightningNoiseDetected() {
-    ui->lblLightnings->setText("Lightnings: " + QString::number(this->lightnings) + " [NOISE]");
-
-    QDateTime now = QDateTime::currentDateTime();
-    ui->lblStatus->setText("Lightning noise detected [" + now.toString("hh:mm:ss") + "]");
 }
 
 void QWeatherData::on_lblTitle_linkActivated(const QString &link)

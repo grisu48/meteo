@@ -42,6 +42,7 @@ public:
     QList<Station> stations();
     QList<DataPoint> currentReadings();
     QList<DataPoint> query(long station, long minTimestamp, long maxTimestamp, long limit = 1000);
+    QList<Lightning> queryLightnings(long minTimestamp = -1, long maxTimestamp = -1, long limit = 1000);
 
     /** Get the timestamp from the server and refresh the local delta */
     long timestamp();
@@ -63,6 +64,7 @@ public:
 signals:
     void onStationsFetched(const QList<Station> stations);
     void onDataUpdate(const QList<DataPoint> datatpoints);
+    void onLightningsUpdate(const QList<Lightning> datatpoints);
 };
 
 

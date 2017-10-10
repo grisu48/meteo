@@ -69,6 +69,11 @@
        <attribute name="title">
         <string>Lightnings</string>
        </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_4">
+        <item>
+         <widget class="QListWidget" name="lstLightnings"/>
+        </item>
+       </layout>
       </widget>
      </widget>
     </item>

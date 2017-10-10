@@ -8,6 +8,7 @@
 #include "qmeteo.h"
 #include "qweatherdata.h"
 #include "dialogstation.h"
+#include "config.h"
 
 namespace Ui {
 class MainWindow;
@@ -29,6 +30,7 @@ private slots:
     void on_actionQuit_triggered();
 
     void onDataReceived(const QList<DataPoint> datapoints);
+    void onLightningsReceived(const QList<Lightning> lightnings);
 
     void onStationClicked(QString link, const long station);
 
@@ -39,7 +41,7 @@ private:
     QMeteo *meteo = NULL;
 
     QMap<long, QWeatherData*> stations;
-
+    QList<Lightning> lightnings;
 
     QWeatherData *station(const long id);
     void clear();

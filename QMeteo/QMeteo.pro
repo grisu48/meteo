@@ -19,14 +19,16 @@ SOURCES += main.cpp\
     entities.cpp \
     qcustomplot.cpp \
     qweatherdata.cpp \
-    dialogstation.cpp
+    dialogstation.cpp \
+    config.cpp
 
 HEADERS  += mainwindow.h \
     qmeteo.h \
     entities.h \
     qcustomplot.h \
     qweatherdata.h \
-    dialogstation.h
+    dialogstation.h \
+    config.h
 
 FORMS    += mainwindow.ui \
     dialogstation.ui \

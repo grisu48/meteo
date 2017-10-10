@@ -133,6 +133,34 @@ QList<DataPoint> QMeteo::query(long station, long minTimestamp, long maxTimestam
     return ret;
 }
 
+QList<Lightning> QMeteo::queryLightnings(long minTimestamp, long maxTimestamp, long limit) {
+    QString link = "http://" + this->remote + "/lightnings?format=plain";
+    if(minTimestamp >= 0) link += "&t_min=" + QString::number(minTimestamp);
+    if(maxTimestamp >= 0) link += "&t_max=" + QString::number(maxTimestamp);
+    if(limit > 0) link += "&limit=" + QString::number(limit);
+    QString data = fetch(link);
+    data = data.trimmed();
+    QStringList lines = data.split("\n");
+
+    QList<Lightning> ret;
+    foreach(QString line, lines) {
+        line = line.trimmed();
+        if(line.isEmpty() || line.at(0) == '#') continue;
+
+        QStringList splitted = line.split(",");
+        if(splitted.size() < 3) continue;
+
+        Lightning dp;
+
+        dp.timestamp = splitted[0].toLong();
+        dp.station = splitted[1].toLong();
+        dp.distance = splitted[2].toFloat();
+        ret.push_back(dp);
+    }
+    return ret;
+
+}
+
 void QMeteo::start() {
     // Evaluate delta T
     this->timestamp();
@@ -147,6 +175,8 @@ void QMeteo::timerCall() {
     try {
         QList<DataPoint> readings = currentReadings();
         emit onDataUpdate(readings);
+        QList<Lightning> lightnings = queryLightnings();
+        emit onLightningsUpdate(lightnings);
     } catch (...) {
         // Ignore
     }

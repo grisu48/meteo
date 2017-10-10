@@ -1,11 +1,17 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
+#include <QDir>
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
+    // Load default settings
+    Config config(QDir::homePath() + "/.qmeteo.cf");
+    this->remoteHost = config.get("remoteHost", this->remoteHost);
 }
 
 MainWindow::~MainWindow()
@@ -32,6 +38,7 @@ void MainWindow::on_actionConnect_triggered()
     try {
         this->clear();
         connect(this->meteo, SIGNAL(onDataUpdate(QList<DataPoint>)), this, SLOT(onDataReceived(QList<DataPoint>)));
+        connect(this->meteo, SIGNAL(onLightningsUpdate(QList<Lightning>)), this, SLOT(onLightningsReceived(QList<Lightning>)));
 
         meteo->setRemote(this->remoteHost);
         meteo->setRefreshDelay(1000);
@@ -80,6 +87,20 @@ void MainWindow::onDataReceived(const QList<DataPoint> datapoints) {
     }
 }
 
+void MainWindow::onLightningsReceived(const QList<Lightning> lightnings) {
+    foreach(const Lightning &lightning, lightnings) {
+        if(this->lightnings.contains(lightning))
+            continue;
+        else {
+            QDateTime time;
+            time.setMSecsSinceEpoch(lightning.timestamp*1000L);
+            QString text = "[Station " + QString::number(lightning.station) + "] " + time.toString() + " in " + QString::number(lightning.distance) + " km";
+            ui->lstLightnings->addItem(text);
+            this->lightnings.append(lightning);
+        }
+    }
+
+}
 
 QWeatherData* MainWindow::station(const long id) {
     QWeatherData *station = NULL;

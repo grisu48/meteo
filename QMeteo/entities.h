@@ -61,4 +61,55 @@ public:
 };
 
 
+/** Lightning event */
+class Lightning {
+public:
+    /** Timestamp in seconds since EPOC */
+    long timestamp;
+    /** Distance from station in km */
+    float distance;
+    /** Station id */
+    long station;
+
+    Lightning() {
+        this->station = 0L;
+        this->timestamp = 0L;
+        this->distance = 0.0F;
+    }
+
+    Lightning(const Lightning &src) {
+        this->station = src.station;
+        this->timestamp = src.timestamp;
+        this->distance = src.distance;
+    }
+
+    Lightning& operator=(const Lightning &src) {
+        this->station = src.station;
+        this->timestamp = src.timestamp;
+        this->distance = src.distance;
+        return *this;
+    }
+
+    QString toString() const {
+        QString ret;
+        ret = "Lightning (" + QString::number(this->timestamp) + ") [Station " + QString::number(this->station) + "] " + QString::number(this->distance) + " km";
+        return ret;
+    }
+
+    bool operator!=(const Lightning &src) const {
+        if(src.timestamp != this->timestamp) return true;
+        if(src.station != this->station) return true;
+        if(src.distance != this->distance) return true;
+        return false;
+    }
+
+    bool operator==(const Lightning &src) const {
+        if(src.timestamp != this->timestamp) return false;
+        if(src.station != this->station) return false;
+        if(src.distance != this->distance) return false;
+        return true;
+    }
+};
+
+
 #endif // ENTITIES_H

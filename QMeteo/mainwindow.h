@@ -34,6 +34,8 @@ private slots:
 
     void onStationClicked(QString link, const long station);
 
+    void on_btnFetchLightningToday_clicked();
+
 private:
     Ui::MainWindow *ui;
 

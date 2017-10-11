@@ -49,6 +49,8 @@ void MainWindow::on_actionConnect_triggered()
 
         meteo->start();
         ui->lblStatus->setText("Status: Connected");
+
+        this->on_btnFetchLightningToday_clicked();
     } catch (const char* msg) {
         if(meteo != NULL) delete meteo;
         meteo = NULL;
@@ -99,6 +101,8 @@ void MainWindow::onLightningsReceived(const QList<Lightning> lightnings) {
             this->lightnings.append(lightning);
         }
     }
+    QDateTime now = QDateTime::currentDateTime();
+    ui->lblLightningStatus->setText("Last refresh: " + now.toString());
 
 }
 
@@ -129,4 +133,17 @@ void MainWindow::onStationClicked(QString link, const long station) {
     DialogStation *dialog = new DialogStation(station, this->meteo->getRemote());
     dialog->show();
     dialog->exec();
+}
+
+void MainWindow::on_btnFetchLightningToday_clicked()
+{
+    if(this->meteo == NULL) return;
+
+    QDateTime today = QDateTime::currentDateTime();
+    today.setTime(QTime(0,0,0,0));
+
+    const long t_min = today.toMSecsSinceEpoch()/1000L;
+    const long t_max = t_min + 60*60*24L;
+    QList<Lightning> lightnings = this->meteo->queryLightnings(t_min, t_max);
+    this->onLightningsReceived(lightnings);
 }

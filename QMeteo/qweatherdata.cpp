@@ -42,7 +42,6 @@ void QWeatherData::processReadings(const float value, float &current, float &smo
         average = value;
         hasData = true;
     }
-
 }
 
 void QWeatherData::setTemperature(const float value) {
@@ -77,6 +76,7 @@ void QWeatherData::refreshTemperature(void) {
             reading = this->avg_temperature;
         ui->txtTemperature->setText(QString::number(reading, 'f', 2) + " deg C");
         ui->prgTemperature->setValue((int)reading);
+        this->update_dewpoint(this->temperature, this->humidity);
     }
 }
 
@@ -91,6 +91,7 @@ void QWeatherData::refreshHumidity(void) {
             reading = this->avg_humidity;
         ui->txtHumidity->setText(QString::number(reading, 'f', 2) + " % rel");
         ui->prgHumidity->setValue((int)reading);
+        this->update_dewpoint(this->temperature, this->humidity);
     }
 }
 
@@ -182,4 +183,36 @@ void QWeatherData::on_QWeatherData_customContextMenuRequested(const QPoint &pos)
 void QWeatherData::on_lblTitle_linkActivated(const QString &link)
 {
     emit onLinkClicked(link, this->_stationId);
+}
+
+
+float dew_point(const float t, const float rh) {
+    // Values for the Arden Buck equation
+    //const float a = 6.1121F;
+    const float b = 18.678F;
+    const float c = 257.14F;
+    const float d = 234.5F;
+
+
+    const float g_m = ::logf((rh/100.0F) * ::expf((b-t/d)*(t/(c+t))));
+    return (c * g_m)/(b-g_m);
+
+}
+
+void QWeatherData::update_dewpoint(const float t, const float rh) {
+    float dp = dew_point(t,rh);
+
+    QString feelsLike = "";
+
+    if (dp > 26) feelsLike = "Severely health danger (High humidity)";
+    else if(dp > 24) feelsLike = "Oppressive, extremely uncomfortable";
+    else if(dp > 21) feelsLike = "Very humid";
+    else if(dp > 18) feelsLike = "Uncomfortable";
+    else if(dp > 16) feelsLike = "Ok but humid";
+    else if(dp > 13) feelsLike = "Comfortable";
+    else if(dp > 10) feelsLike = "Very comfortable";
+    else if(dp > 5) feelsLike = "A bit dry";
+    else feelsLike = "Dry";
+
+    ui->txtDewPoint->setText("(DP: " + QString::number(dp, 'f', 1) + " °C) " + feelsLike);
 }

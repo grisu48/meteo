@@ -17,6 +17,8 @@ private:
     /** Helper call */
     void processReadings(const float value, float &current, float &smoothed, float &average, bool &hasData);
 
+    void update_dewpoint(const float t, const float rh);
+
 public:
     explicit QWeatherData(QWidget *parent = 0);
     ~QWeatherData();

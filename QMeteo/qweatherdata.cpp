@@ -1,6 +1,8 @@
 #include "qweatherdata.h"
 #include "ui_qweatherdata.h"
 
+#include <math.h>
+
 #define ALPHA_SMOOTH 0.85
 #define ALPHA_AVG 0.99
 

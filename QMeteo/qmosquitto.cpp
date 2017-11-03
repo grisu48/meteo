@@ -5,6 +5,7 @@
 #include <string.h>
 #include <errno.h>
 
+#include <mosquitto.h>
 
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *msg) {
     (void)mosq;

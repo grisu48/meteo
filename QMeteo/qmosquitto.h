@@ -9,7 +9,7 @@ class QMosquitto : public QObject
 {
     Q_OBJECT
 private:
-    mosquitto *mosq = NULL;
+    struct mosquitto *mosq = NULL;
 
     volatile bool running = false;
 

@@ -12,6 +12,18 @@ MainWindow::MainWindow(QWidget *parent) :
     // Load default settings
     Config config(QDir::homePath() + "/.qmeteo.cf");
     this->remoteHost = config.get("remoteHost", this->remoteHost);
+
+    long l_interval = 0L;
+    QString interval = config.get("refreshInterval", "").trimmed();
+    if(!interval.isEmpty()) {
+        bool ok = false;
+        l_interval = interval.toLong(&ok);
+        if(ok)
+            this->refreshInterval = l_interval;
+    }
+
+    if(config.get("autoconnect", "0") == "1")
+        this->connectRemote(this->remoteHost);
 }
 
 MainWindow::~MainWindow()
@@ -28,20 +40,26 @@ void MainWindow::on_actionConnect_triggered()
     input = input.trimmed();
     if(input.isEmpty()) return;
 
+    this->connectRemote(input);
+}
 
+
+void MainWindow::connectRemote(const QString remote) {
     if(this->meteo != NULL) {
         this->on_actionDisconnect_triggered();
     }
 
-    this->remoteHost = input;
+
+    this->remoteHost = remote;
     this->meteo = new QMeteo();
+    if(this->refreshInterval > 0)
+        this->meteo->setRefreshDelay(this->refreshInterval);
     try {
         this->clear();
         connect(this->meteo, SIGNAL(onDataUpdate(QList<DataPoint>)), this, SLOT(onDataReceived(QList<DataPoint>)));
         connect(this->meteo, SIGNAL(onLightningsUpdate(QList<Lightning>)), this, SLOT(onLightningsReceived(QList<Lightning>)));
 
         meteo->setRemote(this->remoteHost);
-        meteo->setRefreshDelay(1000);
         QList<Station> stations = meteo->stations();
         foreach(const Station &station, stations) {
             this->station(station.id)->setName(station.name);
@@ -146,4 +164,11 @@ void MainWindow::on_btnFetchLightningToday_clicked()
     const long t_max = t_min + 60*60*24L;
     QList<Lightning> lightnings = this->meteo->queryLightnings(t_min, t_max);
     this->onLightningsReceived(lightnings);
+}
+
+void MainWindow::on_actionSettings_triggered()
+{
+    DialogSettings *dialog = new DialogSettings(this);
+    dialog->show();
+    dialog->exec();
 }

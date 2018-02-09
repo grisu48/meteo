@@ -36,8 +36,8 @@ using flex::String;
 using json = nlohmann::json;
 using namespace lazy;
 
-#define VERSION "0.2.4"
-#define BUILD 240
+#define VERSION "0.2.4a"
+#define BUILD 241
 
 
 /** Mosquitto instances */
@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
 	int gid = 0;		// GID or 0, if not set
 	bool daemon = false;	// Daemon mode
 		
-	cout << "meteod - Meteo server | 2017, Felix Niederwanger" << endl;
+	cout << "meteod - Meteo server | 2018, Felix Niederwanger" << endl;
 	cout << "  Version " << VERSION << " (Build " << BUILD << ")" << endl;
 	
 	// Parse program arguments
@@ -384,7 +384,7 @@ static map<String, String> extractParams(String param) {
 }
 
 static float round_f(const float x, const int digits = 2) {
-	const float base = (float)::pow10(digits);
+	const float base = (float)::pow(10.0, digits);
 	return ::roundf(x * base)/base;
 }
 

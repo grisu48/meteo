@@ -5,7 +5,8 @@ CXX_FLAGS=$(O_FLAGS) -std=c++11
 
 INCLUDE=
 LIBS=-pthread -lsqlite3 -lmosquitto
-
+# To compile on FreeBSD systems, also add "-lexecinfo" to LIBS:
+# LIBS=-pthread -lsqlite3 -lmosquitto -lexecinfo
 
 OBJS=config.o mosquitto.o string.o time.o collector.o
 

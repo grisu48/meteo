@@ -7,10 +7,10 @@
 #include <errno.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <endian.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
+#include <netinet/in.h>
 
 
 /** Socket helper */

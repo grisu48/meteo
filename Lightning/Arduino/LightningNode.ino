@@ -61,43 +61,6 @@ long lightnings = 0;
 long noises = 0;
 long disturbers = 0;
 
-// Timers for LEDS
-long led_t_lightning = 0L;
-long led_t_disturber = 0L;
-long led_t_noise = 0L;
-// LEDs on or off
-bool led_lightning = false;
-bool led_disturber = false;
-bool led_noise = false;
-bool led_error = false;
-
-static void led_handle(const long t, bool *led_status, long *timer, int pin) {
-  if (*led_status == false) return;
-  else {
-    if (t > *timer) {
-      *timer = 0L;
-      *led_status = false;
-      if(pin != 0) {
-        digitalWrite(pin, LOW);   // Turn off
-      }
-      Serial.print("# LED OFF (");
-      Serial.print(pin);
-      Serial.println(')');
-    }
-  }
-}
-
-static void led_on(int pin, bool *led_status, long *timer, long duration) {
-  if(pin > 0)
-    digitalWrite(pin, HIGH);
-  *led_status = true;
-  *timer = (millis() + duration);
-  
-    Serial.print("# LED ON (");
-    Serial.print(pin);
-    Serial.println(')');
-}
-
 void recalibrate(bool tune = true) {
   if(tune) autoTuneCaps(IRQ_PIN);
   
@@ -143,20 +106,12 @@ void setup() {
   mod1016.getIRQ();
   Serial.println("# Interrupt setup completed");
 }
-
+  
 void loop() {
   if (detected) {
     translateIRQ(mod1016.getIRQ());
     detected = false;
   }
-
-
-  // LEDs
-  const long t = millis();
-  // XXX: TODO: Timer long overflow
-  led_handle(t, &led_lightning, &led_t_lightning, PIN_LIGHTNING);
-  led_handle(t, &led_disturber, &led_t_disturber, PIN_DISTURBER);
-  led_handle(t, &led_noise, &led_t_noise, PIN_NOISE);
 }
 
 void alert() {
@@ -171,65 +126,23 @@ void translateIRQ(int irq) {
       case 1:
         Serial.println("NOISE DETECTED");
         noises++;
-        led_on(PIN_NOISE, &led_noise, &led_t_noise, 1000);
         break;
       case 4:
         Serial.println("DISTURBER DETECTED");
         disturbers++;
-        led_on(PIN_DISTURBER, &led_disturber, &led_t_disturber, 200);
         break;
       case 8: 
-        led_on(PIN_LIGHTNING, &led_lightning, &led_t_lightning, 1000);
         lightnings++;
         distance = mod1016.calculateDistance();
 
-
-        
         Serial.print("LIGHTNING DETECTED ");
-        if(distance < 0) {
-          Serial.println("??? km");
-        } else if(distance == 0) {
-          // Overhead. Special case for LED in future
-          Serial.println("0 km");
-        } else {
-          Serial.print(distance);
-          Serial.println(" km");
-        }
+        Serial.print(distance);
+        Serial.println(" km");
         break;
       default:
         Serial.print("UNKNOWN INTERRUPT ");
         Serial.println(irq);
         return;
     }
-    //Serial.print(noises);
-    //Serial.print(' ');
-    //Serial.print(disturbers);
-    //Serial.print(' ');
-    //Serial.print(lightnings);
-    //Serial.println();
 }
-
-#if 0
-void printDistance() {
-  int distance = mod1016.calculateDistance();
-  if (distance == -1) {
-    Serial.println("# Lightning out of range");
-    Serial.print(": -1");
-    Serial.println();
-  } else if (distance == 1) { 
-    Serial.println("# Distance not in table");
-  } else if (distance == 0) {
-    Serial.println("# Lightning overhead");
-    Serial.print(": 0");
-    Serial.println();
-  } else {
-    Serial.print("# Lightning ~");
-    Serial.print(distance);
-    Serial.println("km away");  
-    Serial.print("LIGTHNING ");
-    Serial.print(distance);
-    Serial.println();
-  }
-}
-#endif
 

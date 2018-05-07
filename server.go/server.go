@@ -31,19 +31,16 @@ func main() {
 	if err != nil { panic(err) }
 	initDb(db)
 	mainDB = db
+	defer db.Close()
 
 	r := pat.New()
 	r.Get("/", http.HandlerFunc(getRoot))
+	r.Get("/index.htm", http.HandlerFunc(getRoot))
+	r.Get("/index.html", http.HandlerFunc(getRoot))
 	r.Get("/stations", http.HandlerFunc(getStations))
 	r.Get("/station/:id", http.HandlerFunc(getStation))
+	r.Get("/csv/:id", http.HandlerFunc(getStationCSV))
 	r.Post("/station/:id", http.HandlerFunc(postStation))
-	/*
-	r.Del("/todos/:id", http.HandlerFunc(deleteByID))
-	r.Get("/todos/:id", http.HandlerFunc(getByID))
-	r.Put("/todos/:id", http.HandlerFunc(updateByID))
-	r.Get("/todos", http.HandlerFunc(getAll))
-	r.Post("/todos", http.HandlerFunc(insert))
-	*/
 
 	http.Handle("/", r)
 	log.Print(" meteo server running on http://localhost:12345/")
@@ -61,18 +58,41 @@ func initDb(db *sql.DB) {
 	}
 }
 
+func printHeader(w http.ResponseWriter) {
+	fmt.Fprintf(w, "<head><title>meteo</title></head>")
+	fmt.Fprintf(w, "<body>")
+	fmt.Fprintf(w, "<h1>meteo Web Interface</h1>")
+	// Navigation basr
+	fmt.Fprintf(w, "<p><a href=\"/index.html\">[Index]</a> <a href=\"/stations\">[Stations]</a></p>")
+}
+
+func printFooter(w http.ResponseWriter) {
+	fmt.Fprintf(w, "</body>")
+}
+
 func getRoot(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "meteo Server")
+	printHeader(w)
+	fmt.Fprintf(w, "<h2>meteo Server</h2>")
+	printFooter(w)
 }
 
 
 func getStations(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Stations request")
+	printHeader(w)
+	fmt.Fprintf(w, "<h2>Stations</h2>")
+	printFooter(w)
 }
 
 
 func getStation(w http.ResponseWriter, r *http.Request) {
+	printHeader(w)
 	fmt.Fprintf(w, "Request for station (?)")
+	printFooter(w)
+}
+
+
+func getStationCSV(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "CSV Request for station")
 }
 
 func postStation(w http.ResponseWriter, r *http.Request) {

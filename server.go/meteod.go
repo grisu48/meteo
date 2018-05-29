@@ -5,8 +5,6 @@ import (
 	"log"
 	"os"
 	"time"
-	//"os/signal"
-	//"syscall"
 	"sync"
 	"strconv"
 	"github.com/eclipse/paho.mqtt.golang"
@@ -14,7 +12,6 @@ import (
 	"database/sql"
 	_ "github.com/mattn/go-sqlite3"
 	"net/http"
-	//"github.com/gorilla/mux"
 )
 
 
@@ -28,6 +25,14 @@ type station struct {
 	hum float32
 	alive bool
 }
+
+type weatherpoint struct {
+	timestamp int64
+	t float32
+	p float32
+	hum float32
+}
+
 func (s *station) str() string {
 	return fmt.Sprintf("%s (id: %d) t = %f, p = %f, hum = %f", s.name,s.id,s.t,s.p,s.hum)
 }
@@ -87,6 +92,12 @@ func dbSetup() {
 	}
 }
 
+func get_timestamp() int64 {
+	now := time.Now()
+	timestamp := now.Unix()
+	return timestamp
+}
+
 func pushStation(s station) {
 	sql := "CREATE TABLE IF NOT EXISTS `station_" + strconv.Itoa(s.id) + "` (`timestamp` INT, `t` FLOAT, `p` FLOAT, `hum` FLOAT);"
 	_,err := db.Exec(sql)
@@ -110,15 +121,12 @@ func pushStation(s station) {
 	}
 	stmt.Close()
 	
-	now := time.Now()
-	timestamp := now.Unix()
-	
 	sql = "REPLACE INTO `station_" + strconv.Itoa(s.id) + "` (`timestamp`, `t`, `p`, `hum`) VALUES (?,?,?,?);"
 	stmt, err = tx.Prepare(sql)
 	if err != nil {
 		log.Fatal("Prepare statement (2) failed; ", err)
 	}
-	_,err = stmt.Exec(timestamp,s.t,s.p,s.hum)
+	_,err = stmt.Exec(get_timestamp(),s.t,s.p,s.hum)
 	if err != nil {
 		log.Fatal("Insert failed; ", err)
 	}
@@ -162,6 +170,57 @@ func pushDB() {
 	}	
 }
 
+func db_stations() []station {
+	rows, err := db.Query("SELECT `id`,`name` FROM `stations` ORDER BY `id` ASC")
+	if err != nil {
+		log.Fatal(err)
+	}
+	
+	var (
+		id int
+		name string
+	)
+	
+	ret := make([]station, 0)
+	for rows.Next() {
+		rows.Scan(&id, &name)
+		
+		s := station{id:id, name:name};
+		ret = append(ret, s)
+	}
+	
+	return ret
+}
+
+func db_station(id int, min_t int, max_t int, limit int) ([]weatherpoint,error) {
+	ret := make([]weatherpoint, 0)
+	
+	if min_t < 0 { min_t = 0 }
+	if max_t <= 0 { max_t = int(get_timestamp()) }
+	
+	sql := "SELECT `timestamp`,`t`,`p`,`hum` FROM `station_" + strconv.Itoa(id) + "` WHERE `timestamp` >= '" + strconv.Itoa(min_t) + "' AND `timestamp` <= '" + strconv.Itoa(max_t) + "' ORDER BY `timestamp` ASC LIMIT " + strconv.Itoa(limit)
+	fmt.Println(sql)
+	rows, err := db.Query(sql)
+	if err != nil {
+		return ret, err
+	}
+	
+	var (
+		timestamp int64
+		t float32
+		p float32
+		hum float32
+	)
+	for rows.Next() {
+		rows.Scan(&timestamp, &t,&p,&hum)
+		
+		s := weatherpoint{timestamp:timestamp,t:t,p:p,hum:hum};
+		ret = append(ret, s)
+	}
+	
+	return ret,nil
+}
+
 
 //func www_handler_index(w http.ResponseWriter, r *http.Request) {
 func www_handler_index(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +249,7 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 
 //func www_handler_index(w http.ResponseWriter, r *http.Request) {
 func www_handler_lightnings(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"30\"><title>meteo</title></head>\n<body>")
+	fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"10\"><title>meteo</title></head>\n<body>")
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
 	
@@ -225,10 +284,10 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	fmt.Fprintf(w, "<html><head><title>meteo</title></head>\n<body>")
+	fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"10\"><title>meteo</title></head>\n<body>")
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
-	fmt.Fprintf(w, "<h2>" + station.name + "</h2>\n")
+	fmt.Fprintf(w, "<h2>Station " + station.name + "</h2>\n")
 	
 	fmt.Fprintf(w, "<p>Current readings</p>\n")
 	fmt.Fprintf(w, "<table border=\"1\">\n")
@@ -237,6 +296,42 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "</table>")
 }
 
+func www_handler_stations_csv(w http.ResponseWriter, r *http.Request) {
+	st := db_stations()
+	for _, v := range st {
+		fmt.Fprintf(w, "%d,%s\n", v.id, v.name)
+	}
+}
+
+
+func www_handler_station_csv(w http.ResponseWriter, r *http.Request) {
+	id,err := strconv.Atoi(r.URL.Query().Get("id"))
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	    w.Write([]byte("500 - Illegal station identifier"))
+		return
+	}
+	
+	t_min,err := strconv.Atoi(r.URL.Query().Get("tmin"))
+	if err != nil { t_min = 0 }
+	t_max,err := strconv.Atoi(r.URL.Query().Get("tmax"))
+	if err != nil { t_max = 0 }
+	
+	values,err := db_station(id, t_min, t_max, 1000)		// Limit 1000 by default
+	
+	if err != nil {
+		fmt.Fprintln(os.Stderr, " (!!) SQL request error:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+	    w.Write([]byte("500 - Server error"))
+		return
+	}
+	
+	fmt.Fprintf(w, "# Timestamp, Temperature, Pressure, Humidity\n")
+	fmt.Fprintf(w, "s, deg C, hPa, rel\n")
+	for _,v := range values {
+		fmt.Fprintf(w, "%d,%f,%f,%f\n", v.timestamp, v.t, v.p, v.hum)
+	}
+}
 
 
 func main() {
@@ -285,14 +380,10 @@ func main() {
 	
 	// Setup webserver
 	//fmt.Println("Firing up webserver ... ")
-	/*
-	rtr := mux.NewRouter()
-	rtr.HandleFunc("/", www_handler_index).Methods("GET")
-	rtr.HandleFunc("/index.htm", www_handler_index).Methods("GET")
-	rtr.HandleFunc("/index.html", www_handler_index).Methods("GET")
-	*/
 	http.HandleFunc("/", www_handler_index)
 	http.HandleFunc("/stations", www_handler_index)
+	http.HandleFunc("/stations.csv", www_handler_stations_csv)
+	http.HandleFunc("/station.csv", www_handler_station_csv)
 	http.HandleFunc("/station", www_handler_station)
 	http.HandleFunc("/lightnings", www_handler_lightnings)
 	fmt.Println("Webserver started: http://127.0.0.1:8558")

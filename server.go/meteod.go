@@ -169,6 +169,7 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
 	
+	fmt.Fprintf(w, "<h2>Stations</h2>\n")
 	// List all stations
 	mutex.Lock()
 	if len(stations) == 0 {
@@ -187,6 +188,16 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "</body></html>")
 }
 
+//func www_handler_index(w http.ResponseWriter, r *http.Request) {
+func www_handler_lightnings(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"30\"><title>meteo</title></head>\n<body>")
+	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
+	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
+	
+	fmt.Fprintf(w, "<h2>Lightnings</h2>\n")
+	fmt.Fprintf(w, "<p><i>This feature is under construction</i></p>\n")
+	
+}
 
 func www_handler_station(w http.ResponseWriter, r *http.Request) {
 	
@@ -218,6 +229,12 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
 	fmt.Fprintf(w, "<h2>" + station.name + "</h2>\n")
+	
+	fmt.Fprintf(w, "<p>Current readings</p>\n")
+	fmt.Fprintf(w, "<table border=\"1\">\n")
+	fmt.Fprintf(w, "<tr><td><b>Station</b></td><td><b>Temperature [deg C]</b></td><td><b>Pressure [hPa]</b></td><td><b>Humditiy [rel]</b></td></tr>\n")
+	fmt.Fprintf(w, "<tr><td><a href=\"station?id=%d\">%s</a></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, station.name, station.t, station.p, station.hum)
+	fmt.Fprintf(w, "</table>")
 }
 
 
@@ -277,6 +294,7 @@ func main() {
 	http.HandleFunc("/", www_handler_index)
 	http.HandleFunc("/stations", www_handler_index)
 	http.HandleFunc("/station", www_handler_station)
+	http.HandleFunc("/lightnings", www_handler_lightnings)
 	fmt.Println("Webserver started: http://127.0.0.1:8558")
 	http.ListenAndServe(":8558", nil)
 	

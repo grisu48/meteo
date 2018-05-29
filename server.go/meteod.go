@@ -30,6 +30,14 @@ func (s *station) str() string {
 	return fmt.Sprintf("%s (id: %d) t = %f, p = %f, hum = %f", s.name,s.id,s.t,s.p,s.hum)
 }
 
+func (s *station) update(t float32, p float32, hum float32) {
+	const ALPHA = 0.75
+	s.t = ALPHA*s.t + (1.0-ALPHA)*t
+	s.p = ALPHA*s.p + (1.0-ALPHA)*p
+	s.hum = ALPHA*s.hum + (1.0-ALPHA)*hum
+	s.alive = true
+}
+
 var stations map[int]station
 var mutex = &sync.Mutex{}
 
@@ -50,8 +58,18 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	hum, err := jsonparser.GetFloat(data, "hum")
 	if err != nil { fmt.Println("Error: hum" ); return; }
 	
+	
 	s := station{id:int(id), name:name, t:float32(t), p:float32(p), hum:float32(hum), alive:true};
+	//fmt.Println("RECV  " + s.str())
+	
 	mutex.Lock()
+	
+	_, present := stations[int(id)]
+	if present {
+		s1 := stations[int(id)]
+		s1.update(float32(t),float32(p),float32(hum))
+		s = s1
+	}
 	stations[int(id)] = s
 	mutex.Unlock()
 	
@@ -90,12 +108,15 @@ func pushStation(s station) {
 	}
 	stmt.Close()
 	
+	now := time.Now()
+	timestamp := now.Unix()
+	
 	sql = "REPLACE INTO `station_" + strconv.Itoa(s.id) + "` (`timestamp`, `t`, `p`, `hum`) VALUES (?,?,?,?);"
 	stmt, err = tx.Prepare(sql)
 	if err != nil {
 		log.Fatal("Prepare statement (2) failed; ", err)
 	}
-	_,err = stmt.Exec(0,s.t,s.p,s.hum)
+	_,err = stmt.Exec(timestamp,s.t,s.p,s.hum)
 	if err != nil {
 		log.Fatal("Insert failed; ", err)
 	}
@@ -107,12 +128,12 @@ func pushStation(s station) {
 
 func pushDB() {
 	for {
-		time.Sleep(30 * time.Second)
-		mutex.Lock()
+		time.Sleep(5 * time.Minute)			// Every 5 minutes
 		
-		//fmt.Println("Writing to database ... ")
 		
 		// Get stations and write to database
+		mutex.Lock()
+		//fmt.Println("Writing to database ... ")
 		var counter int = 0
 		for id, s := range stations { 
 			if s.alive {
@@ -126,7 +147,6 @@ func pushDB() {
 			}
 			stations[id] = s
 		}
-		
 		mutex.Unlock()
 		
 		if counter > 0 {
@@ -152,6 +172,10 @@ func main() {
 	
 	var host string = "127.0.0.1"
 	var port = 1883
+	
+	if len(os.Args) > 1 {
+		host = os.Args[1]
+	}
 	
 	
 	c := make(chan os.Signal, 1)

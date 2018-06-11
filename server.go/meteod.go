@@ -54,16 +54,16 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	//fmt.Printf("%s : %s\n", message.Topic(), data)
 	
 	// Extract data, return if not valid
-	id, err := jsonparser.GetInt(data, "id")
-	if err != nil { fmt.Println("Error: id" ); return; }
+	id, err := jsonparser.GetInt(data, "node")
+	if err != nil { fmt.Println("Receive error: json attribute 'id' missing" ); return; }
 	name, err := jsonparser.GetString(data, "name")
-	if err != nil { fmt.Println("Error: name" ); return; }
+	if err != nil { fmt.Println("Receive error: json attribute 'name' missing" ); return; }
 	t, err := jsonparser.GetFloat(data, "t")
-	if err != nil { fmt.Println("Error: t" ); return; }
+	if err != nil { t = 0.0 }
 	p, err := jsonparser.GetFloat(data, "p")
-	if err != nil { fmt.Println("Error: p" ); return; }
+	if err != nil { p = 0.0 }
 	hum, err := jsonparser.GetFloat(data, "hum")
-	if err != nil { fmt.Println("Error: hum" ); return; }
+	if err != nil { hum = 0.0 }
 	
 	
 	s := station{id:int(id), name:name, t:float32(t), p:float32(p), hum:float32(hum), alive:true};

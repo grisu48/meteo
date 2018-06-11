@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"math"
 	"time"
 	"sync"
 	"strconv"
@@ -35,6 +36,10 @@ type weatherpoint struct {
 
 func (s *station) str() string {
 	return fmt.Sprintf("%s (id: %d) t = %f, p = %f, hum = %f", s.name,s.id,s.t,s.p,s.hum)
+}
+
+func sqr(x float32) float32 {
+	return (x*x);
 }
 
 func (s *station) update(t float32, p float32, hum float32) {
@@ -199,7 +204,7 @@ func db_station(id int, min_t int, max_t int, limit int) ([]weatherpoint,error) 
 	if max_t <= 0 { max_t = int(get_timestamp()) }
 	
 	sql := "SELECT `timestamp`,`t`,`p`,`hum` FROM `station_" + strconv.Itoa(id) + "` WHERE `timestamp` >= '" + strconv.Itoa(min_t) + "' AND `timestamp` <= '" + strconv.Itoa(max_t) + "' ORDER BY `timestamp` ASC LIMIT " + strconv.Itoa(limit)
-	fmt.Println(sql)
+	//fmt.Println(sql)
 	rows, err := db.Query(sql)
 	if err != nil {
 		return ret, err
@@ -287,13 +292,90 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"10\"><title>meteo</title></head>\n<body>")
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
-	fmt.Fprintf(w, "<h2>Station " + station.name + "</h2>\n")
+	fmt.Fprintf(w, "<h2>meteo Station <b>" + station.name + "</b></h2>\n")
 	
-	fmt.Fprintf(w, "<p>Current readings</p>\n")
+	fmt.Fprintf(w, "<h3>Current readings</h3>\n")
 	fmt.Fprintf(w, "<table border=\"1\">\n")
 	fmt.Fprintf(w, "<tr><td><b>Station</b></td><td><b>Temperature [deg C]</b></td><td><b>Pressure [hPa]</b></td><td><b>Humditiy [rel]</b></td></tr>\n")
 	fmt.Fprintf(w, "<tr><td><a href=\"station?id=%d\">%s</a></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, station.name, station.t, station.p, station.hum)
 	fmt.Fprintf(w, "</table>")
+	
+	// What to get
+	fmt.Fprintf(w, "<h3>Overview</h3>\n")
+	href := "station?id=" + s_id
+	fmt.Fprintf(w, "<p><a href=\"" + href + "&t=3h\">[Last 3h]</a> <a href=\"" + href + "&t=6h\">[Last 6h]</a> <a href=\"" + href + "&t=12h\">[Last 12h]</a> <a href=\"" + href + "&t=24h\">[Last 24h]</a></p>")
+	now := get_timestamp()
+	var t_min int64;
+	s_time := r.URL.Query().Get("t")
+	if s_time == "3h" {
+		t_min = now - 3*60*60;
+	} else if(s_time == "6h") {
+		t_min = now - 6*60*60;
+	} else if(s_time == "12h") {
+		t_min = now - 12*60*60;
+	} else if(s_time == "24h") {
+		t_min = now - 24*60*60;
+	} else {
+		// Default value
+		t_min = now - 3*60*60;
+	}
+	
+	values,err := db_station(id, int(t_min), int(now), 1000)		// Limit 1000 by default
+	if len(values) == 0 {
+		fmt.Fprintf(w, "<p>No results</p>\n")
+	} else {
+		avg := station;
+		s_min := station;
+		s_max := station;
+		stdev := station;
+		
+		first := true
+		for _,v := range values {
+			avg.t += v.t;
+			avg.p += v.p;
+			avg.hum += v.hum;
+			if first {
+				s_min.t = v.t
+				s_min.p = v.p
+				s_min.hum = v.hum
+				s_max.t = v.t
+				s_max.p = v.p
+				s_max.hum = v.hum
+			} else {
+				if(v.t < s_min.t) { s_min.t = v.t }
+				if(v.p < s_min.p) { s_min.p = v.p }
+				if(v.hum < s_min.hum) { s_min.hum = v.hum }
+				if(v.t > s_max.t) { s_max.t = v.t }
+				if(v.p > s_max.p) { s_max.p = v.p }
+				if(v.hum > s_max.hum) { s_max.hum = v.hum }
+			}
+		}
+		fLen := float32(len(values))
+		if len(values) > 0 {
+			avg.t /= fLen
+			avg.p /= fLen
+			avg.hum /= fLen
+		
+			for _,v := range values {
+				stdev.t += sqr(v.t-avg.t);
+				stdev.p += sqr(v.p-avg.p);
+				stdev.hum += sqr(v.hum-avg.hum);
+			}
+			stdev.t = float32(math.Sqrt(float64(stdev.t/sqr(fLen))))
+			stdev.p /= float32(math.Sqrt(float64(stdev.p/sqr(fLen))))
+			stdev.hum /= float32(math.Sqrt(float64(stdev.hum/sqr(fLen))))
+		}
+		
+		fmt.Fprintf(w, "<p>Fetched %d data entries</p>\n", len(values))
+		fmt.Fprintf(w, "<table border=\"1\">\n")
+		fmt.Fprintf(w, "<tr><td></td><td>Average</td><td>Standart deviation</td><td>Minimum</td><td>Maximum</td></tr>\n")
+		fmt.Fprintf(w, "<tr><td><b>Temperature [deg C]</b></td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n", avg.t, stdev.t, s_min.t, s_max.t)
+		fmt.Fprintf(w, "<tr><td><b>Pressure [hPa]</b></td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n", avg.p, stdev.p, s_min.p, s_max.p)
+		fmt.Fprintf(w, "<tr><td><b>Humidity [rel]</b></td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n", avg.hum, stdev.hum, s_min.hum, s_max.hum)
+		fmt.Fprintf(w, "</table>")
+		
+		// TODO: Show Plot
+	}
 }
 
 func www_handler_stations_csv(w http.ResponseWriter, r *http.Request) {

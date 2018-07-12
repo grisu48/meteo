@@ -1,3 +1,4 @@
+
 /***************************************************
   Adafruit MQTT Library ESP8266 Example
 
@@ -15,9 +16,9 @@
   Written by Tony DiCola for Adafruit Industries.
   MIT license, all text above must be included in any redistribution
  ****************************************************/
+#include <ESP8266MQTTClient.h>
 #include <ESP8266WiFi.h>
-#include "Adafruit_MQTT.h"
-#include "Adafruit_MQTT_Client.h"
+MQTTClient mqtt;
 
 #include <Wire.h>
 #include "Adafruit_HTU21DF.h"
@@ -26,59 +27,42 @@ Adafruit_HTU21DF htu = Adafruit_HTU21DF();
 
 /************************* WiFi Access Point *********************************/
 
-#define WLAN_SSID       " ... your SSID ..."
-#define WLAN_PASS       " ... your WiFi password ..."
-
-/************************* Adafruit.io Setup *********************************/
-
-#define AIO_SERVER      ""
-#define AIO_SERVERPORT  1883                   // use 8883 for SSL
-#define AIO_USERNAME    ""
-#define AIO_KEY         ""
-
-#define NODE_ID         "1"             // Change this to the NODE ID
-#define NODE_NAME       "ESP8266"       // Change this to your NODE NAME
+// TODO: Put your WiFi Settings here
+#define WLAN_SSID       ""
+#define WLAN_PASS       ""
 
 
-#define DELAY          5*1000L    // Publish every [milliseconds]
+// Interval between publishes in milliseconds (Default value: 15 seconds)
+#define DELAY 1000L * 15
+// Node ID as string
 
-/************ Global State (you don't need to change this!) ******************/
+// TODO: Define your node identifications (id and name)
+#define NODE_ID "0"
+// Name of this node
+#define NODE_NAME "NodeMCU"
 
-// Create an ESP8266 WiFiClient class to connect to the MQTT server.
-WiFiClient client;
-// or... use WiFiFlientSecure for SSL
-//WiFiClientSecure client;
+// TODO: Put your mosquitto server here
+// Remote host in the format "IP:PORT" (e.g. "127.0.0.1:1883")
+#define MQTT_HOST "0.0.0.0:1883"
 
-// Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
-Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
 
-/****************************** Feeds ***************************************/
-
-// meteo publish path
-Adafruit_MQTT_Publish meteo = Adafruit_MQTT_Publish(&mqtt, "meteo/" NODE_ID);
-
-/*************************** Sketch Code ************************************/
-
-// Bug workaround for Arduino 1.6.6, it seems to need a function declaration
-// for some reason (only affects ESP8266, likely an arduino-builder bug).
-void MQTT_connect();
 
 void setup() {
   Serial.begin(115200);
-  delay(10);
+  delay(100);
 
   Serial.println("meteo Node " NODE_ID " starting up ... ");
 
 
   if (!htu.begin()) {
-    Serial.println("Couldn't find HTU21D-F sensor");
+    Serial.println("CRITICAL: Couldn't find HTU21D-F sensor");
     while (1);
   }
 
   // Connect to WiFi access point.
   Serial.println(); Serial.println();
   Serial.print("Connecting to ");
-  Serial.println(WLAN_SSID);
+  Serial.print(WLAN_SSID); Serial.print("  ");
 
   WiFi.begin(WLAN_SSID, WLAN_PASS);
   while (WiFi.status() != WL_CONNECTED) {
@@ -86,73 +70,28 @@ void setup() {
     Serial.print(".");
   }
   Serial.println();
+  Serial.print("WiFi connected ("); Serial.print(WiFi.localIP()); Serial.println(")");
 
-  Serial.println("WiFi connected");
-  Serial.println("IP address: "); Serial.println(WiFi.localIP());
+  // Connect mqtt
+  mqtt.begin("mqtt://192.168.0.100:1883");
 }
-
-uint32_t x=0;
 
 void loop() {
-  // Ensure the connection to the MQTT server is alive (this will make the first
-  // connection and automatically reconnect when disconnected).  See the MQTT_connect
-  // function definition further below.
-  MQTT_connect();
+  mqtt.handle();
 
-//  static long counter = millis();
-//  if( millis() - counter > DELAY) {
-  
-    // Publish current readings
-  
+  static long timer = millis();
+  const long m_time = millis();
+  if ((m_time - timer) > DELAY) {
     float t = htu.readTemperature();
     float hum = htu.readHumidity();
-    Serial.print("Temp: "); Serial.print(t);
-    Serial.print("\t\tHum: "); Serial.println(hum);
-  
-    String str = "{\"node\":" NODE_ID ",\"name\":\"" NODE_NAME "\",\"t\":" + String(t) + ",\"hum\":" + String(hum) + "}";
     
-    if (! meteo.publish(str.c_str())) {
-      Serial.println(F("Publish failed"));
-    } else {
-      Serial.println(str);
-    }
+    String str = "{\"node\":" NODE_ID ",\"name\":\"" NODE_NAME "\",\"t\":" + String(t) + ",\"hum\":" + String(hum) + 
+      //",\"ccs_t\":" + String(ccs_t) +  ",\"eCO2\":" + String(ccs_eCo2) + ",\"tVOC\":" + String(ccs_tVOC) +
+      "}";
+    Serial.println(str);
+    String topic = "meteo/" NODE_ID;
+    mqtt.publish(topic, str);
+    timer = m_time;
+  }
   
-//  }
-  
-  delay(DELAY);
-
-  // ping the server to keep the mqtt connection alive
-  // NOT required if you are publishing once every KEEPALIVE seconds
-  /*
-  if(! mqtt.ping()) {
-    mqtt.disconnect();
-  }
-  */
-}
-
-// Function to connect and reconnect as necessary to the MQTT server.
-// Should be called in the loop function and it will take care if connecting.
-void MQTT_connect() {
-  int8_t ret;
-
-  // Stop if already connected.
-  if (mqtt.connected()) {
-    return;
-  }
-
-  Serial.print("Connecting to MQTT... ");
-
-  uint8_t retries = 3;
-  while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
-       Serial.println(mqtt.connectErrorString(ret));
-       Serial.println("Retrying MQTT connection in 5 seconds...");
-       mqtt.disconnect();
-       delay(5000);  // wait 5 seconds
-       retries--;
-       if (retries == 0) {
-         // basically die and wait for WDT to reset me
-         while (1);
-       }
-  }
-  Serial.println("MQTT Connected!");
 }

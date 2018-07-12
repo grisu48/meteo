@@ -289,7 +289,7 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"10\"><title>meteo</title></head>\n<body>")
+	//fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"10\"><title>meteo</title></head>\n<body>")
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
 	fmt.Fprintf(w, "<h2>meteo Station <b>" + station.name + "</b></h2>\n")
@@ -374,9 +374,30 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "<tr><td><b>Humidity [rel]</b></td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n", avg.hum, stdev.hum, s_min.hum, s_max.hum)
 		fmt.Fprintf(w, "</table>")
 		
-		// 
+		fmt.Fprintf(w, "<h3>Plots</h3>\n")
+		fmt.Fprintf(w, "<script src=\"chart.js\"></script>\n")
+		fmt.Fprintf(w, "<canvas id=\"pltPlot\" width=\"undefined\" height=\"undefined\"></canvas>")
+		fmt.Fprintf(w, "<script>\n")
 		
-		// TODO: Show Plot
+		// TODO: Make binning of datasets
+		
+		// Declare datasets
+		fmt.Fprintf(w, "var datasets = { labels: ['1','2','Three','Four','Five','Sixe','7','Acht'], datasets: [ { label:\"Temperature\", data:[0,1,2,3,4,5,5,6]} ] };\n")
+		/*
+		first := true
+		for _,v := range values {
+			if first {
+				first = false
+			} else {
+				fmt.Fprintf(w, ", ")
+			}
+			
+			fmt.Fprintf(w, "{x: %d, y: %e }", v.timestamp, v.t)
+		}
+		fmt.Fprintf(w, "];\n")*/
+		fmt.Fprintf(w, "var ctx = document.getElementById(\"pltPlot\").getContext('2d');\n");
+		fmt.Fprintf(w, "var plot_t = new Chart(ctx, { \"type\":\"line\", \"data\": datasets } );\n")
+		fmt.Fprintf(w, "</script>\n")
 	}
 }
 
@@ -387,6 +408,9 @@ func www_handler_stations_csv(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func www_handler_chartjs(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "chart.js")
+}
 
 func www_handler_station_csv(w http.ResponseWriter, r *http.Request) {
 	id,err := strconv.Atoi(r.URL.Query().Get("id"))
@@ -445,7 +469,7 @@ func main() {
 	//mqtt.DEBUG = log.New(os.Stderr, "", 0)			// Disable logging
 	mqtt.ERROR = log.New(os.Stderr, "", 0)
 	var remote string = "tcp://" + host + ":" + strconv.Itoa(port)
-	opts := mqtt.NewClientOptions().AddBroker(remote).SetClientID("meteod")
+	opts := mqtt.NewClientOptions().AddBroker(remote)//.SetClientID("meteod")
 	opts.SetKeepAlive(30 * time.Second)
 	opts.SetPingTimeout(5 * time.Second)
 	opts.OnConnect = func(c mqtt.Client) {	
@@ -467,6 +491,7 @@ func main() {
 	// Setup webserver
 	//fmt.Println("Firing up webserver ... ")
 	http.HandleFunc("/", www_handler_index)
+	http.HandleFunc("/chart.js", www_handler_chartjs)
 	http.HandleFunc("/stations", www_handler_index)
 	http.Handle("/src/", http.FileServer(http.Dir("src/")))
 	http.HandleFunc("/stations.csv", www_handler_stations_csv)

@@ -263,6 +263,84 @@ func www_handler_lightnings(w http.ResponseWriter, r *http.Request) {
 	
 }
 
+func bin_data(data []weatherpoint, bins int) ([]weatherpoint) {
+	if len(data) <= bins {
+		return data
+	} else {
+		// TODO: This is untested
+		ret := make([]weatherpoint, bins, bins)
+		avg_bins := len(data)/bins
+		for i := 0; i < bins; i++ {
+			var p weatherpoint
+			for j := 0; j < avg_bins; j++ {
+				p.timestamp += data[i*avg_bins+j].timestamp
+				p.t += data[i*avg_bins+j].t
+				p.hum += data[i*avg_bins+j].hum
+				p.p += data[i*avg_bins+j].p
+			}
+			fBins := float32(avg_bins)
+			p.timestamp /= int64(avg_bins)
+			p.t /= fBins
+			p.hum /= fBins
+			p.p /= fBins
+			ret[i] = p
+		}
+		return ret
+	}
+	
+}
+
+func json_timestamps(data []weatherpoint) string {
+	ret := "["
+	
+	first := true
+	for _,v := range(data) {
+		if first {
+			first = false
+		} else {
+			ret += ","
+		}
+		timestamp := time.Unix(v.timestamp, 0)
+		ret += "\"" + timestamp.String() + "\""
+	}
+	
+	ret  += "]"
+	return ret;
+}
+func json_temperature(data []weatherpoint) string {
+	ret := "["
+	first := true
+	for _,v := range(data) {
+		if first { first = false
+		} else { ret += "," }
+		ret += strconv.FormatFloat(float64(v.t), 'f', 4, 32)
+	}
+	ret  += "]"
+	return ret;
+}
+func json_humidity(data []weatherpoint) string {
+	ret := "["
+	first := true
+	for _,v := range(data) {
+		if first { first = false
+		} else { ret += "," }
+		ret += strconv.FormatFloat(float64(v.hum), 'f', 4, 32)
+	}
+	ret  += "]"
+	return ret;
+}
+func json_pressure(data []weatherpoint) string {
+	ret := "["
+	first := true
+	for _,v := range(data) {
+		if first { first = false
+		} else { ret += "," }
+		ret += strconv.FormatFloat(float64(v.p), 'f', 4, 32)
+	}
+	ret  += "]"
+	return ret;
+}
+
 func www_handler_station(w http.ResponseWriter, r *http.Request) {
 	
 	s_id := r.URL.Query().Get("id")
@@ -376,27 +454,26 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 		
 		fmt.Fprintf(w, "<h3>Plots</h3>\n")
 		fmt.Fprintf(w, "<script src=\"chart.js\"></script>\n")
-		fmt.Fprintf(w, "<canvas id=\"pltPlot\" width=\"undefined\" height=\"undefined\"></canvas>")
+		fmt.Fprintf(w, "<canvas id=\"plt_t\" width=\"undefined\" height=\"undefined\"></canvas>")
+		fmt.Fprintf(w, "<canvas id=\"plt_h\" width=\"undefined\" height=\"undefined\"></canvas>")
+		fmt.Fprintf(w, "<canvas id=\"plt_p\" width=\"undefined\" height=\"undefined\"></canvas>")
 		fmt.Fprintf(w, "<script>\n")
 		
-		// TODO: Make binning of datasets
+		bins := 100		// Max bins (use 100 for now because why not)
+		data := bin_data(values, bins)
+		fmt.Printf("values: %d, bin_data: %d\n", len(values), len(data))
 		
 		// Declare datasets
-		fmt.Fprintf(w, "var datasets = { labels: ['1','2','Three','Four','Five','Sixe','7','Acht'], datasets: [ { label:\"Temperature\", data:[0,1,2,3,4,5,5,6]} ] };\n")
-		/*
-		first := true
-		for _,v := range values {
-			if first {
-				first = false
-			} else {
-				fmt.Fprintf(w, ", ")
-			}
-			
-			fmt.Fprintf(w, "{x: %d, y: %e }", v.timestamp, v.t)
-		}
-		fmt.Fprintf(w, "];\n")*/
-		fmt.Fprintf(w, "var ctx = document.getElementById(\"pltPlot\").getContext('2d');\n");
-		fmt.Fprintf(w, "var plot_t = new Chart(ctx, { \"type\":\"line\", \"data\": datasets } );\n")
+		//fmt.Fprintf(w, "var datasets = { labels: " + json_timestamps(data) + ", datasets: [ { label:\"Temperature\", data:" + json_temperature(data) + ", borderColor: 'rgba(220, 0, 0, 0.8)'}, { label:\"Humidity\", data:" + json_humidity(data) + ", borderColor: 'rgba(0, 220, 0, 0.8)'}, { label:\"Pressure\", data:" + json_pressure(data) + ", borderColor: 'rgba(0, 0, 220, 0.8)'} ] };\n")
+		fmt.Fprintf(w, "var data_t = { labels: " + json_timestamps(data) + ", datasets: [ { label:\"Temperature\", data:" + json_temperature(data) + ", borderColor: 'rgba(220, 0, 0, 0.8)'} ] };\n")
+		fmt.Fprintf(w, "var data_h = { labels: " + json_timestamps(data) + ", datasets: [ { label:\"Humidity\", data:" + json_humidity(data) + ", borderColor: 'rgba(0, 220, 0, 0.8)'} ] };\n")
+		fmt.Fprintf(w, "var data_p = { labels: " + json_timestamps(data) + ", datasets: [ { label:\"Pressure\", data:" + json_pressure(data) + ", borderColor: 'rgba(0, 0, 220, 0.8)'} ] };\n")
+		//fmt.Fprintf(w, "var ctx = document.getElementById(\"plt_t\").getContext('2d');\n");
+		//fmt.Fprintf(w, "var plot_t = new Chart(ctx, { \"type\":\"line\", \"data\": datasets } );\n")
+		fmt.Fprintf(w, "var plot_t = new Chart(document.getElementById(\"plt_t\").getContext('2d'), { \"type\":\"line\", \"data\": data_t } );\n")
+		fmt.Fprintf(w, "var plot_h = new Chart(document.getElementById(\"plt_h\").getContext('2d'), { \"type\":\"line\", \"data\": data_h } );\n")
+		fmt.Fprintf(w, "var plot_p = new Chart(document.getElementById(\"plt_p\").getContext('2d'), { \"type\":\"line\", \"data\": data_p } );\n")
+		
 		fmt.Fprintf(w, "</script>\n")
 	}
 }

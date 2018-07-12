@@ -402,10 +402,7 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 	if len(values) == 0 {
 		fmt.Fprintf(w, "<p>No results</p>\n")
 	} else {
-		avg := station;
-		s_min := station;
-		s_max := station;
-		stdev := station;
+		var avg, s_min, s_max, stdev weatherpoint
 		
 		first := true
 		for _,v := range values {

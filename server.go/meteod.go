@@ -374,6 +374,8 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "<tr><td><b>Humidity [rel]</b></td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n", avg.hum, stdev.hum, s_min.hum, s_max.hum)
 		fmt.Fprintf(w, "</table>")
 		
+		// 
+		
 		// TODO: Show Plot
 	}
 }
@@ -398,8 +400,11 @@ func www_handler_station_csv(w http.ResponseWriter, r *http.Request) {
 	if err != nil { t_min = 0 }
 	t_max,err := strconv.Atoi(r.URL.Query().Get("tmax"))
 	if err != nil { t_max = 0 }
+	limit,err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit <= 0 { limit = 1000 }
+	if limit > 1000 { limit = 1000 }
 	
-	values,err := db_station(id, t_min, t_max, 1000)		// Limit 1000 by default
+	values,err := db_station(id, t_min, t_max, limit)		// Limit 1000 by default
 	
 	if err != nil {
 		fmt.Fprintln(os.Stderr, " (!!) SQL request error:", err)
@@ -414,7 +419,6 @@ func www_handler_station_csv(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "%d,%f,%f,%f\n", v.timestamp, v.t, v.p, v.hum)
 	}
 }
-
 
 func main() {
 	stations = make(map[int]station)
@@ -464,6 +468,7 @@ func main() {
 	//fmt.Println("Firing up webserver ... ")
 	http.HandleFunc("/", www_handler_index)
 	http.HandleFunc("/stations", www_handler_index)
+	http.Handle("/src/", http.FileServer(http.Dir("src/")))
 	http.HandleFunc("/stations.csv", www_handler_stations_csv)
 	http.HandleFunc("/station.csv", www_handler_station_csv)
 	http.HandleFunc("/station", www_handler_station)

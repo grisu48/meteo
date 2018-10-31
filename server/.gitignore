@@ -1,5 +1,2 @@
-# Additional files to ignore
-*.o
-*~
+# Database files
 *.db
-meteod

@@ -156,7 +156,7 @@ void bme_report() {
 
    bme.read(pres, temp, hum, tempUnit, presUnit);
   
-  String buffer = "{\"node\":" + String(MQTT_BME_NODEID) + ",\"name\":" + String(MQTT_BME_NODENAME) + ",\"t\":";
+  String buffer = "{\"node\":" + String(MQTT_BME_NODEID) + ",\"name\":\"" + String(MQTT_BME_NODENAME) + "\",\"t\":";
   buffer += String(temp);
   buffer += ",\"hum\":";
   buffer += String(hum);

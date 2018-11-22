@@ -1,36 +1,42 @@
-/* Lightning Node including BME280 sensor
- * 2018, Felix Niederwanger
- */
+
 
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <Wire.h>
 #include "AS3935.h"
 #include <SPI.h>
-#include <BME280I2C.h>
 
 /* ==== Configuration section ==================================================== */
 
-const char* ssid = "..SSID..";
-const char* password = "..PASSWORD..";
+const char* ssid = "...SSID...";
+const char* password = "...WIFI PASSWORD...";
 
-#define MQTT_BME_NODEID "5"
-#define IGNORE_LIGHNING_0 1   // I set to 1, we ignore lightnings at distance 0km, because they are likely false positives
+/* General */
+#define IGNORE_LIGHNING_0km_ 1   // I set to 1, we ignore lightnings at distance 0km, because they are likely false positives
+#define HAS_BME280 1       // If set to 1, we have a BME280 and will use it to push also environmental data
 
+/* MQTT configuration */
+#define MQTT_NODEID "5"
 #define MQTT_SERVER "192.168.0.100"
 #define MQTT_PORT 1883
-#define MQTT_TOPIC "meteo/lightning/" MQTT_BME_NODEID
-#define MQTT_CLIENTID "meteo-lightning-" MQTT_BME_NODEID
-#define MQTT_BME_NODENAME "Lightning"
-#define MQTT_BME_TOPIC "meteo/" MQTT_BME_NODEID
+#define MQTT_TOPIC "meteo/lightning/" MQTT_NODEID
+#define MQTT_CLIENTID "meteo-lightning-" MQTT_NODEID
 
+/* BME280 config, if existing */
+#if HAS_BME280 == 1
+#include <BME280I2C.h>
+#define MQTT_BME_NODENAME "Lightning"
+#define MQTT_BME_TOPIC "meteo/" MQTT_NODEID
+#define BME_REPORT 10000 // Publish BME280 readout each x milliseconds
+#endif
+
+/* Some more advanced stuff */
 #define PUB_NOISE 1     // Publish noise
 #define PUB_DIST 1      // Publish distrurbers
 #define NOISE_DIST_INTERVAL 2500       // Millisecond interval between reports of noise/distruber
 
-#define BME_REPORT 10000 // Publish BME280 readout each x milliseconds
-
-#define IRQ_PIN D3
+/* Internal config*/
+#define IRQ_PIN D3      // Where the MOD1016 IRQ pin is connected to
 #define CS_PIN 10
 
 /* ==== Program section ========================================================== */
@@ -38,8 +44,9 @@ const char* password = "..PASSWORD..";
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
 
+#if HAS_BME280 == 1
 BME280I2C bme;
-
+#endif
 
 volatile bool detected = false;
 
@@ -68,12 +75,24 @@ void recalibrate(bool tune = true) {
 }
 
 void setup() {
-  delay(500);
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  // Just some welcome blinkin'
+  digitalWrite(LED_BUILTIN, LOW);   // Turn ON
+  delay(1000);
+  digitalWrite(LED_BUILTIN, HIGH);   // Turn OFF
+  delay(1000);
+  digitalWrite(LED_BUILTIN, LOW);   // Turn ON
+  delay(1000);
+  digitalWrite(LED_BUILTIN, HIGH);   // Turn OFF
+
+  // Setup serial
+  delay(200);
   Serial.begin(115200);
   while (!Serial) {}
   Serial.println("# MOD-1016 (AS3935) Lightning Sensor Monitor System");
 
-  // setup MOD-1916
+  // Setup MOD-1916
   Wire.begin();
   mod1016.init(IRQ_PIN);
   //Tune Caps, Set AFE, Set Noise Floor
@@ -96,6 +115,8 @@ void setup() {
   Serial.println("# Interrupt setup completed");
 
   // Setup BME280
+#if HAS_BME280 == 1
+  Serial.println("# Setup BME280 ... ");
   int counter = 10;
   while(!bme.begin() && counter-- > 0) {
     Serial.println("BME280 init failure");
@@ -112,7 +133,7 @@ void setup() {
      default:
        Serial.println("ERR: Unknown sensor");
   }
-
+#endif
 
   Serial.print("# Connecting WiFi ...");
   WiFi.begin(ssid, password);
@@ -137,18 +158,23 @@ void loop() {
 
   if(mqtt.connected()) {
     mqtt.loop();
+    digitalWrite(LED_BUILTIN, LOW);   // Turn LED OFF
   } else {
+    digitalWrite(LED_BUILTIN, HIGH);   // Turn LED OFF
     MQTT_connect();
   }
 
+#if HAS_BME280 == 1
   static long bme_ms = millis();
   long timestamp = millis();
   if(abs(timestamp-bme_ms) > BME_REPORT) {
     bme_report();
     bme_ms = timestamp;
   }
+#endif
 }
 
+#if HAS_BME280 == 1
 void bme_report() {
    float temp(NAN), hum(NAN), pres(NAN);
    BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
@@ -156,7 +182,7 @@ void bme_report() {
 
    bme.read(pres, temp, hum, tempUnit, presUnit);
   
-  String buffer = "{\"node\":" + String(MQTT_BME_NODEID) + ",\"name\":\"" + String(MQTT_BME_NODENAME) + "\",\"t\":";
+    String buffer = "{\"node\":" + String(MQTT_NODEID) + ",\"name\":\"" + String(MQTT_BME_NODENAME) + "\",\"t\":";
   buffer += String(temp);
   buffer += ",\"hum\":";
   buffer += String(hum);
@@ -170,6 +196,7 @@ void bme_report() {
   Serial.print("      press "); Serial.print(pres); Serial.print(" hPa");
   Serial.println();
 }
+#endif
 
 // Function to connect and reconnect as necessary to the MQTT server.
 // Should be called in the loop function and it will take care if connecting.
@@ -256,7 +283,7 @@ void translateIRQ(int irq) {
       break;
     case 8:     // Lightning
       distance = mod1016.calculateDistance();
-#if IGNORE_LIGHNING_0 == 1
+#if IGNORE_LIGHNING_0km_ == 1
       if(distance == 0.0F) {
         // Ignore head-on lightnigs because the interference with wifi makes them
         // indetectable and the false-alerts increases too much
@@ -272,7 +299,7 @@ void translateIRQ(int irq) {
         buffer += ",\"lightning\":" + String(distance) + ",\"unit\":\"km\",";
         buffer += "\"lightnings\":" + String(lightnings) + "}";
         mqtt.publish(MQTT_TOPIC, buffer.c_str());
-#if IGNORE_LIGHNING_0 == 1
+#if IGNORE_LIGHNING_0km_ == 1
       }
 #endif
       break;

@@ -233,19 +233,45 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
 	
+	var all_stations map[int]station
+	for id, s := range db_stations() {
+		all_stations[id] = s
+	}
+	
 	fmt.Fprintf(w, "<h2>Stations</h2>\n")
-	// List all stations
+	// List all active stations
 	mutex.Lock()
-	if len(stations) == 0 {
-		fmt.Fprintf(w, "<p>Currently no stations active</p>\n")
+	fmt.Fprintf(w, "<table border=\"1\">\n")
+	fmt.Fprintf(w, "<tr><td><b>Station</b></td><td><b>Temperature [deg C]</b></td><td><b>Pressure [hPa]</b></td><td><b>Humditiy [rel]</b></td></tr>\n")
+	if len(all_stations) == 0 && len(stations) == 0 {
+		fmt.Fprintf(w, "</table>")
+		fmt.Fprintf(w, "<p>No stations known</p>\n")
 	} else {
-		fmt.Fprintf(w, "<table border=\"1\">\n")
-		fmt.Fprintf(w, "<tr><td><b>Station</b></td><td><b>Temperature [deg C]</b></td><td><b>Pressure [hPa]</b></td><td><b>Humditiy [rel]</b></td></tr>\n")
+		c_offline, c_volatile := 0, 0
+		
+		for id, s := range all_stations { 
+			id = s.id
+			cur, exists := stations[id];
+			if exists {
+				fmt.Fprintf(w, "<tr><td><a href=\"station?id=%d\">%s</a></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, cur.name, cur.t, cur.p, cur.hum)
+			} else {
+				fmt.Fprintf(w, "<tr><td><del><a href=\"station?id=%d\">%s</a></del></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, s.name, s.t, s.p, s.hum)
+				c_offline += 1
+			}
+		}
+		// List as well all stations, that are active, but not yet in the database
 		for id, s := range stations { 
-			fmt.Fprintf(w, "<tr><td><a href=\"station?id=%d\">%s</a></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, s.name, s.t, s.p, s.hum)
+			_, exists := all_stations[id];
+			if !exists {
+				fmt.Fprintf(w, "<tr><td><i><a href=\"station?id=%d\">%s</a></i></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, s.name, s.t, s.p, s.hum)
+				c_volatile += 1
+			}
 		}
 		fmt.Fprintf(w, "</table>")
-		fmt.Fprintf(w, "<p>Active stations: <b>%d</b></p>\n", len(stations))
+		fmt.Fprintf(w, "<p>Active stations: <b>%d</b>\n", len(stations))
+		if c_offline > 0 {fmt.Fprintf(w, "<br/><del>Offline</del> stations: <b>%d</b>\n", c_offline) }
+		if c_volatile > 0 {fmt.Fprintf(w, "<br/><i>Volatile</i> stations: <b>%d</b> (i.e. Not yet pushed to db)", c_volatile) }
+		fmt.Fprintf(w, "</p>")
 	}
 	mutex.Unlock()
 	fmt.Fprintf(w, "<hr/><p><a href=\"https://github.com/grisu48/meteo\" target=\"_BLANK\">meteo</a>, 2018 phoenix</p>")

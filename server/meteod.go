@@ -203,7 +203,7 @@ func db_station(id int, min_t int, max_t int, limit int) ([]weatherpoint,error) 
 	if min_t < 0 { min_t = 0 }
 	if max_t <= 0 { max_t = int(get_timestamp()) }
 
-	sql := "SELECT `timestamp`,`t`,`p`,`hum` FROM `station_" + strconv.Itoa(id) + "` WHERE `timestamp` >= '" + strconv.Itoa(min_t) + "' AND `timestamp` <= '" + strconv.Itoa(max_t) + "' ORDER BY `timestamp` ASC LIMIT " + strconv.Itoa(limit)
+	sql := "SELECT `timestamp`,`t`,`p`,`hum` FROM `station_" + strconv.Itoa(id) + "` WHERE `timestamp` >= '" + strconv.Itoa(min_t) + "' AND `timestamp` <= '" + strconv.Itoa(max_t) + "' ORDER BY `timestamp` DESC LIMIT " + strconv.Itoa(limit)
 	//fmt.Println(sql)
 	rows, err := db.Query(sql)
 	if err != nil {

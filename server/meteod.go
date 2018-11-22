@@ -35,7 +35,7 @@ type weatherpoint struct {
 }
 
 func (s *station) str() string {
-	return fmt.Sprintf("%s (id: %d) t = %f, p = %f, hum = %f", s.name,s.id,s.t,s.p,s.hum)
+	return fmt.Sprintf("%s (id: %d) t = %.2f, p = %.2f, hum = %.2f", s.name,s.id,s.t,s.p/100,s.hum)
 }
 
 func sqr(x float32) float32 {
@@ -55,9 +55,9 @@ var mutex = &sync.Mutex{}
 
 func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	data := message.Payload()
-	
+
 	//fmt.Printf("%s : %s\n", message.Topic(), data)
-	
+
 	// Extract data, return if not valid
 	id, err := jsonparser.GetInt(data, "node")
 	if err != nil { fmt.Println("Receive error: json attribute 'id' missing" ); return; }
@@ -69,13 +69,13 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	if err != nil { p = 0.0 }
 	hum, err := jsonparser.GetFloat(data, "hum")
 	if err != nil { hum = 0.0 }
-	
-	
+
+
 	s := station{id:int(id), name:name, t:float32(t), p:float32(p), hum:float32(hum), alive:true};
 	//fmt.Println("RECV  " + s.str())
-	
+
 	mutex.Lock()
-	
+
 	_, present := stations[int(id)]
 	if present {
 		s1 := stations[int(id)]
@@ -84,7 +84,7 @@ func onMessageReceived(client mqtt.Client, message mqtt.Message) {
 	}
 	stations[int(id)] = s
 	mutex.Unlock()
-	
+
 	fmt.Println("RECV  " + s.str())
 }
 
@@ -109,12 +109,12 @@ func pushStation(s station) {
 	if err != nil {
 		log.Fatal("Create table failed; ", err)
 	}
-	
+
 	tx, err := db.Begin()
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	sql = "REPLACE INTO `stations` (`id`,`name`) VALUES (?,?)"
 	stmt, err := tx.Prepare(sql)
 	if err != nil {
@@ -125,7 +125,7 @@ func pushStation(s station) {
 		log.Fatal("Insert failed; ", err)
 	}
 	stmt.Close()
-	
+
 	sql = "REPLACE INTO `station_" + strconv.Itoa(s.id) + "` (`timestamp`, `t`, `p`, `hum`) VALUES (?,?,?,?);"
 	stmt, err = tx.Prepare(sql)
 	if err != nil {
@@ -136,7 +136,7 @@ func pushStation(s station) {
 		log.Fatal("Insert failed; ", err)
 	}
 	stmt.Close()
-	
+
 	tx.Commit()
 	//fmt.Println("WROTE      ", s.str())
 }
@@ -145,13 +145,13 @@ func pushDB() {
 	//fmt.Println("Database thread started")
 	for {
 		time.Sleep(5 * time.Minute)			// Every 5 minutes
-		
-		
+
+
 		// Get stations and write to database
 		mutex.Lock()
 		//fmt.Println("Writing to database ... ")
 		var counter int = 0
-		for id, s := range stations { 
+		for id, s := range stations {
 			if s.alive {
 				pushStation(s)
 				s.alive = false
@@ -164,7 +164,7 @@ func pushDB() {
 			stations[id] = s
 		}
 		mutex.Unlock()
-		
+
 		if counter > 0 {
 			if counter == 1 {
 				fmt.Printf("Wrote 1 entry to database\n")
@@ -172,7 +172,7 @@ func pushDB() {
 				fmt.Printf("Wrote %d entries to database\n", counter)
 			}
 		}
-	}	
+	}
 }
 
 func db_stations() []station {
@@ -180,36 +180,36 @@ func db_stations() []station {
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	var (
 		id int
 		name string
 	)
-	
+
 	ret := make([]station, 0)
 	for rows.Next() {
 		rows.Scan(&id, &name)
-		
+
 		s := station{id:id, name:name};
 		ret = append(ret, s)
 	}
-	
+
 	return ret
 }
 
 func db_station(id int, min_t int, max_t int, limit int) ([]weatherpoint,error) {
 	ret := make([]weatherpoint, 0)
-	
+
 	if min_t < 0 { min_t = 0 }
 	if max_t <= 0 { max_t = int(get_timestamp()) }
-	
+
 	sql := "SELECT `timestamp`,`t`,`p`,`hum` FROM `station_" + strconv.Itoa(id) + "` WHERE `timestamp` >= '" + strconv.Itoa(min_t) + "' AND `timestamp` <= '" + strconv.Itoa(max_t) + "' ORDER BY `timestamp` ASC LIMIT " + strconv.Itoa(limit)
 	//fmt.Println(sql)
 	rows, err := db.Query(sql)
 	if err != nil {
 		return ret, err
 	}
-	
+
 	var (
 		timestamp int64
 		t float32
@@ -218,26 +218,32 @@ func db_station(id int, min_t int, max_t int, limit int) ([]weatherpoint,error) 
 	)
 	for rows.Next() {
 		rows.Scan(&timestamp, &t,&p,&hum)
-		
+
 		s := weatherpoint{timestamp:timestamp,t:t,p:p,hum:hum};
 		ret = append(ret, s)
 	}
-	
+
 	return ret,nil
 }
 
 
-//func www_handler_index(w http.ResponseWriter, r *http.Request) {
 func www_handler_index(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"30\"><title>meteo</title></head>\n<body>")
+	// Head
+	fmt.Fprintf(w, "<!DOCTYPE html>\n")
+	fmt.Fprintf(w, "<html>\n<head>")
+	fmt.Fprintf(w, "<meta http-equiv=\"refresh\" content=\"30\">")
+	fmt.Fprintf(w, "<title>meteo</title>")
+	fmt.Fprintf(w, "<link rel=\"stylesheet\" type=\"text/css\" href=\"meteo.css\">")
+	fmt.Fprintf(w, "</head>\n<body>")
+
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
-	
+
 	var all_stations map[int]station
 	for id, s := range db_stations() {
 		all_stations[id] = s
 	}
-	
+
 	fmt.Fprintf(w, "<h2>Stations</h2>\n")
 	// List all active stations
 	mutex.Lock()
@@ -248,22 +254,22 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "<p>No stations known</p>\n")
 	} else {
 		c_offline, c_volatile := 0, 0
-		
-		for id, s := range all_stations { 
+
+		for id, s := range all_stations {
 			id = s.id
 			cur, exists := stations[id];
 			if exists {
-				fmt.Fprintf(w, "<tr><td><a href=\"station?id=%d\">%s</a></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, cur.name, cur.t, cur.p, cur.hum)
+				fmt.Fprintf(w, "<tr><td><a href=\"station?id=%d\">%s</a></td><td>%.2f</td><td>%.2f</td><td>%.2f</td></tr>\n", id, cur.name, cur.t, cur.p/100, cur.hum)
 			} else {
-				fmt.Fprintf(w, "<tr><td><del><a href=\"station?id=%d\">%s</a></del></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, s.name, s.t, s.p, s.hum)
+				fmt.Fprintf(w, "<tr><td><del><a href=\"station?id=%d\">%s</a></del></td><td>%.2f</td><td>%.2f</td><td>%.2f</td></tr>\n", id, s.name, s.t, s.p/100, s.hum)
 				c_offline += 1
 			}
 		}
 		// List as well all stations, that are active, but not yet in the database
-		for id, s := range stations { 
+		for id, s := range stations {
 			_, exists := all_stations[id];
 			if !exists {
-				fmt.Fprintf(w, "<tr><td><i><a href=\"station?id=%d\">%s</a></i></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, s.name, s.t, s.p, s.hum)
+				fmt.Fprintf(w, "<tr><td><i><a href=\"station?id=%d\">%s</a></i></td><td>%.2f</td><td>%.2f</td><td>%.2f</td></tr>\n", id, s.name, s.t, s.p/100, s.hum)
 				c_volatile += 1
 			}
 		}
@@ -280,13 +286,19 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 
 //func www_handler_index(w http.ResponseWriter, r *http.Request) {
 func www_handler_lightnings(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"10\"><title>meteo</title></head>\n<body>")
+	fmt.Fprintf(w, "<!DOCTYPE html>\n")
+	fmt.Fprintf(w, "<html>\n<head>")
+	//fmt.Fprintf(w, "<meta http-equiv=\"refresh\" content=\"10\">")
+	fmt.Fprintf(w, "<title>meteo</title>")
+	fmt.Fprintf(w, "<link rel=\"stylesheet\" type=\"text/css\" href=\"meteo.css\">")
+	fmt.Fprintf(w, "</head>\n<body>")
+
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
-	
+
 	fmt.Fprintf(w, "<h2>Lightnings</h2>\n")
 	fmt.Fprintf(w, "<p><i>This feature is under construction</i></p>\n")
-	
+
 }
 
 func bin_data(data []weatherpoint, bins int) ([]weatherpoint) {
@@ -313,12 +325,12 @@ func bin_data(data []weatherpoint, bins int) ([]weatherpoint) {
 		}
 		return ret
 	}
-	
+
 }
 
 func json_timestamps(data []weatherpoint) string {
 	ret := "["
-	
+
 	first := true
 	for _,v := range(data) {
 		if first {
@@ -329,7 +341,7 @@ func json_timestamps(data []weatherpoint) string {
 		timestamp := time.Unix(v.timestamp, 0)
 		ret += "\"" + timestamp.String() + "\""
 	}
-	
+
 	ret  += "]"
 	return ret;
 }
@@ -361,49 +373,54 @@ func json_pressure(data []weatherpoint) string {
 	for _,v := range(data) {
 		if first { first = false
 		} else { ret += "," }
-		ret += strconv.FormatFloat(float64(v.p), 'f', 4, 32)
+		ret += strconv.FormatFloat(float64(v.p/100), 'f', 4, 32)
 	}
 	ret  += "]"
 	return ret;
 }
 
 func www_handler_station(w http.ResponseWriter, r *http.Request) {
-	
+
 	s_id := r.URL.Query().Get("id")
 	if len(s_id) == 0 {
 		w.WriteHeader(http.StatusInternalServerError)
-	    w.Write([]byte("500 - No station id defined"))
+		w.Write([]byte("500 - No station id defined"))
 		return;
 	}
 	id,err := strconv.Atoi(s_id)
-	
+
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-	    w.Write([]byte("500 - Illegal station identifier"))
+		w.Write([]byte("500 - Illegal station identifier"))
 		return
 	}
-	
+
 	mutex.Lock()
 	station, exists := stations[id]
 	mutex.Unlock()
-	
+
 	if !exists {
 		w.WriteHeader(http.StatusInternalServerError)
-	    w.Write([]byte("500 - No such station active"))
+		w.Write([]byte("500 - No such station active"))
 		return
 	}
-	
-	//fmt.Fprintf(w, "<html><head><meta http-equiv=\"refresh\" content=\"10\"><title>meteo</title></head>\n<body>")
+	// Head
+	fmt.Fprintf(w, "<!DOCTYPE html>\n")
+	fmt.Fprintf(w, "<html>\n<head>")
+	//fmt.Fprintf(w, "<meta http-equiv=\"refresh\" content=\"10\">")
+	fmt.Fprintf(w, "<title>meteo</title>")
+	fmt.Fprintf(w, "<link rel=\"stylesheet\" type=\"text/css\" href=\"meteo.css\">")
+	fmt.Fprintf(w, "</head>\n<body>")
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
 	fmt.Fprintf(w, "<h2>meteo Station <b>" + station.name + "</b></h2>\n")
-	
+
 	fmt.Fprintf(w, "<h3>Current readings</h3>\n")
 	fmt.Fprintf(w, "<table border=\"1\">\n")
 	fmt.Fprintf(w, "<tr><td><b>Station</b></td><td><b>Temperature [deg C]</b></td><td><b>Pressure [hPa]</b></td><td><b>Humditiy [rel]</b></td></tr>\n")
-	fmt.Fprintf(w, "<tr><td><a href=\"station?id=%d\">%s</a></td><td>%f</td><td>%f</td><td>%f</td></tr>\n", id, station.name, station.t, station.p, station.hum)
+	fmt.Fprintf(w, "<tr><td><a href=\"station?id=%d\">%s</a></td><td>%.2f</td><td>%.2f</td><td>%.2f</td></tr>\n", id, station.name, station.t, station.p/100, station.hum)
 	fmt.Fprintf(w, "</table>")
-	
+
 	// What to get
 	fmt.Fprintf(w, "<h3>Overview</h3>\n")
 	href := "station?id=" + s_id
@@ -423,13 +440,13 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 		// Default value
 		t_min = now - 3*60*60;
 	}
-	
+
 	values,err := db_station(id, int(t_min), int(now), 1000)		// Limit 1000 by default
 	if len(values) == 0 {
 		fmt.Fprintf(w, "<p>No results</p>\n")
 	} else {
 		var avg, s_min, s_max, stdev weatherpoint
-		
+
 		first := true
 		for _,v := range values {
 			avg.t += v.t;
@@ -456,7 +473,7 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 			avg.t /= fLen
 			avg.p /= fLen
 			avg.hum /= fLen
-		
+
 			for _,v := range values {
 				stdev.t += sqr(v.t-avg.t);
 				stdev.p += sqr(v.p-avg.p);
@@ -466,26 +483,26 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 			stdev.p /= float32(math.Sqrt(float64(stdev.p/sqr(fLen))))
 			stdev.hum /= float32(math.Sqrt(float64(stdev.hum/sqr(fLen))))
 		}
-		
+
 		fmt.Fprintf(w, "<p>Fetched %d data entries</p>\n", len(values))
 		fmt.Fprintf(w, "<table border=\"1\">\n")
 		fmt.Fprintf(w, "<tr><td></td><td>Average</td><td>Standart deviation</td><td>Minimum</td><td>Maximum</td></tr>\n")
-		fmt.Fprintf(w, "<tr><td><b>Temperature [deg C]</b></td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n", avg.t, stdev.t, s_min.t, s_max.t)
-		fmt.Fprintf(w, "<tr><td><b>Pressure [hPa]</b></td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n", avg.p, stdev.p, s_min.p, s_max.p)
-		fmt.Fprintf(w, "<tr><td><b>Humidity [rel]</b></td><td>%f</td><td>%f</td><td>%f</td><td>%f</td></tr>\n", avg.hum, stdev.hum, s_min.hum, s_max.hum)
+		fmt.Fprintf(w, "<tr><td><b>Temperature [deg C]</b></td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td></tr>\n", avg.t, stdev.t, s_min.t, s_max.t)
+		fmt.Fprintf(w, "<tr><td><b>Pressure [hPa]</b></td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td></tr>\n", avg.p/100, stdev.p/100, s_min.p/100, s_max.p/100)
+		fmt.Fprintf(w, "<tr><td><b>Humidity [rel]</b></td><td>%.2f</td><td>%.2f</td><td>%.2f</td><td>%.2f</td></tr>\n", avg.hum, stdev.hum, s_min.hum, s_max.hum)
 		fmt.Fprintf(w, "</table>")
-		
+
 		fmt.Fprintf(w, "<h3>Plots</h3>\n")
 		fmt.Fprintf(w, "<script src=\"chart.js\"></script>\n")
 		fmt.Fprintf(w, "<canvas id=\"plt_t\" width=\"undefined\" height=\"undefined\"></canvas>")
 		fmt.Fprintf(w, "<canvas id=\"plt_h\" width=\"undefined\" height=\"undefined\"></canvas>")
 		fmt.Fprintf(w, "<canvas id=\"plt_p\" width=\"undefined\" height=\"undefined\"></canvas>")
 		fmt.Fprintf(w, "<script>\n")
-		
+
 		bins := 100		// Max bins (use 100 for now because why not)
 		data := bin_data(values, bins)
 		fmt.Printf("values: %d, bin_data: %d\n", len(values), len(data))
-		
+
 		// Declare datasets
 		//fmt.Fprintf(w, "var datasets = { labels: " + json_timestamps(data) + ", datasets: [ { label:\"Temperature\", data:" + json_temperature(data) + ", borderColor: 'rgba(220, 0, 0, 0.8)'}, { label:\"Humidity\", data:" + json_humidity(data) + ", borderColor: 'rgba(0, 220, 0, 0.8)'}, { label:\"Pressure\", data:" + json_pressure(data) + ", borderColor: 'rgba(0, 0, 220, 0.8)'} ] };\n")
 		fmt.Fprintf(w, "var data_t = { labels: " + json_timestamps(data) + ", datasets: [ { label:\"Temperature\", data:" + json_temperature(data) + ", borderColor: 'rgba(220, 0, 0, 0.8)'} ] };\n")
@@ -496,7 +513,7 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "var plot_t = new Chart(document.getElementById(\"plt_t\").getContext('2d'), { \"type\":\"line\", \"data\": data_t } );\n")
 		fmt.Fprintf(w, "var plot_h = new Chart(document.getElementById(\"plt_h\").getContext('2d'), { \"type\":\"line\", \"data\": data_h } );\n")
 		fmt.Fprintf(w, "var plot_p = new Chart(document.getElementById(\"plt_p\").getContext('2d'), { \"type\":\"line\", \"data\": data_p } );\n")
-		
+
 		fmt.Fprintf(w, "</script>\n")
 	}
 }
@@ -512,14 +529,18 @@ func www_handler_chartjs(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "chart.js")
 }
 
+func www_handler_meteocss(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "meteo.css")
+}
+
 func www_handler_station_csv(w http.ResponseWriter, r *http.Request) {
 	id,err := strconv.Atoi(r.URL.Query().Get("id"))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-	    w.Write([]byte("500 - Illegal station identifier"))
+		w.Write([]byte("500 - Illegal station identifier"))
 		return
 	}
-	
+
 	t_min,err := strconv.Atoi(r.URL.Query().Get("tmin"))
 	if err != nil { t_min = 0 }
 	t_max,err := strconv.Atoi(r.URL.Query().Get("tmax"))
@@ -527,20 +548,20 @@ func www_handler_station_csv(w http.ResponseWriter, r *http.Request) {
 	limit,err := strconv.Atoi(r.URL.Query().Get("limit"))
 	if err != nil || limit <= 0 { limit = 1000 }
 	if limit > 1000 { limit = 1000 }
-	
+
 	values,err := db_station(id, t_min, t_max, limit)		// Limit 1000 by default
-	
+
 	if err != nil {
 		fmt.Fprintln(os.Stderr, " (!!) SQL request error:", err)
 		w.WriteHeader(http.StatusInternalServerError)
-	    w.Write([]byte("500 - Server error"))
+		w.Write([]byte("500 - Server error"))
 		return
 	}
-	
+
 	fmt.Fprintf(w, "# Timestamp, Temperature, Pressure, Humidity\n")
 	fmt.Fprintf(w, "s, deg C, hPa, rel\n")
 	for _,v := range values {
-		fmt.Fprintf(w, "%d,%f,%f,%f\n", v.timestamp, v.t, v.p, v.hum)
+		fmt.Fprintf(w, "%d,%.2f,%.2f,%.2f\n", v.timestamp, v.t, v.p/100, v.hum)
 	}
 }
 
@@ -553,26 +574,26 @@ func main() {
 	}
 	dbSetup()
 	defer db.Close()
-	
+
 	var host string = "127.0.0.1"
 	var port = 1883
 	//var wwwport = 8559
-	
+
 	if len(os.Args) > 1 {
 		host = os.Args[1]
 	}
-	
-	
+
+
 	//c := make(chan os.Signal, 1)
 	//signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	
+
 	//mqtt.DEBUG = log.New(os.Stderr, "", 0)			// Disable logging
 	mqtt.ERROR = log.New(os.Stderr, "", 0)
 	var remote string = "tcp://" + host + ":" + strconv.Itoa(port)
 	opts := mqtt.NewClientOptions().AddBroker(remote)//.SetClientID("meteod")
 	opts.SetKeepAlive(30 * time.Second)
 	opts.SetPingTimeout(5 * time.Second)
-	opts.OnConnect = func(c mqtt.Client) {	
+	opts.OnConnect = func(c mqtt.Client) {
 		fmt.Println("MQTT connected: " + remote)
 		if token := c.Subscribe("meteo/#", 0, onMessageReceived); token.Wait() && token.Error() != nil {
 			fmt.Println(token.Error())
@@ -585,13 +606,14 @@ func main() {
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
-	
+
 	go pushDB()		// Fork push DB thread
-	
+
 	// Setup webserver
 	//fmt.Println("Firing up webserver ... ")
 	http.HandleFunc("/", www_handler_index)
 	http.HandleFunc("/chart.js", www_handler_chartjs)
+	http.HandleFunc("/meteo.css", www_handler_meteocss)
 	http.HandleFunc("/stations", www_handler_index)
 	http.Handle("/src/", http.FileServer(http.Dir("src/")))
 	http.HandleFunc("/stations.csv", www_handler_stations_csv)
@@ -600,7 +622,7 @@ func main() {
 	http.HandleFunc("/lightnings", www_handler_lightnings)
 	fmt.Println("Webserver started: http://127.0.0.1:8558")
 	http.ListenAndServe(":8558", nil)
-	
+
 	//<-c
 	fmt.Println("Bye")
 }

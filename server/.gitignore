@@ -1,2 +1,5 @@
 # Database files
 *.db
+
+# Binaries
+meteod

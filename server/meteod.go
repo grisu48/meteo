@@ -239,7 +239,7 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<h1>meteo Web Portal</h1>\n")
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
 
-	var all_stations map[int]station
+	all_stations := make(map[int]station)
 	for id, s := range db_stations() {
 		all_stations[id] = s
 	}

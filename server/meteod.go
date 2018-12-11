@@ -204,6 +204,7 @@ func db_station(id int, min_t int, max_t int, limit int) ([]weatherpoint,error) 
 	if max_t <= 0 { max_t = int(get_timestamp()) }
 
 	sql := "SELECT `timestamp`,`t`,`p`,`hum` FROM `station_" + strconv.Itoa(id) + "` WHERE `timestamp` >= '" + strconv.Itoa(min_t) + "' AND `timestamp` <= '" + strconv.Itoa(max_t) + "' ORDER BY `timestamp` DESC LIMIT " + strconv.Itoa(limit)
+	
 	//fmt.Println(sql)
 	rows, err := db.Query(sql)
 	if err != nil {
@@ -240,8 +241,8 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<p><a href=\"stations\">[Stations]</a> <a href=\"lightnings\">[Lightnings]</a></p>\n")
 
 	all_stations := make(map[int]station)
-	for id, s := range db_stations() {
-		all_stations[id] = s
+	for _, s := range db_stations() {
+		all_stations[s.id] = s
 	}
 
 	fmt.Fprintf(w, "<h2>Stations</h2>\n")
@@ -265,6 +266,7 @@ func www_handler_index(w http.ResponseWriter, r *http.Request) {
 				c_offline += 1
 			}
 		}
+		
 		// List as well all stations, that are active, but not yet in the database
 		for id, s := range stations {
 			_, exists := all_stations[id];
@@ -442,6 +444,10 @@ func www_handler_station(w http.ResponseWriter, r *http.Request) {
 	}
 
 	values,err := db_station(id, int(t_min), int(now), 1000)		// Limit 1000 by default
+	// Reverse the values, as we need the result ascending
+	for i, j := 0, len(values)-1; i < j; i, j = i+1, j-1 {
+    	values[i], values[j] = values[j], values[i]
+	}
 	if len(values) == 0 {
 		fmt.Fprintf(w, "<p>No results</p>\n")
 	} else {

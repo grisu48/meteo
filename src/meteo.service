@@ -1,0 +1,15 @@
+[Unit]
+Description=Meteo Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=meteo
+WorkingDirectory=/home/meteo/meteo
+ExecStart=/home/meteo/meteo/meteod 
+Restart=on-failure # or always, on-abort, etc
+StandardOutput=syslog
+StandardError=file:/var/log/meteo.err
+
+[Install]
+WantedBy=multi-user.target

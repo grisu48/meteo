@@ -66,8 +66,31 @@ func (db *Persistence) Prepare() error {
 	if err != nil {
 		return err
 	}
+	_, err = db.con.Exec("CREATE TABLE IF NOT EXISTS `tokens` (`token` VARCHAR(32) PRIMARY KEY, `station` INT);")
+	if err != nil {
+		return err
+	}
 
 	return nil
+}
+
+/** Get the station, the token is assigned to. Return 0 if not token is found */
+func (db *Persistence) GetStationToken(token string) (int ,error) {
+	stmt, err := db.con.Prepare("SELECT `station` FROM `tokens` WHERE `token` = ? LIMIT 1")
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query(token)
+	if err != nil {
+		return 0, err
+	}
+	if rows.Next() {
+		var station int
+		rows.Scan(&station)
+		return station, nil
+	}
+	return 0, nil
 }
 
 /** Inserts the given station and assign the ID to the given station parameter */
@@ -142,9 +165,11 @@ func (db *Persistence) GetStation(id int) (Station, error) {
 	if rows.Next() {
 		station := Station{}
 		rows.Scan(&station.Id, &station.Name, &station.Location, &station.Description)
+		return station, nil
+	} else {
+		station.Id = 0
+		return station, nil
 	}
-
-	return station, nil
 }
 
 func (db *Persistence) GetLastDataPoints(station int, limit int) ([]DataPoint, error) {

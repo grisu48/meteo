@@ -1,9 +1,9 @@
-[database]
-hostname = "localhost"
-username = "meteo"
-password = ""
-database = "meteo"
+[Database]
+Hostname = "localhost"
+Username = "meteo"
+Password = ""
+Database = "meteo"
 
-[webserver]
+[Webserver]
 port = 8802
-
+Bindaddr = "127.0.0.1"

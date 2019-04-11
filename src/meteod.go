@@ -8,6 +8,7 @@ import "strconv"
 import "encoding/json"
 import "io/ioutil"
 import "time"
+import "math"
 import "github.com/BurntSushi/toml"
 
 type tomlConfig struct {
@@ -80,17 +81,33 @@ func doDatapointPush(dp jsonDataPoint, station int) (bool, error) {
 	datapoints, err := db.GetLastDataPoints(station, 1)
 	if err != nil { return false, err }
 	if len(datapoints) == 0 { return true, nil }
+	last := datapoints[0]
 
 	now := time.Now().Unix()
-	lastTimestamp := datapoints[0].Timestamp
+	lastTimestamp := last.Timestamp
 	diff := now - lastTimestamp
 	if diff < 0 { diff = -diff }
 
-	fmt.Println(diff)
-
 	// XXX Check time range maybe
 
-	return diff > cf.PushDelay, nil
+	if diff > cf.PushDelay {
+		return true,nil 
+	} else {
+		// Within the ignore interval, but check for significant deviations
+		if math.Abs((float64)(last.Temperature - dp.T)) > 0.5 { return true, nil }
+		if math.Abs((float64)(last.Pressure - dp.P)) > 100 { return true, nil }
+		if math.Abs((float64)(last.Humidity - dp.Hum)) > 2 { return true, nil }
+	}
+	return false, nil
+}
+
+func isPlausible(dp jsonDataPoint) bool {
+	if dp.T < -100 || dp.T > 1000 { return false }
+	if dp.Hum < 0 || dp.Hum > 100 { return false }
+	p_mbar := dp.P / 100.0
+	if p_mbar < 10 { return false }
+	if p_mbar > 2000 { return false }		// We are not a submarine!
+	return true
 }
 
 /* Function callback when received a datapoint. Return true if the datapoint is accepted
@@ -115,6 +132,15 @@ func received(dp jsonDataPoint) bool {
 		dp.Timestamp = time.Now().Unix()
 	}
 
+	// Repair pressure unit, that could be in mbar but is expected in hPa
+	if dp.P < 10000 { dp.P *= 100 }
+
+	// Check ranges for plausability
+	if !isPlausible(dp) {
+		fmt.Printf("UNPLAUSIBLE: %d at %d, t = %f, hum = %f, p = %f\n", station, dp.Timestamp, dp.T, dp.Hum, dp.P)
+		return true
+	}
+
 	push, err := doDatapointPush(dp, station)
 	if err != nil { panic(err) }
 
@@ -126,8 +152,6 @@ func received(dp jsonDataPoint) bool {
 	} else {
 		fmt.Printf("RECV: %d at %d, t = %f, hum = %f, p = %f\n", station, dp.Timestamp, dp.T, dp.Hum, dp.P)
 	}
-
-	
 	
 	return true
 }
@@ -202,7 +226,7 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 		datapoints, err := db.GetLastDataPoints(station.Id, limit)
 		fmt.Fprintf(w, "# Station %d, %s, %s, %s\n", station.Id, station.Name, station.Location, station.Description)
 		for _, dp := range datapoints {
-			fmt.Fprintf(w, "%d,%f,%f,%f\n", dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
+			fmt.Fprintf(w, "%d,%.2f,%.2f,%.2f\n", dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 		}
 		
 

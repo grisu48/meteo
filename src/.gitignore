@@ -1,2 +1,4 @@
-meteo
+# Binaries
+meteod
+# Config file
 meteo.toml

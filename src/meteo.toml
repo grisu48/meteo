@@ -3,7 +3,7 @@ PushDelay = 60
 [Database]
 Hostname = "localhost"
 Username = "meteo"
-Password = ""
+Password = "meteo"
 Database = "meteo"
 
 [Webserver]

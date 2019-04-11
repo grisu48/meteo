@@ -1,3 +1,5 @@
+PushDelay = 60
+
 [Database]
 Hostname = "localhost"
 Username = "meteo"

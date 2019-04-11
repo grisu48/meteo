@@ -102,7 +102,7 @@ func (db *Persistence) InsertStation(station *Station) error {
 
 	// Create table
 	tablename := "station_" + strconv.Itoa(id)
-	_, err = db.con.Exec("CREATE TABLE IF NOT EXISTS `" + tablename + "` (`timestamp` INT PRIMARY KEY, `temperature` FLOAT, `humidity` FLOAT, `pressure` FLOAT;")
+	_, err = db.con.Exec("CREATE TABLE IF NOT EXISTS `" + tablename + "` (`timestamp` INT PRIMARY KEY, `temperature` FLOAT, `humidity` FLOAT, `pressure` FLOAT);")
 	if err != nil {
 		return err
 	}

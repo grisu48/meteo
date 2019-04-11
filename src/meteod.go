@@ -10,11 +10,10 @@ import "io/ioutil"
 import "time"
 import "github.com/BurntSushi/toml"
 
-var db Persistence
-
 type tomlConfig struct {
 	DB        tomlDatabase  `toml:"Database"`
 	Webserver tomlWebserver `toml:"Webserver"`
+	PushDelay int64
 }
 
 type tomlDatabase struct {
@@ -30,7 +29,6 @@ type tomlWebserver struct {
 	Bindaddr string
 }
 
-
 type jsonDataPoint struct {
 	Token string
 	Timestamp int64
@@ -39,17 +37,22 @@ type jsonDataPoint struct {
 	P float32
 }
 
-func main() {
-	var err error
+var cf tomlConfig
+var db Persistence
 
-	// Read config
-	var cf tomlConfig
+
+func main() {
+	var err error 
+
+	// Default config values
+	cf.PushDelay = 60		// 60 Seconds
 	cf.DB.Hostname = "localhost"
 	cf.DB.Username = "meteo"
 	cf.DB.Password = ""
 	cf.DB.Database = "meteo"
 	cf.DB.Port = 3306
 	cf.Webserver.Port = 8802
+	// Read config
 	if _, err := toml.DecodeFile("meteo.toml", &cf); err != nil {
 		panic(err)
 	}
@@ -73,6 +76,23 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
+func doDatapointPush(dp jsonDataPoint, station int) (bool, error) {
+	datapoints, err := db.GetLastDataPoints(station, 1)
+	if err != nil { return false, err }
+	if len(datapoints) == 0 { return true, nil }
+
+	now := time.Now().Unix()
+	lastTimestamp := datapoints[0].Timestamp
+	diff := now - lastTimestamp
+	if diff < 0 { diff = -diff }
+
+	fmt.Println(diff)
+
+	// XXX Check time range maybe
+
+	return diff > cf.PushDelay, nil
+}
+
 /* Function callback when received a datapoint. Return true if the datapoint is accepted
  * Accepted datapoint doesn't mean automatically pushed datapoint.
  */
@@ -94,8 +114,21 @@ func received(dp jsonDataPoint) bool {
 	if dp.Timestamp == 0 {
 		dp.Timestamp = time.Now().Unix()
 	}
+
+	push, err := doDatapointPush(dp, station)
+	if err != nil { panic(err) }
+
+	if push {
+		db_dp := DataPoint{Timestamp: dp.Timestamp, Station: station, Temperature: dp.T, Humidity: dp.Hum, Pressure: dp.P}
+		err := db.InsertDataPoint(db_dp)
+		if err != nil { panic(err) }
+		fmt.Printf("PUSH: %d at %d, t = %f, hum = %f, p = %f\n", station, dp.Timestamp, dp.T, dp.Hum, dp.P)
+	} else {
+		fmt.Printf("RECV: %d at %d, t = %f, hum = %f, p = %f\n", station, dp.Timestamp, dp.T, dp.Hum, dp.P)
+	}
+
 	
-	fmt.Printf("RECV: %d at %d, t = %f, hum = %f, p = %f\n", station, dp.Timestamp, dp.T, dp.Hum, dp.P)
+	
 	return true
 }
 

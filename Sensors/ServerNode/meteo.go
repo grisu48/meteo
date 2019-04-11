@@ -131,7 +131,7 @@ func publish(dp DataPoint) (error) {
 	if err != nil { return err }
 	body, err := ioutil.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		fmt.Fprintln(os.Stderr, "POST returned status %d : %s\n", resp.StatusCode, string(body))
+		fmt.Fprintf(os.Stderr, "POST returned status %d\n%s\n\n", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	// All good

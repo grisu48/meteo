@@ -54,9 +54,8 @@ func main() {
 	cf.DB.Port = 3306
 	cf.Webserver.Port = 8802
 	// Read config
-	if _, err := toml.DecodeFile("meteo.toml", &cf); err != nil {
-		panic(err)
-	}
+	toml.DecodeFile("/etc/meteod.toml", &cf)
+	toml.DecodeFile("meteod.toml", &cf)
 
 	// Connect database
 	db, err = ConnectDb(cf.DB.Hostname, cf.DB.Username, cf.DB.Password, cf.DB.Database, cf.DB.Port)

@@ -7,9 +7,10 @@ Type=simple
 User=meteo
 WorkingDirectory=/home/meteo/meteo
 ExecStart=/home/meteo/meteo/meteod 
-Restart=on-failure # or always, on-abort, etc
-StandardOutput=syslog
-StandardError=file:/var/log/meteo.err
+RestartSec=10
+Restart=always
+StandardOutput=null
+StandardError=file:/var/log/meteod.err
 
 [Install]
 WantedBy=multi-user.target

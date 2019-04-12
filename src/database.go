@@ -39,6 +39,7 @@ func ConnectDb(hostname string, username string, password string, database strin
 	if err != nil {
 		return db, err
 	}
+	con.SetMaxOpenConns(5)
 	db.con = con
 
 	return db, nil
@@ -85,6 +86,7 @@ func (db *Persistence) GetStationToken(token string) (int ,error) {
 	if err != nil {
 		return 0, err
 	}
+	defer rows.Close()
 	if rows.Next() {
 		var station int
 		rows.Scan(&station)
@@ -147,6 +149,7 @@ func (db *Persistence) ExistsStation(id int) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	defer rows.Close()
 	return rows.Next(), nil
 }
 
@@ -162,6 +165,7 @@ func (db *Persistence) GetStation(id int) (Station, error) {
 	if err != nil {
 		return station, err
 	}
+	defer rows.Close()
 	if rows.Next() {
 		station := Station{}
 		rows.Scan(&station.Id, &station.Name, &station.Location, &station.Description)
@@ -184,6 +188,7 @@ func (db *Persistence) GetLastDataPoints(station int, limit int) ([]DataPoint, e
 	if err != nil {
 		return datapoints, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		datapoint := DataPoint{}
 		rows.Scan(&datapoint.Timestamp, &datapoint.Temperature, &datapoint.Humidity, &datapoint.Pressure)
@@ -205,6 +210,7 @@ func (db *Persistence) QueryStation(station int, t_min int64, t_max int64, limit
 	if err != nil {
 		return datapoints, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		datapoint := DataPoint{}
 		rows.Scan(&datapoint.Timestamp, &datapoint.Temperature, &datapoint.Humidity, &datapoint.Pressure)

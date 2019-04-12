@@ -223,7 +223,9 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Print station and datapoints
 		datapoints, err := db.GetLastDataPoints(station.Id, limit)
-		fmt.Fprintf(w, "# Station %d, %s, %s, %s\n", station.Id, station.Name, station.Location, station.Description)
+		fmt.Fprintf(w, "## Station %d: '%s' in %s, %s\n", station.Id, station.Name, station.Location, station.Description)
+		fmt.Fprintf(w, "# Timestamp, Temperature, Humidity, Pressure\n")
+		fmt.Fprintf(w, "# Seconds, degree C, %% rel, hPa\n")
 		for _, dp := range datapoints {
 			fmt.Fprintf(w, "%d,%.2f,%.2f,%.2f\n", dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 		}

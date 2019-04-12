@@ -73,6 +73,9 @@ func main() {
 	http.HandleFunc("/", handler)
 	http.HandleFunc("/stations", stationsHandler)
 	http.HandleFunc("/station/", stationHandler)
+	http.HandleFunc("/current", readingsHandler)
+	http.HandleFunc("/latest", readingsHandler)
+	http.HandleFunc("/readings", readingsHandler)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
@@ -173,6 +176,38 @@ func stationsHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w,"# Id,Name,Location,Description\n")
 			for _, station := range stations {
 				fmt.Fprintf(w, "%d,%s,%s,%s\n", station.Id, station.Name, station.Location, station.Description)
+			}
+		}
+	} else if r.Method == "POST" {
+		// Reserved for future
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("N/A\n"))
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad request\n"))
+	}
+}
+
+func readingsHandler(w http.ResponseWriter, r *http.Request) {	
+	if r.Method == "GET" {
+		stations, err := db.GetStations()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Server error"))
+			panic(err)
+		} else {
+			fmt.Fprintf(w, "# Station, Timestamp, Temperature, Humidity, Pressure\n")
+			for _, station := range stations {
+				dps, err := db.GetLastDataPoints(station.Id, 1)
+				if err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					w.Write([]byte("Server error"))
+					panic(err)
+				}
+				if len(dps) > 0 {
+					dp := dps[0]
+					fmt.Fprintf(w, "%d,%d,%.2f,%.2f,%.2f\n", station.Id, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)					
+				}
 			}
 		}
 	} else if r.Method == "POST" {

@@ -1,4 +1,7 @@
 # meteo
+
+[![Build Status](https://travis-ci.org/grisu48/meteo.svg?branch=master)](https://travis-ci.org/grisu48/meteo)
+
 Weather and environmental monitoring solution
 
 This project aims to provide a centralized enviromental and room monitoring system for different sensors.

@@ -12,3 +12,5 @@ go:
 dist:
   - xenial
 
+script:
+  - sh -c 'cd src; make'

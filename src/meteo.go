@@ -17,10 +17,18 @@ import (
 
 type Station struct {
 	Id int
+	Name string
 	Timestamp int64
 	Temperature float32
 	Humidity float32
 	Pressure float32
+}
+
+type StationMeta struct {
+	Id int
+	Name string
+	Location    string
+	Description string
 }
 
 func httpGet(url string) ([]byte, error) {
@@ -34,6 +42,29 @@ func httpGet(url string) ([]byte, error) {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	return body, err
+}
+
+func GetStations(baseUrl string) (map[int]StationMeta, error) {
+	ret := make(map[int]StationMeta, 0)
+	url := baseUrl + "/stations"
+	body, err := httpGet(url)
+	if err != nil { return ret, err }
+	response := strings.TrimSpace(string(body))
+	for _, line := range(strings.Split(response, "\n")) {
+		if len(line) == 0 || line[0] == '#'{ continue }
+		params := strings.Split(line, ",")
+		if len(params) == 4 {
+			var err error
+			station := StationMeta{}
+			station.Id, err = strconv.Atoi(params[0])
+			if err != nil { continue }
+			station.Name = params[1]
+			station.Location = params[2]
+			station.Description = params[3]
+			ret[station.Id] = station
+		}
+	}
+	return ret, nil
 }
 
 func request(hostname string) ([]Station, error) {
@@ -52,6 +83,7 @@ func request(hostname string) ([]Station, error) {
 		url = url[:len(url)-1]
 	}
 
+
 	body, err := httpGet(url + "/current")
 	if err != nil { 
 		// Try with http instead of https, if we have added https automatically
@@ -65,6 +97,7 @@ func request(hostname string) ([]Station, error) {
 		}
 	}
 
+	stations, _ := GetStations(url)		// Ignore errors here
 
 	response := strings.TrimSpace(string(body))
 	// Parse response lines
@@ -90,6 +123,7 @@ func request(hostname string) ([]Station, error) {
 			f, err = strconv.ParseFloat(params[4], 32)
 			if err != nil { continue }
 			station.Pressure = float32(f)
+			station.Name = stations[station.Id].Name
 			ret = append(ret, station)
 		}
 	}
@@ -113,7 +147,7 @@ func main() {
 		}
 		for _, station := range(stations) {
 			time := time.Unix(station.Timestamp, 0)
-			fmt.Printf("  * %3d |%19s| %5.2f degree, %5.2f %% rel. Humidity, %06.0f hPa\n", station.Id, time.Format("2006-01-02-15:04:05"), station.Temperature, station.Humidity, station.Pressure)
+			fmt.Printf("  * %3d %-22s %19s   %5.2fC|%5.2f %%rel|%6.0fhPa\n", station.Id, station.Name, time.Format("2006-01-02-15:04:05"), station.Temperature, station.Humidity, station.Pressure)
 		}
 	}
 

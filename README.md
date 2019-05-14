@@ -10,6 +10,8 @@ Client can attach to this server instance in order to read out the different rea
 
 # Server
 
+Requires `go >= 1.9.x`
+
 ## Configuration
 
 Currently manually. See `meteo.toml`

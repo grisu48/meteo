@@ -8,29 +8,27 @@ This project aims to provide a centralized enviromental and room monitoring syst
 On a central server runs the server instance, that collects all the sensor values from different nodes.
 Client can attach to this server instance in order to read out the different readings of the sensors.
 
-## Instructions
+# Server
 
-The project is currently in development and experimental. Build instructions are not yet given.
+## Configuration
 
-## Server
+Currently manually. See `meteo.toml`
 
-The server instance runs on a dedicated computer, that stores all the sensor readings.
-All the sensors send their readings to this server instance via MQTT.
+## Security
 
-Currently the server is written in go and found in the `server` directory.
+Pushing stations need a access `token`, that identifies where the data belongs to.
+
+# Client
+
+There is currently a very simple CLI client available: `meteo`
+
+    meteo REMOTE
+    
+    $ meteo http://meteo-service.local/
+      *   1 meteo-cluster          2019-05-14-17:24:01   22.51C|23.00 %rel| 95337hPa
 
 ## Nodes/Sensors
 
 Currently I have some Adafruit sensors, a skeleton code for Raspberry Pi, a JeeNode RoomNode (that is not utilized anymore) and some EPS8266 projects.
 
 This whole project is ongoing work, so nothing is production ready yet, as I'm still experimenting with lots of sensors.
-
-# Clients
-
-## QMeteo
-
-An experimental Qt client is included as well in QMeteo (qt5).
-
-## Android
-
-An android client is under development. See the `Android` branch.

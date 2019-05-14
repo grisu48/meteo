@@ -11,6 +11,3 @@ go:
 
 dist:
   - xenial
-
-script:
-  - sh -c 'cd src && go build meteod.go && go build meteo.go'

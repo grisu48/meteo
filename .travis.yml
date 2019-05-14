@@ -8,6 +8,10 @@ go:
   - "1.12.x"
   - master
 
-
 dist:
   - xenial
+
+
+before_script:
+  - go get "github.com/BurntSushi/toml"
+  - go get "github.com/go-sql-driver/mysql"

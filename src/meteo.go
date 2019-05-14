@@ -134,8 +134,11 @@ func request(hostname string) ([]Station, error) {
 func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fmt.Println("Usage: %s REMOTE\n", os.Args[0])
-		fmt.Println("       REMOTE defines a running meteo webserver\n")
+		fmt.Printf("Usage: %s REMOTE\n", os.Args[0])
+		fmt.Println("       REMOTE defines a running meteo webserver")
+		fmt.Printf(" e.g. %s http://meteo.local/\n", os.Args[0])
+		fmt.Printf("      %s https://monitor-server.local/meteo/\n", os.Args[0])
+		fmt.Println("Visit https://github.com/grisu48/meteo")
 		os.Exit(1)
 	}
 

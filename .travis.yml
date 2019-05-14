@@ -1,0 +1,17 @@
+language: go
+
+go:
+  - "1.8.x"
+  - "1.9.x"
+  - "1.10.x"
+  - "1.11.x"
+  - "1.12.x"
+  - master
+
+
+dist:
+  - xenial
+
+script:
+  - go build src/meteod.go
+  - go build src/meteo.go

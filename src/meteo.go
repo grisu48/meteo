@@ -9,9 +9,11 @@ import (
 	"strings"
 	"strconv"
 	"time"
+	"errors"
 	"io/ioutil"
 	"net/http"
 )
+
 
 type Station struct {
 	Id int
@@ -21,16 +23,49 @@ type Station struct {
 	Pressure float32
 }
 
-func request(hostname string) ([]Station, error) {
-	ret := make([]Station, 0)
-	url := "https://" + hostname + "/meteo/current"
-	
-
+func httpGet(url string) ([]byte, error) {
+	ret := make([]byte, 0)
+	if len(url) == 0 { return ret, errors.New("Empty URL")}
 	resp, err := http.Get(url)
 	if err != nil { return ret, err }
+	if !strings.HasPrefix(resp.Status, "200 ") {
+		return ret, errors.New(fmt.Sprintf("Http error %s", resp.Status))
+	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil { return ret, err }
+	return body, err
+}
+
+func request(hostname string) ([]Station, error) {
+	ret := make([]Station, 0)
+
+	url := hostname
+
+	// Add https if nothing is there
+	autoHttps := false
+	if !strings.Contains(hostname, "://") {
+		autoHttps = true
+		url = "https://" + hostname + "/meteo"
+	}
+	if len(url) == 0 { return ret, errors.New("Empty URL")}
+	if url[len(url)-1] == '/' {
+		url = url[:len(url)-1]
+	}
+
+	body, err := httpGet(url + "/current")
+	if err != nil { 
+		// Try with http instead of https, if we have added https automatically
+		if autoHttps {
+			//fmt.Fprintln(os.Stderr, "  # Warning: Fallback to unencrypted http!")
+			url = strings.Replace(url, "https://", "http://", 1)
+			body, err = httpGet(url + "/current")
+			if err != nil { return ret, err }
+		} else {
+			return ret, err
+		}
+	}
+
+
 	response := strings.TrimSpace(string(body))
 	// Parse response lines
 	for _, line := range(strings.Split(response, "\n")) {

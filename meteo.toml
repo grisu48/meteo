@@ -1,11 +1,11 @@
-PushDelay = 60
+DefaultRemote = "localhost"
 
-[Database]
-Hostname = "localhost"
-Username = "meteo"
-Password = "meteo"
-Database = "meteo"
 
-[Webserver]
-port = 8802
-Bindaddr = "127.0.0.1"
+# Every section starting with Remotes. defines an alias
+[Remotes.Host1]
+Remote = "http://localhost:1234"
+
+[Remotes.Host2]
+Remote = "https://meteo.local/meteo:88"
+  
+  

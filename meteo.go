@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"net/http"
+	"github.com/BurntSushi/toml"
 )
 
 
@@ -29,6 +30,15 @@ type StationMeta struct {
 	Name string
 	Location    string
 	Description string
+}
+
+type tomlConfig struct {
+	DefaultRemote string `toml:"DefaultRemote"`
+	Remotes map[string]Remote `toml:"Remotes"`
+}
+
+type Remote struct {
+	Remote string
 }
 
 func httpGet(url string) ([]byte, error) {
@@ -133,16 +143,31 @@ func request(hostname string) ([]Station, error) {
 
 func main() {
 	args := os.Args[1:]
+	hosts := args
+
+	// Read configuration
+	var cf tomlConfig
+	toml.DecodeFile("/etc/meteo.toml", &cf)
+	toml.DecodeFile("meteo.toml", &cf)
+
 	if len(args) == 0 {
-		fmt.Printf("Usage: %s REMOTE\n", os.Args[0])
-		fmt.Println("       REMOTE defines a running meteo webserver")
-		fmt.Printf(" e.g. %s http://meteo.local/\n", os.Args[0])
-		fmt.Printf("      %s https://monitor-server.local/meteo/\n", os.Args[0])
-		fmt.Println("Visit https://github.com/grisu48/meteo")
-		os.Exit(1)
+		if cf.DefaultRemote == "" {
+			fmt.Printf("Usage: %s REMOTE\n", os.Args[0])
+			fmt.Println("       REMOTE defines a running meteo webserver")
+			fmt.Printf(" e.g. %s http://meteo.local/\n", os.Args[0])
+			fmt.Printf("      %s https://monitor-server.local/meteo/\n", os.Args[0])
+			fmt.Println("Visit https://github.com/grisu48/meteo")
+			os.Exit(1)
+		} else {
+			hosts = append(hosts, cf.DefaultRemote)
+		}
 	}
 
-	for _, hostname := range(args) {
+	for _, hostname := range(hosts) {
+		if val, ok := cf.Remotes[hostname]; ok {
+			hostname = val.Remote
+		}
+
 		fmt.Println(hostname)
 		stations, err := request(hostname)
 		if err != nil {

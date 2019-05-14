@@ -1,0 +1,11 @@
+PushDelay = 60
+
+[Database]
+Hostname = "localhost"
+Username = "meteo"
+Password = "meteo"
+Database = "meteo"
+
+[Webserver]
+port = 8802
+Bindaddr = "127.0.0.1"

@@ -1,0 +1,12 @@
+
+[Serial.1]
+Device = "/dev/ttyUSB0"
+Baud = 115200
+Remote = "http://localhost/meteo"
+Token = ""
+
+[Serial.2]
+Device = "/dev/ttyUSB1"
+Baud = 115200
+Remote = "http://localhost/meteo"
+Token = ""

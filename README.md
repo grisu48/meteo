@@ -35,7 +35,6 @@ Requires `go >= 1.9.x`
 
     go get "github.com/BurntSushi/toml"
     go get "github.com/go-sql-driver/mysql"
-    go get "github.com/fatih/color"
 
 
 ## Configuration

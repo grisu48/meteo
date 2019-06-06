@@ -13,9 +13,18 @@ import (
 	"io/ioutil"
 	"net/http"
 	"github.com/BurntSushi/toml"
-	"github.com/fatih/color"
 )
 
+
+// Terminal color codes
+const KNRM = "\x1B[0m"
+const KRED = "\x1B[31m"
+const KGRN = "\x1B[32m"
+const KYEL = "\x1B[33m"
+const KBLU = "\x1B[34m"
+const KMAG = "\x1B[35m"
+const KCYN = "\x1B[36m"
+const KWHT = "\x1B[37m"
 
 type Station struct {
 	Id int
@@ -198,11 +207,6 @@ func main() {
 			hosts = append(hosts, cf.DefaultRemote)
 		}
 	}
-
-	// Colors for terminal
-	colErr := color.New(color.FgRed, color.Bold)
-	colWarn := color.New(color.FgYellow)
-	colOk := color.New(color.FgGreen)
 	
 	for _, hostname := range(hosts) {
 		
@@ -223,36 +227,38 @@ func main() {
 			fmt.Printf("  * %3d %-22s ", station.Id, station.Name)
 			// Set color for time
 			if time.Since(timestamp).Minutes() > 5 {
-				colErr.Printf("%19s", timestamp.Format("2006-01-02-15:04:05"))
+				fmt.Printf(KRED)
 			} else {
-				colOk.Printf("%19s", timestamp.Format("2006-01-02-15:04:05"))
+				fmt.Printf(KGRN)
 			}
+			fmt.Printf("%19s", timestamp.Format("2006-01-02-15:04:05"))
+			fmt.Printf(KNRM)
 			fmt.Printf("   ")
 			// Check if we have some custom ranges
 			if val, ok := cf.StationRanges[station.Name]; ok {
 				if len(val.T_Range) == 4 {
 					if station.Temperature <= val.T_Range[0] || station.Temperature >= val.T_Range[3] {
-						colErr.Printf("%5.2fC", station.Temperature)
+						fmt.Printf(KRED)
 					} else if station.Temperature <= val.T_Range[1] || station.Temperature >= val.T_Range[2] {
-						colWarn.Printf("%5.2fC", station.Temperature)
+						fmt.Printf(KYEL)
 					} else {
-						colOk.Printf("%5.2fC", station.Temperature)
+						fmt.Printf(KGRN)
 					}
-				} else {
-					fmt.Printf("%5.2fC", station.Temperature)
 				}
+				fmt.Printf("%5.2fC", station.Temperature)
+				fmt.Printf(KNRM)
 				fmt.Printf("|")
 				if len(val.Hum_Range) == 4 {
 					if station.Humidity <= val.Hum_Range[0] || station.Humidity >= val.Hum_Range[3] {
-						colErr.Printf("%5.2f %%rel", station.Humidity)
+						fmt.Printf(KRED)
 					} else if station.Humidity <= val.Hum_Range[1] || station.Humidity >= val.Hum_Range[2] {
-						colWarn.Printf("%5.2f %%rel", station.Humidity)
+						fmt.Printf(KYEL)
 					} else {
-						colOk.Printf("%5.2f %%rel", station.Humidity)
+						fmt.Printf(KGRN)
 					}
-				} else {
-					fmt.Printf("%5.2f %%rel", station.Humidity)
 				}
+				fmt.Printf("%5.2f %%rel", station.Humidity)
+				fmt.Printf(KNRM)
 				fmt.Printf("|%6.0fhPa\n", station.Pressure)
 			} else {
 				fmt.Printf("%5.2fC|%5.2f %%rel|%6.0fhPa\n", station.Temperature, station.Humidity, station.Pressure)

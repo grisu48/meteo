@@ -1,11 +1,12 @@
-DefaultRemote = "localhost"
+DefaultRemote = "meteo"           # Default server if nothing is given
 
 
-# Every section starting with Remotes. defines an alias
-[Remotes.Host1]
-Remote = "http://localhost:1234"
+[Remotes.meteo]
+Remote = "https://localhost/meteo"
 
-[Remotes.Host2]
-Remote = "https://meteo.local/meteo:88"
-  
-  
+# Declare ranges for individual station (for color output)
+[Ranges.meteo]
+# Temperature range [ err_low, warn_low, warn_high, err_high ]
+# Ranges must be float (e.g. 1.0 instead of 1)
+temp_range = [ 10.0, 22.0, 30.0, 40.0 ]
+hum_range = [ 10.0, 10.0, 50.0, 80.0 ]

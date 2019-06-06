@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"github.com/BurntSushi/toml"
+	"github.com/fatih/color"
 )
 
 
@@ -32,9 +33,19 @@ type StationMeta struct {
 	Description string
 }
 
+
+/* Warning and error ranges */
+type Ranges struct {
+	T_Range []float32 `toml:"temp_range"`
+	Hum_Range []float32 `toml:"hum_range"`
+	//P_Range []float32 `toml:"p_range"`
+}
+
 type tomlConfig struct {
 	DefaultRemote string `toml:"DefaultRemote"`
+
 	Remotes map[string]Remote `toml:"Remotes"`
+	StationRanges map[string]Ranges `toml:"Ranges"`
 }
 
 type Remote struct {
@@ -141,29 +152,60 @@ func request(hostname string) ([]Station, error) {
 	return ret, nil
 }
 
+func printHelp() {
+	fmt.Printf("Usage: %s [OPTIONS] REMOTE [REMOTE] ...\n", os.Args[0])
+	fmt.Println("       REMOTE defines a running meteo webserver")
+	fmt.Printf(" e.g. %s http://meteo.local/\n", os.Args[0])
+	fmt.Printf("      %s https://monitor-server.local/meteo/\n", os.Args[0])
+	fmt.Printf("\n")
+	fmt.Printf("OPTIONS\n")
+	fmt.Printf("  -h, --help            Print this help message\n")
+	fmt.Printf("\n")
+	fmt.Println("https://github.com/grisu48/meteo")
+}
+
 func main() {
 	args := os.Args[1:]
-	hosts := args
+	hosts := make([]string, 0)
 
 	// Read configuration
 	var cf tomlConfig
 	toml.DecodeFile("/etc/meteo.toml", &cf)
 	toml.DecodeFile("meteo.toml", &cf)
+	
+	// Parse arguments
+	for _, arg := range args {
+		if arg == "" { continue }
+		if arg[0] == '-' {
+			// Check for special parameters
+			if arg == "-h" || arg == "--help" {
+				printHelp()
+				os.Exit(0)
+			} else {
+				fmt.Fprintf(os.Stderr, "Illegal argument: %s\n", arg)
+				os.Exit(1)
+			}
+		} else {
+			hosts = append(hosts, arg)
+		}
+	}
 
-	if len(args) == 0 {
+	if len(hosts) == 0 {
 		if cf.DefaultRemote == "" {
-			fmt.Printf("Usage: %s REMOTE\n", os.Args[0])
-			fmt.Println("       REMOTE defines a running meteo webserver")
-			fmt.Printf(" e.g. %s http://meteo.local/\n", os.Args[0])
-			fmt.Printf("      %s https://monitor-server.local/meteo/\n", os.Args[0])
-			fmt.Println("Visit https://github.com/grisu48/meteo")
+			printHelp()
 			os.Exit(1)
 		} else {
 			hosts = append(hosts, cf.DefaultRemote)
 		}
 	}
 
+	// Colors for terminal
+	colErr := color.New(color.FgRed, color.Bold)
+	colWarn := color.New(color.FgYellow)
+	colOk := color.New(color.FgGreen)
+	
 	for _, hostname := range(hosts) {
+		
 		if val, ok := cf.Remotes[hostname]; ok {
 			hostname = val.Remote
 		}
@@ -174,8 +216,47 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		}
 		for _, station := range(stations) {
-			time := time.Unix(station.Timestamp, 0)
-			fmt.Printf("  * %3d %-22s %19s   %5.2fC|%5.2f %%rel|%6.0fhPa\n", station.Id, station.Name, time.Format("2006-01-02-15:04:05"), station.Temperature, station.Humidity, station.Pressure)
+			timestamp := time.Unix(station.Timestamp, 0)
+
+			/* ==== Building the line with colors ==== */
+			// Yes, this has become a bit messy
+			fmt.Printf("  * %3d %-22s ", station.Id, station.Name)
+			// Set color for time
+			if time.Since(timestamp).Minutes() > 5 {
+				colErr.Printf("%19s", timestamp.Format("2006-01-02-15:04:05"))
+			} else {
+				colOk.Printf("%19s", timestamp.Format("2006-01-02-15:04:05"))
+			}
+			fmt.Printf("   ")
+			// Check if we have some custom ranges
+			if val, ok := cf.StationRanges[station.Name]; ok {
+				if len(val.T_Range) == 4 {
+					if station.Temperature <= val.T_Range[0] || station.Temperature >= val.T_Range[3] {
+						colErr.Printf("%5.2fC", station.Temperature)
+					} else if station.Temperature <= val.T_Range[1] || station.Temperature >= val.T_Range[2] {
+						colWarn.Printf("%5.2fC", station.Temperature)
+					} else {
+						colOk.Printf("%5.2fC", station.Temperature)
+					}
+				} else {
+					fmt.Printf("%5.2fC", station.Temperature)
+				}
+				fmt.Printf("|")
+				if len(val.Hum_Range) == 4 {
+					if station.Humidity <= val.Hum_Range[0] || station.Humidity >= val.Hum_Range[3] {
+						colErr.Printf("%5.2f %%rel", station.Humidity)
+					} else if station.Humidity <= val.Hum_Range[1] || station.Humidity >= val.Hum_Range[2] {
+						colWarn.Printf("%5.2f %%rel", station.Humidity)
+					} else {
+						colOk.Printf("%5.2f %%rel", station.Humidity)
+					}
+				} else {
+					fmt.Printf("%5.2f %%rel", station.Humidity)
+				}
+				fmt.Printf("|%6.0fhPa\n", station.Pressure)
+			} else {
+				fmt.Printf("%5.2fC|%5.2f %%rel|%6.0fhPa\n", station.Temperature, station.Humidity, station.Pressure)
+			}
 		}
 	}
 

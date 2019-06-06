@@ -14,3 +14,4 @@ dist:
 before_script:
   - go get "github.com/BurntSushi/toml"
   - go get "github.com/go-sql-driver/mysql"
+  - go get "github.com/fatih/color"

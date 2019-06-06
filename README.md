@@ -14,7 +14,7 @@ Requires `go >= 1.9.x`
 
 ## Configuration
 
-Currently manually. See `meteo.toml`
+Currently manually. See `meteod.toml`
 
 ## Security
 
@@ -29,7 +29,20 @@ There is currently a very simple CLI client available: `meteo`
     $ meteo http://meteo-service.local/
       *   1 meteo-cluster          2019-05-14-17:24:01   22.51C|23.00 %rel| 95337hPa
 
-## Nodes/Sensors
+## Requirements
+
+Requires `go >= 1.9.x`
+
+    go get "github.com/BurntSushi/toml"
+    go get "github.com/go-sql-driver/mysql"
+    go get "github.com/fatih/color"
+
+
+## Configuration
+
+Currently manually. See `meteod.toml`
+
+# Nodes/Sensors
 
 Currently I have some Adafruit sensors, a skeleton code for Raspberry Pi, a JeeNode RoomNode (that is not utilized anymore) and some EPS8266 projects.
 

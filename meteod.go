@@ -28,6 +28,7 @@ type tomlDatabase struct {
 type tomlWebserver struct {
 	Port     int
 	Bindaddr string
+	QueryLimit int64
 }
 
 type jsonDataPoint struct {
@@ -53,6 +54,7 @@ func main() {
 	cf.DB.Database = "meteo"
 	cf.DB.Port = 3306
 	cf.Webserver.Port = 8802
+	cf.Webserver.QueryLimit = 10000
 	// Read config
 	toml.DecodeFile("/etc/meteod.toml", &cf)
 	toml.DecodeFile("meteod.toml", &cf)
@@ -358,7 +360,7 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 		t_max := v_l(values["tmax"], time.Now().Unix())
 
 		// Make values sane
-		if limit < 0 || limit > 1000 { limit = 1000 }
+		if limit < 0 || limit > cf.Webserver.QueryLimit { limit = cf.Webserver.QueryLimit }
 		if offset < 0 { offset = 0 }
 
 		datapoints, err := db.QueryStation(id, t_min, t_max, limit, offset)

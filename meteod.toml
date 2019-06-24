@@ -9,3 +9,4 @@ Database = "meteo"
 [Webserver]
 port = 8802
 Bindaddr = "127.0.0.1"
+#QueryLimit = 1000

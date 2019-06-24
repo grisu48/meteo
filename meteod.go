@@ -76,6 +76,7 @@ func main() {
 	http.HandleFunc("/current", readingsHandler)
 	http.HandleFunc("/latest", readingsHandler)
 	http.HandleFunc("/readings", readingsHandler)
+	http.HandleFunc("/query", queryHandler)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
@@ -162,7 +163,7 @@ func received(dp jsonDataPoint) bool {
 /* ==== Webserver =========================================================== */
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "meteo\n")
+	fmt.Fprintf(w, "meteo Server\n")
 }
 
 func stationsHandler(w http.ResponseWriter, r *http.Request) {
@@ -305,6 +306,76 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("Unsupported Content-Type\n"))
 			return
 		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad request\n"))
+	}
+}
+
+func v_str(values []string, emptyValue string) (string) {
+	if len(values) == 0 {
+		return emptyValue
+	} else {
+		return values[0]
+	}
+}
+
+func v_l(values []string, emptyValue int64) (int64) {
+	if len(values) == 0 { return emptyValue }
+	// Take the first that works
+	for _, v := range values {
+		l, err := strconv.ParseInt(v, 10, 64)
+		if err == nil { return l }
+	}
+	return emptyValue
+}
+
+func queryHandler(w http.ResponseWriter, r *http.Request) {	
+	if r.Method == "GET" {
+		values := r.URL.Query()
+		id, err := strconv.Atoi(v_str(values["id"], ""))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad id\n"))
+			return	
+		}
+
+		station, err := db.GetStation(id)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Server error\n"))
+			panic(err)
+		}
+		if station.Id == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Station not found\n"))
+			return	
+		}
+
+		limit := v_l(values["limit"], 1000)
+		offset := v_l(values["offset"], 0)
+		t_min := v_l(values["tmin"], 0)
+		t_max := v_l(values["tmax"], time.Now().Unix())
+
+		// Make values sane
+		if limit < 0 || limit > 1000 { limit = 1000 }
+		if offset < 0 { offset = 0 }
+
+		datapoints, err := db.QueryStation(id, t_min, t_max, limit, offset)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Server error\n"))
+			panic(err)
+		}
+
+		fmt.Fprintf(w, "## Station %d: '%s' in %s, %s\n", station.Id, station.Name, station.Location, station.Description)
+		fmt.Fprintf(w, "# Timestamp, Temperature, Humidity, Pressure\n")
+		fmt.Fprintf(w, "# Seconds, degree C, %% rel, hPa\n")
+		for _, dp := range datapoints {
+			fmt.Fprintf(w, "%d,%.2f,%.2f,%.2f\n", dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
+		}
+
+
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Bad request\n"))

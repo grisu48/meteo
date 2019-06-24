@@ -198,15 +198,15 @@ func (db *Persistence) GetLastDataPoints(station int, limit int) ([]DataPoint, e
 	return datapoints, nil
 }
 
-func (db *Persistence) QueryStation(station int, t_min int64, t_max int64, limit int) ([]DataPoint, error) {
+func (db *Persistence) QueryStation(station int, t_min int64, t_max int64, limit int64, offset int64) ([]DataPoint, error) {
 	datapoints := make([]DataPoint, 0)
 	tablename := "station_" + strconv.Itoa(station)
-	stmt, err := db.con.Prepare("SELECT `timestamp`,`temperature`,`humidity`,`pressure` FROM `" + tablename + "` WHERE `timestamp` >= ? AND `timestamp` <= ? ORDER BY `timestamp` DESC LIMIT ?")
+	stmt, err := db.con.Prepare("SELECT `timestamp`,`temperature`,`humidity`,`pressure` FROM `" + tablename + "` WHERE `timestamp` >= ? AND `timestamp` <= ? ORDER BY `timestamp` ASC LIMIT ? OFFSET ?")
 	if err != nil {
 		return datapoints, err
 	}
 	defer stmt.Close()
-	rows, err := stmt.Query(t_min, t_max, limit)
+	rows, err := stmt.Query(t_min, t_max, limit, offset)
 	if err != nil {
 		return datapoints, err
 	}

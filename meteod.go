@@ -54,7 +54,7 @@ func main() {
 	cf.DB.Database = "meteo"
 	cf.DB.Port = 3306
 	cf.Webserver.Port = 8802
-	cf.Webserver.QueryLimit = 10000
+	cf.Webserver.QueryLimit = 50000		// Be genereous by default
 	// Read config
 	toml.DecodeFile("/etc/meteod.toml", &cf)
 	toml.DecodeFile("meteod.toml", &cf)
@@ -162,6 +162,35 @@ func received(dp jsonDataPoint) bool {
 }
 
 
+
+func v_str(values []string, emptyValue string) (string) {
+	if len(values) == 0 {
+		return emptyValue
+	} else {
+		return values[0]
+	}
+}
+
+func v_i(values []string, emptyValue int) (int) {
+	if len(values) == 0 { return emptyValue }
+	// Take the first that works
+	for _, v := range values {
+		l, err := strconv.ParseInt(v, 10, 32)
+		if err == nil { return int(l) }
+	}
+	return emptyValue
+}
+
+func v_l(values []string, emptyValue int64) (int64) {
+	if len(values) == 0 { return emptyValue }
+	// Take the first that works
+	for _, v := range values {
+		l, err := strconv.ParseInt(v, 10, 64)
+		if err == nil { return l }
+	}
+	return emptyValue
+}
+
 /* ==== Webserver =========================================================== */
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -248,16 +277,8 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Get parameters
 		params := r.URL.Query()
-		limit := 100
-		if val, ok := params["limit"]; ok {
-			limit, _ = strconv.Atoi(val[0])
-			if limit <= 0 {
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("Bad paramter: limit\n"))
-				return
-			}
-			if limit > 1000 { limit = 1000 }
-		}
+		limit := v_i(params["limit"], 1000)
+		if limit < 0 || limit > 1000 { limit = 1000 }
 
 		// Print station and datapoints
 		datapoints, err := db.GetLastDataPoints(station.Id, limit)
@@ -284,7 +305,7 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("Empty header\n"))
 			}
 			
-			// XXX Reserved for future 
+			// XXX Reserved for future usage
 
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("N/A\n"))
@@ -314,24 +335,6 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func v_str(values []string, emptyValue string) (string) {
-	if len(values) == 0 {
-		return emptyValue
-	} else {
-		return values[0]
-	}
-}
-
-func v_l(values []string, emptyValue int64) (int64) {
-	if len(values) == 0 { return emptyValue }
-	// Take the first that works
-	for _, v := range values {
-		l, err := strconv.ParseInt(v, 10, 64)
-		if err == nil { return l }
-	}
-	return emptyValue
-}
-
 func queryHandler(w http.ResponseWriter, r *http.Request) {	
 	if r.Method == "GET" {
 		values := r.URL.Query()
@@ -354,7 +357,7 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 			return	
 		}
 
-		limit := v_l(values["limit"], 1000)
+		limit := v_l(values["limit"], cf.Webserver.QueryLimit)
 		offset := v_l(values["offset"], 0)
 		t_min := v_l(values["tmin"], 0)
 		t_max := v_l(values["tmax"], time.Now().Unix())

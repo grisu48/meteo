@@ -4,6 +4,7 @@ import "fmt"
 import "log"
 import "strings"
 import "net/http"
+import "html/template"
 import "strconv"
 import "encoding/json"
 import "io/ioutil"
@@ -72,7 +73,10 @@ func main() {
 	// Setup webserver
 	addr := cf.Webserver.Bindaddr + ":" + strconv.Itoa(cf.Webserver.Port)
 	fmt.Println("Serving http://" + addr + "")
-	http.HandleFunc("/", handler)
+	http.HandleFunc("/", dashboardHandler)
+	http.Handle("/asset/", http.StripPrefix("/asset/", http.FileServer(http.Dir("www/asset"))))
+	http.HandleFunc("/dashboard", dashboardHandler)
+	http.HandleFunc("/version", defaultHandler)
 	http.HandleFunc("/stations", stationsHandler)
 	http.HandleFunc("/station/", stationHandler)
 	http.HandleFunc("/current", readingsHandler)
@@ -193,7 +197,7 @@ func v_l(values []string, emptyValue int64) (int64) {
 
 /* ==== Webserver =========================================================== */
 
-func handler(w http.ResponseWriter, r *http.Request) {
+func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "meteo Server\n")
 }
 
@@ -386,3 +390,47 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Bad request\n"))
 	}
 }
+
+type DashboardStation struct {
+	Id int
+	Name string
+	T float32
+	Hum float32
+	P float32
+}
+
+func dashboardHandler(w http.ResponseWriter, r *http.Request) {	
+	dbstations, err := db.GetStations()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Server error"))
+		panic(err)
+	}
+	
+	stations := make([]DashboardStation, 0)
+	for _, s := range dbstations {
+		station := DashboardStation{Id:s.Id, Name: s.Name}
+		
+		dps, err := db.GetLastDataPoints(station.Id, 1)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Server error"))
+			panic(err)
+		}
+		if len(dps) > 0 {
+			station.T = dps[0].Temperature
+			station.Hum = dps[0].Humidity
+			station.P = dps[0].Pressure
+		}
+		
+		stations = append(stations, station)
+	}
+	
+	t, err := template.ParseFiles("www/dashboard.tmpl")
+	err = t.Execute(w, stations)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+	}
+}
+

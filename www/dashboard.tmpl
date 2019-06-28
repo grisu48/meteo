@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>meteo</title>
+    <LINK href="/meteo.css" rel="stylesheet" type="text/css" />
+</head>
+
+<h1>meteo | Dashboard</h1>
+
+<b>Stations</b>
+
+<table>
+{{range .}}
+    <tr><td><a href="/dashboard/{{.Id}}">{{.Name}}</td><td>{{.T}} degree C</td><td>{{.Hum}} rel. humidity</td><td>{{.P}} hPa</td></tr>
+{{end}}
+</table>

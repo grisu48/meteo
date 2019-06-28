@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <title>meteo</title>
-    <LINK href="/meteo.css" rel="stylesheet" type="text/css" />
+    <LINK href="/asset/meteo.css" rel="stylesheet" type="text/css" />
 </head>
 
 <h1>meteo | Dashboard</h1>
 
-<b>Stations</b>
-
-<table>
+<table border="1">
 {{range .}}
-    <tr><td><a href="/dashboard/{{.Id}}">{{.Name}}</td><td>{{.T}} degree C</td><td>{{.Hum}} rel. humidity</td><td>{{.P}} hPa</td></tr>
+    <tr><td><a href="/dashboard/{{.Id}}">{{.Name}}</td><td>{{.Description}}</td><td>{{.T}} degree C</td><td>{{.Hum}} rel. humidity</td><td>{{.P}} hPa</td><td><a href="/dashboard/{{.Id}}/day">[day]</td></tr>
 {{end}}
 </table>

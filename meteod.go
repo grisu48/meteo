@@ -394,6 +394,8 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 type DashboardStation struct {
 	Id int
 	Name string
+	Description string
+	Location string
 	T float32
 	Hum float32
 	P float32
@@ -409,7 +411,7 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	
 	stations := make([]DashboardStation, 0)
 	for _, s := range dbstations {
-		station := DashboardStation{Id:s.Id, Name: s.Name}
+		station := DashboardStation{Id:s.Id, Name: s.Name, Description:s.Description, Location: s.Location}
 		
 		dps, err := db.GetLastDataPoints(station.Id, 1)
 		if err != nil {

@@ -2,14 +2,15 @@ package main
 
 import "fmt"
 import "log"
-import "strings"
 import "net/http"
+import "html/template"
 import "strconv"
 import "encoding/json"
 import "io/ioutil"
 import "time"
 import "math"
 import "github.com/BurntSushi/toml"
+import "github.com/gorilla/mux"
 
 type tomlConfig struct {
 	DB        tomlDatabase  `toml:"Database"`
@@ -72,13 +73,25 @@ func main() {
 	// Setup webserver
 	addr := cf.Webserver.Bindaddr + ":" + strconv.Itoa(cf.Webserver.Port)
 	fmt.Println("Serving http://" + addr + "")
-	http.HandleFunc("/", handler)
-	http.HandleFunc("/stations", stationsHandler)
-	http.HandleFunc("/station/", stationHandler)
-	http.HandleFunc("/current", readingsHandler)
-	http.HandleFunc("/latest", readingsHandler)
-	http.HandleFunc("/readings", readingsHandler)
-	http.HandleFunc("/query", queryHandler)
+
+    r := mux.NewRouter()
+    r.HandleFunc("/", dashboardOverview)
+	r.Handle("/asset/{filename}", http.StripPrefix("/asset/", http.FileServer(http.Dir("www/asset"))))
+	r.HandleFunc("/dashboard", dashboardOverview)
+	r.HandleFunc("/dashboard/{id:[0-9]+}", dashboardStation)
+	r.HandleFunc("/version", defaultHandler)
+	r.HandleFunc("/stations", stationsHandler)
+	r.HandleFunc("/station/{id:[0-9]+}", stationHandler)
+	r.HandleFunc("/station/{id:[0-9]+}/current", stationReadingsHandler)
+	r.HandleFunc("/station/{id:[0-9]+}/current.csv", stationReadingsHandler)
+	r.HandleFunc("/station/{id:[0-9]+}/{year:[0-9]+}.csv", stationQueryCsv)
+	r.HandleFunc("/station/{id:[0-9]+}/{year:[0-9]+}/{month:[0-9]+}.csv", stationQueryCsv)
+	r.HandleFunc("/station/{id:[0-9]+}/{year:[0-9]+}/{month:[0-9]+}/{day:[0-9]+}.csv", stationQueryCsv)
+	r.HandleFunc("/current", readingsHandler)
+	r.HandleFunc("/latest", readingsHandler)
+	r.HandleFunc("/readings", readingsHandler)
+	r.HandleFunc("/query", queryHandler)
+    http.Handle("/", r)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
@@ -193,7 +206,7 @@ func v_l(values []string, emptyValue int64) (int64) {
 
 /* ==== Webserver =========================================================== */
 
-func handler(w http.ResponseWriter, r *http.Request) {
+func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "meteo Server\n")
 }
 
@@ -254,11 +267,11 @@ func readingsHandler(w http.ResponseWriter, r *http.Request) {
 
 func stationHandler(w http.ResponseWriter, r *http.Request) {
 	// Get ID
-	s_id := strings.TrimPrefix(r.URL.Path, "/station/")
-	id, err := strconv.Atoi(s_id)
-	if err != nil || id <= 0 {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Bad paramter: id\n"))
+		w.Write([]byte("Bad id\n"))
 		return
 	}
 
@@ -384,5 +397,304 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Bad request\n"))
+	}
+}
+
+type DashboardStation struct {
+	Id int
+	Name string
+	Description string
+	Location string
+	T float32
+	Hum float32
+	P float32
+}
+
+type DashboardDataPoint struct {
+	Timestamp   int64
+	Time        string
+	Temperature float32
+	Humidity    float32
+	Pressure    float32
+}
+
+func (s *DashboardStation) fromStation(station Station) {
+	s.Id = station.Id
+	s.Name = station.Name
+	s.Description = station.Description
+	s.Location = station.Location
+}
+
+/** Fetch latest points from database
+    returns true if points has been fetched, false if not points are available */
+func (s *DashboardStation) fetch() (bool, error) {
+	dps, err := db.GetLastDataPoints(s.Id, 1)
+	if err != nil { return false, err }
+	if len(dps) > 0 {
+		s.T = dps[0].Temperature
+		s.Hum = dps[0].Humidity
+		s.P = dps[0].Pressure
+		return true, nil
+	}
+	return false, nil
+}
+
+func dashboardOverview(w http.ResponseWriter, r *http.Request) {	
+	dbstations, err := db.GetStations()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Server error"))
+		panic(err)
+	}
+	
+	stations := make([]DashboardStation, 0)
+	for _, s := range dbstations {
+		station := DashboardStation{Id:s.Id, Name: s.Name, Description:s.Description, Location: s.Location}
+		_, err = station.fetch()
+		
+		stations = append(stations, station)
+	}
+	
+	t, err := template.ParseFiles("www/dashboard.tmpl")
+	err = t.Execute(w, stations)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+	}
+	w.Write([]byte("</body>"))
+}
+
+func getVars(v map[string][]string) map[string]string {
+	ret := make(map[string]string)
+	for k, w := range v {
+		if len(w) > 0 { ret[k] = w[0] }
+	}
+	return ret
+}
+
+/** Convert datapoints to dashboard datapoints and also shrink down to at most 1825 (365*5) datapoints */
+func convertDatapoints(dps []DataPoint) ([]DashboardDataPoint) {
+	nMax := 1825
+	ret := make([]DashboardDataPoint, 0)
+
+	// Shrink if necessary
+	if len(dps) > nMax {
+		dp0, dpN := dps[0], dps[len(dps)-1]
+		deltaT := (dpN.Timestamp - dp0.Timestamp) / int64(nMax)
+		j := 0	// Current index
+		for i:=0;i<nMax;i++ {		// Slices
+			t_min := dp0.Timestamp + deltaT * int64(i)
+			t_max := t_min + deltaT
+			
+			ddp := DashboardDataPoint{Timestamp:t_min + deltaT/2}
+			// Merge items
+			counter := 0
+			for j < len(dps) && dps[j].Timestamp <= t_max {
+				ddp.Temperature += dps[j].Temperature
+				ddp.Humidity += dps[j].Humidity
+				ddp.Pressure += dps[j].Pressure
+				j++
+				counter++
+			}
+			if counter > 0 {
+				ddp.Temperature /= float32(counter)
+				ddp.Humidity /= float32(counter)
+				ddp.Pressure /= float32(counter)
+				ddp.Time = time.Unix(ddp.Timestamp, 0).Format("2006-01-02-15:04:05")
+				ret = append(ret, ddp)
+			}
+		}
+
+	} else {
+		for _, dp := range dps {
+			ddp := DashboardDataPoint{Timestamp:dp.Timestamp, Temperature:dp.Temperature, Humidity:dp.Humidity, Pressure:dp.Pressure}
+			// Parse time
+			t := time.Unix(dp.Timestamp, 0)
+			ddp.Time = t.Format("2006-01-02-15:04:05")
+			ret = append(ret, ddp)
+		}
+	}
+
+
+
+	return ret
+}
+
+func dashboardStation(w http.ResponseWriter, r *http.Request) {	
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Illegal id\n"))
+		return
+	}
+	params := getVars(r.URL.Query())
+	
+
+	s, err := db.GetStation(id)
+	if s.Id == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad id\n"))
+		return
+	}
+	station := DashboardStation{}
+	station.fromStation(s)
+	station.fetch()		// Ignore errors when fetching latest datapoint
+
+	t, err := template.ParseFiles("www/station.tmpl")
+	err = t.Execute(w, station)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+		return
+	}
+
+	// Get data according to defined timespan
+	timespan := params["timespan"]
+	now := time.Now().Unix()
+	t_max := now
+	t_min := now - 60*60*24		// Default: last 24h
+	if timespan == "week" {
+		t_min = now - 60*60*24*7
+	} else if timespan == "month" {
+		t_min = now - 60*60*24*7*30
+	} else if timespan == "year" {
+		t_min = now - 60*60*24*7*365
+	}
+	// TODO: Limit and offset directive
+	dps, err := db.QueryStation(station.Id, t_min, t_max, 50000, 0)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+		return
+	}
+	ddps := convertDatapoints(dps)
+	t, err = template.ParseFiles("www/graph_t_hum.tmpl")
+	err = t.Execute(w, ddps)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+		return
+	}
+
+	w.Write([]byte("</body>"))
+}
+
+
+func stationReadingsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Illegal id\n"))
+		return
+	}
+	s, err := db.GetStation(id)
+	if s.Id == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad id\n"))
+		return
+	}
+
+
+	if r.Method == "GET" {
+		dps, err := db.GetLastDataPoints(s.Id, 1)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Server error"))
+			panic(err)
+		}
+		w.Write([]byte("# [Unixtimestamp],[deg C],[% rel],[hPa]\n"))
+		if len(dps) > 0 {
+			dp := dps[0]
+			w.Write([]byte(fmt.Sprintf("%d,%3.2f,%3.2f,%3.2f\n", dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)))
+		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad request\n"))
+	}
+}
+
+func stationQueryCsv(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Illegal id\n"))
+		return
+	}
+	year, err := strconv.Atoi(vars["year"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad year\n"))
+		return
+	}
+	// Month and day are optional
+	month, day := -1, -1
+	if vars["month"] != "" {
+		month, err = strconv.Atoi(vars["month"])
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad month\n"))
+			return
+		}
+
+		if vars["day"] != "" {
+			day, err = strconv.Atoi(vars["day"])
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Bad day\n"))
+				return
+			}
+		}
+	}
+
+	s, err := db.GetStation(id)
+	if s.Id == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad id\n"))
+		return
+	}
+	
+	
+	var t_min time.Time
+	var t_max time.Time
+	if month < 0 && day < 0 {
+		// func Date(year int, month Month, day, hour, min, sec, nsec int, loc *Location) Time
+		t_min = time.Date(year, 0, 0, 0, 0, 0, 0, time.UTC)
+		t_max = t_min.AddDate(1, 0, 0)
+	} else if day < 0 {
+		// Only month
+		t_min = time.Date(year, 0, 0, 0, 0, 0, 0, time.UTC)
+		t_min = t_min.AddDate(0, month, 0)
+		t_max = t_min.AddDate(0, 1, 0)
+	} else {
+		// Year, month and day
+		t_min = time.Date(year, 0, 0, 0, 0, 0, 0, time.UTC)
+		t_min = t_min.AddDate(0, month, day)
+		t_max = t_min.AddDate(0, 0, 1)
+	}
+	// TODO: Limit and offset directive
+	var limit int64
+	var offset int64
+	limit, offset = 10000, 0
+	dps, err := db.QueryStation(s.Id, t_min.Unix(), t_max.Unix(), limit, offset)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(fmt.Sprintf("# Query station %s (id: %d) - %s\n", s.Name, s.Id, s.Description)))
+	w.Write([]byte(fmt.Sprintf("# Location %s\n", s.Location)))
+	w.Write([]byte(fmt.Sprintf("# Year: %d\n", year)))
+	if month > 0 {w.Write([]byte(fmt.Sprintf("# Month: %d\n", month)))}
+	if day > 0 {w.Write([]byte(fmt.Sprintf("# Day: %d\n", day)))}
+	w.Write([]byte(fmt.Sprintf("# Datapoints: %d\n\n", len(dps))))
+	w.Write([]byte("# Timestamp,Temperature,Humidity,Pressure\n"))
+	w.Write([]byte("# [Unixtimestamp],[deg C],[% rel],[hPa]\n\n"))
+	for _, dp := range dps {
+		w.Write([]byte(fmt.Sprintf("%d,%3.2f,%3.2f,%3.2f\n", dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)))
 	}
 }

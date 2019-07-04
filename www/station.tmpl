@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>meteo</title>
+    <script src="../asset/Chart.js"></script>
+    <LINK href="../asset/meteo.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<h1>meteo | Station</h1>
+
+<p><a href="../dashboard">[Dashboard]</a></p>
+
+<table border="1">
+    <tr><td>{{.Name}}</td><td>{{.Description}}</td><td>{{.T}} °C</td><td>{{.Hum}} rel. humidity</td><td>{{.P}} hPa</td></tr>
+</table>
+
+<p>View: <a href="../dashboard/{{.Id}}?timespan=day">[Day]</a><a href="../dashboard/{{.Id}}?timespan=week">[Week]</a><a href="../dashboard/{{.Id}}?timespan=month">[Month]</a><a href="../dashboard/{{.Id}}?timespan=year">[Year]</a></p>

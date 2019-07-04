@@ -88,6 +88,7 @@ func main() {
 	r.HandleFunc("/station/{id:[0-9]+}/{year:[0-9]+}/{month:[0-9]+}.csv", stationQueryCsv)
 	r.HandleFunc("/station/{id:[0-9]+}/{year:[0-9]+}/{month:[0-9]+}/{day:[0-9]+}.csv", stationQueryCsv)
 	r.HandleFunc("/current", readingsHandler)
+	r.HandleFunc("/current.csv", readingsHandlerCsv)
 	r.HandleFunc("/latest", readingsHandler)
 	r.HandleFunc("/readings", readingsHandler)
 	r.HandleFunc("/query", queryHandler)
@@ -246,6 +247,41 @@ func readingsHandler(w http.ResponseWriter, r *http.Request) {
 				dps, err := db.GetLastDataPoints(station.Id, 1)
 				if err != nil {
 					w.WriteHeader(http.StatusInternalServerError)
+					w.Write([]byte("Server error"))
+					panic(err)
+				}
+				if len(dps) > 0 {
+					dp := dps[0]
+					fmt.Fprintf(w, "%d,%d,%.2f,%.2f,%.2f\n", station.Id, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)					
+				}
+			}
+		}
+	} else if r.Method == "POST" {
+		// Reserved for future
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("N/A\n"))
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad request\n"))
+	}
+}
+
+func readingsHandlerCsv(w http.ResponseWriter, r *http.Request) {	
+	if r.Method == "GET" {
+		stations, err := db.GetStations()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Server error"))
+			panic(err)
+		} else {
+
+			w.Header().Set("Content-Disposition", "attachment; filename=\"current.csv\"")
+			w.Header().Set("Content-Type", "text/csv")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "# Station, Timestamp, Temperature, Humidity, Pressure\n")
+			for _, station := range stations {
+				dps, err := db.GetLastDataPoints(station.Id, 1)
+				if err != nil {
 					w.Write([]byte("Server error"))
 					panic(err)
 				}
@@ -548,6 +584,8 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Internal server error"))
 		return
 	}
+	
+
 
 	// Get data according to defined timespan
 	timespan := params["timespan"]
@@ -562,7 +600,7 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 		t_min = now - 60*60*24*7*365
 	}
 	// TODO: Limit and offset directive
-	dps, err := db.QueryStation(station.Id, t_min, t_max, 50000, 0)
+	dps, err := db.QueryStation(station.Id, t_min, t_max, 100000, 0)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Internal server error"))
@@ -604,6 +642,9 @@ func stationReadingsHandler(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("Server error"))
 			panic(err)
 		}
+		filename := fmt.Sprintf("current_%02d.csv", s.Id)
+		w.Header().Set("Content-Disposition", "attachment; filename=" + filename)
+		w.Header().Set("Content-Type", "text/csv")
 		w.Write([]byte("# [Unixtimestamp],[deg C],[% rel],[hPa]\n"))
 		if len(dps) > 0 {
 			dp := dps[0]
@@ -677,7 +718,7 @@ func stationQueryCsv(w http.ResponseWriter, r *http.Request) {
 	// TODO: Limit and offset directive
 	var limit int64
 	var offset int64
-	limit, offset = 10000, 0
+	limit, offset = 0, 0
 	dps, err := db.QueryStation(s.Id, t_min.Unix(), t_max.Unix(), limit, offset)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -685,6 +726,12 @@ func stationQueryCsv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	filename := fmt.Sprintf("station_%02d-%04d", s.Id, year)
+	if month > 0 { filename += fmt.Sprintf("-%02d", month) }
+	if day > 0 { filename += fmt.Sprintf("-%02d", day) }
+	filename += ".csv"
+	w.Header().Set("Content-Disposition", "attachment; filename=" + filename)
+	w.Header().Set("Content-Type", "text/csv")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf("# Query station %s (id: %d) - %s\n", s.Name, s.Id, s.Description)))
 	w.Write([]byte(fmt.Sprintf("# Location %s\n", s.Location)))

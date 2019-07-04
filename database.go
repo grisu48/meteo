@@ -198,14 +198,17 @@ func (db *Persistence) GetLastDataPoints(station int, limit int) ([]DataPoint, e
 	return datapoints, nil
 }
 
+/** Query given station within the given timespan. If limit <=0, the limit is set to 100000 */
 func (db *Persistence) QueryStation(station int, t_min int64, t_max int64, limit int64, offset int64) ([]DataPoint, error) {
 	datapoints := make([]DataPoint, 0)
 	tablename := "station_" + strconv.Itoa(station)
-	stmt, err := db.con.Prepare("SELECT `timestamp`,`temperature`,`humidity`,`pressure` FROM `" + tablename + "` WHERE `timestamp` >= ? AND `timestamp` <= ? ORDER BY `timestamp` ASC LIMIT ? OFFSET ?")
+	sql := "SELECT `timestamp`,`temperature`,`humidity`,`pressure` FROM `" + tablename + "` WHERE `timestamp` >= ? AND `timestamp` <= ? ORDER BY `timestamp` ASC LIMIT ? OFFSET ?"
+	stmt, err := db.con.Prepare(sql)
 	if err != nil {
 		return datapoints, err
 	}
 	defer stmt.Close()
+	if limit <= 0 { limit = 100000 }
 	rows, err := stmt.Query(t_min, t_max, limit, offset)
 	if err != nil {
 		return datapoints, err

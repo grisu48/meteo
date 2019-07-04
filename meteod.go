@@ -79,6 +79,10 @@ func main() {
 	r.Handle("/asset/{filename}", http.StripPrefix("/asset/", http.FileServer(http.Dir("www/asset"))))
 	r.HandleFunc("/dashboard", dashboardOverview)
 	r.HandleFunc("/dashboard/{id:[0-9]+}", dashboardStation)
+	r.HandleFunc("/api.html", func(w http.ResponseWriter, r *http.Request) {
+    	http.ServeFile(w, r, "www/api.html")
+	})
+	r.HandleFunc("/health", HealthCheckHandler)
 	r.HandleFunc("/version", defaultHandler)
 	r.HandleFunc("/stations", stationsHandler)
 	r.HandleFunc("/station/{id:[0-9]+}", stationHandler)
@@ -206,6 +210,14 @@ func v_l(values []string, emptyValue int64) (int64) {
 }
 
 /* ==== Webserver =========================================================== */
+
+func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
+    // A very simple health check.
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"alive": true}`))
+}
+
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "meteo Server\n")

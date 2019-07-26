@@ -26,7 +26,7 @@ const KMAG = "\x1B[35m"
 const KCYN = "\x1B[36m"
 const KWHT = "\x1B[37m"
 
-type Station struct {
+type LocalStation struct {
 	Id int
 	Name string
 	Timestamp int64
@@ -50,7 +50,7 @@ type Ranges struct {
 	//P_Range []float32 `toml:"p_range"`
 }
 
-type tomlConfig struct {
+type tomlClientConfig struct {
 	DefaultRemote string `toml:"DefaultRemote"`
 
 	Remotes map[string]Remote `toml:"Remotes"`
@@ -97,8 +97,8 @@ func GetStations(baseUrl string) (map[int]StationMeta, error) {
 	return ret, nil
 }
 
-func request(hostname string) ([]Station, error) {
-	ret := make([]Station, 0)
+func request(hostname string) ([]LocalStation, error) {
+	ret := make([]LocalStation, 0)
 
 	url := hostname
 
@@ -137,7 +137,7 @@ func request(hostname string) ([]Station, error) {
 		if line[0] == '#' { continue }
 		params := strings.Split(line, ",")
 		if len(params) == 5 {
-			station := Station{}
+			station := LocalStation{}
 			var err error
 			var f float64
 			station.Id, err = strconv.Atoi(params[0])
@@ -178,7 +178,7 @@ func main() {
 	hosts := make([]string, 0)
 
 	// Read configuration
-	var cf tomlConfig
+	var cf tomlClientConfig
 	toml.DecodeFile("/etc/meteo.toml", &cf)
 	toml.DecodeFile("meteo.toml", &cf)
 	

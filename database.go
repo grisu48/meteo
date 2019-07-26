@@ -35,6 +35,10 @@ func OpenDb(filename string) (Persistence, error) {
 	return db, nil
 }
 
+func (db *Persistence) Close() {
+	db.con.Close()
+}
+
 /** Get the highest id from the given table */
 func (db *Persistence) getHighestId(table string, id string) (int, error) {
 	rows, err := db.con.Query("SELECT `" + id + "` FROM `" + table + "` ORDER BY `" + id + "` DESC LIMIT 1")

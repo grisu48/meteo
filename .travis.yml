@@ -15,3 +15,7 @@ before_script:
   - go get "github.com/BurntSushi/toml"
   - go get "github.com/gorilla/mux"
   - go get "github.com/mattn/go-sqlite3"
+
+script:
+  - make
+  - make test

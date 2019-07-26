@@ -12,5 +12,8 @@ meteo: meteo.go
 meteod: meteod.go database.go
 	go build meteod.go database.go
 
+test:	meteod.go database.go database__test.go
+	go test database__test.go database.go
+
 $(SUBDIRS):
 	$(MAKE) -C $@

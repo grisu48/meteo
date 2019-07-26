@@ -28,12 +28,21 @@
 *.x86_64
 *.hex
 
+# Backup files
+*.backup
+*~
+
 # Debug files
 *.dSYM/
 
+# GoLand
+.idea
 
+# Databases
+*.db
+
+# Build files
 build
 build/
-
 meteo
 meteod

@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 	"strconv"
 )
 
@@ -27,21 +27,11 @@ type Persistence struct {
 	con *sql.DB
 }
 
-/** Establish a mysql connection */
-func ConnectDb(hostname string, username string, password string, database string, port int) (Persistence, error) {
+func OpenDb(filename string) (Persistence, error) {
 	db := Persistence{}
-	dSource := username + ":" + password + "@tcp(" + hostname + ":" + strconv.Itoa(port) + ")/" + database
-	con, err := sql.Open("mysql", dSource)
-	if err != nil {
-		return db, err
-	}
-	err = con.Ping()
-	if err != nil {
-		return db, err
-	}
-	con.SetMaxOpenConns(5)
+	con, err := sql.Open("sqlite3", filename)
+	if err != nil { return db, err }
 	db.con = con
-
 	return db, nil
 }
 

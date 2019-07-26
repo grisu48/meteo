@@ -13,17 +13,9 @@ import "github.com/BurntSushi/toml"
 import "github.com/gorilla/mux"
 
 type tomlConfig struct {
-	DB        tomlDatabase  `toml:"Database"`
+	Database string  `toml:"Database"`
 	Webserver tomlWebserver `toml:"Webserver"`
 	PushDelay int64
-}
-
-type tomlDatabase struct {
-	Hostname string
-	Username string
-	Password string
-	Database string
-	Port     int
 }
 
 type tomlWebserver struct {
@@ -49,11 +41,7 @@ func main() {
 
 	// Default config values
 	cf.PushDelay = 60		// 60 Seconds
-	cf.DB.Hostname = "localhost"
-	cf.DB.Username = "meteo"
-	cf.DB.Password = ""
-	cf.DB.Database = "meteo"
-	cf.DB.Port = 3306
+	cf.Database = "meteod.db"
 	cf.Webserver.Port = 8802
 	cf.Webserver.QueryLimit = 50000		// Be genereous by default
 	// Read config
@@ -61,7 +49,7 @@ func main() {
 	toml.DecodeFile("meteod.toml", &cf)
 
 	// Connect database
-	db, err = ConnectDb(cf.DB.Hostname, cf.DB.Username, cf.DB.Password, cf.DB.Database, cf.DB.Port)
+	db, err = OpenDb(cf.Database)
 	if err != nil {
 		panic(err)
 	}

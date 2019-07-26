@@ -1,10 +1,5 @@
 PushDelay = 60
-
-[Database]
-Hostname = "localhost"
-Username = "meteo"
-Password = "meteo"
-Database = "meteo"
+Database = "meteod.db"
 
 [Webserver]
 port = 8802

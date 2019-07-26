@@ -34,8 +34,8 @@ There is currently a very simple CLI client available: `meteo`
 Requires `go >= 1.9.x`
 
     go get "github.com/BurntSushi/toml"
-    go get "github.com/go-sql-driver/mysql"
     go get "github.com/gorilla/mux"
+    go get github.com/mattn/go-sqlite3
 
 ## Configuration
 

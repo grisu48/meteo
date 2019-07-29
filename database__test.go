@@ -11,6 +11,21 @@ import (
 var testDatabase = "_test_meteod_.db"
 var db Persistence
 
+
+
+func randomInt(min int, max int) int {
+	if min > max { return randomInt(max, min) }
+	if min == max { return min }
+	return min+rand.Int()%(max-min)
+}
+
+func randomFloat32(min float32, max float32) float32 {
+	if min > max { return randomFloat32(max, min) }
+	if min == max { return min }
+	return min + rand.Float32()*(max-min)
+}
+
+
 func fileExists(filename string) bool {
 	if _, err := os.Stat(filename); err == nil {
 		return true
@@ -108,10 +123,65 @@ func TestStations(t *testing.T) {
 }
 
 func TestTokens(t *testing.T) {
+	t.Log("Setting up database")
 	err := db.Prepare()
 	if err != nil {
 		t.Fatal("Error preparing database")
 	}
 
+	t.Log("Inserting test stations")
+	station1 := Station{Id:0, Name: "Station 1", Description:"First test station"}
+	station2 := Station{Id:0, Name: "Station 2", Description:"Second test station"}
+	err = db.InsertStation(&station1)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	err = db.InsertStation(&station2)
+	if err != nil { t.Fatal("Database error: ", err ) }
 
+	dps, err := db.GetLastDataPoints(station1.Id, 1000)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != 0 { t.Fatal("Station 1 contains datapoints, when being created")}
+	dps, err = db.GetLastDataPoints(station2.Id, 1000)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != 0 { t.Fatal("Station 2 contains datapoints, when being created")}
+
+
+	t.Log("Inserting test datapoints")
+	now := time.Now().Unix()
+	dp := DataPoint{
+		Timestamp:   now-100,
+		Station:     station1.Id,
+		Temperature: 12,
+		Humidity:    69,
+		Pressure:    94501,
+	}
+	err = db.InsertDataPoint(dp)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	dps, err = db.GetLastDataPoints(station1.Id, 1000)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != 1 { t.Fatal(fmt.Sprintf("Station 1 contains %d datapoints, when expecting 1", len(dps))) }
+	if dps[0] != dp { t.Error("Fetched datapoint doesn't match inserted datapoint") }
+	dps, err = db.GetLastDataPoints(station2.Id, 1000)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != 0 { t.Fatal("Station 2 contains datapoints, but is expected to be empty")}
+
+
+	dp = DataPoint{
+		Timestamp:   now+10,
+		Station:     station1.Id,
+		Temperature: 13,
+		Humidity:    68,
+		Pressure:    94500,
+	}
+	err = db.InsertDataPoint(dp)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	dps, err = db.GetLastDataPoints(station1.Id, 1000)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != 2 { t.Fatal(fmt.Sprintf("Station 1 contains %d datapoints, when expecting 2", len(dps))) }
+	dps, err = db.GetLastDataPoints(station1.Id, 1)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != 1 { t.Fatal(fmt.Sprintf("Station 1 contains %d datapoints, when only fetching 1", len(dps))) }
+	if dps[0] != dp { t.Error("Fetched datapoint doesn't match inserted datapoint") }
+
+	// TODO: Make a progression on station 2
+	// TODO: Make a StationQuery
 }

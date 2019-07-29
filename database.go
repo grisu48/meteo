@@ -187,6 +187,7 @@ func (db *Persistence) GetLastDataPoints(station int, limit int) ([]DataPoint, e
 	for rows.Next() {
 		datapoint := DataPoint{}
 		rows.Scan(&datapoint.Timestamp, &datapoint.Temperature, &datapoint.Humidity, &datapoint.Pressure)
+		datapoint.Station = station
 		datapoints = append(datapoints, datapoint)
 	}
 
@@ -212,6 +213,7 @@ func (db *Persistence) QueryStation(station int, t_min int64, t_max int64, limit
 	for rows.Next() {
 		datapoint := DataPoint{}
 		rows.Scan(&datapoint.Timestamp, &datapoint.Temperature, &datapoint.Humidity, &datapoint.Pressure)
+		datapoint.Station = station
 		datapoints = append(datapoints, datapoint)
 	}
 
@@ -221,11 +223,11 @@ func (db *Persistence) QueryStation(station int, t_min int64, t_max int64, limit
 /** Inserts the given datapoint to the database */
 func (db *Persistence) InsertDataPoint(dp DataPoint) error {
 	tablename := "station_" + strconv.Itoa(dp.Station)
-	stmt, err := db.con.Prepare("INSERT INTO `" + tablename + "` (`timestamp`,`temperature`,`humidity`,`pressure`) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE `temperature` = ?, `humidity` = ?, `pressure` = ?;")
+	stmt, err := db.con.Prepare("INSERT OR REPLACE INTO `" + tablename + "` (`timestamp`,`temperature`,`humidity`,`pressure`) VALUES (?,?,?,?);")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
-	_, err = stmt.Exec(dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure, dp.Temperature, dp.Humidity, dp.Pressure)
+	_, err = stmt.Exec(dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 	return err
 }

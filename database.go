@@ -95,6 +95,7 @@ func (db *Persistence) InsertStation(station *Station) error {
 	if err != nil {
 		return err
 	}
+	id += 1
 
 	// Create table
 	tablename := "station_" + strconv.Itoa(id)

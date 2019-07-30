@@ -1,0 +1,6 @@
+# Database files
+*.db
+*.sql
+
+# Python
+*.pyc

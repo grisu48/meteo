@@ -27,6 +27,11 @@ type Persistence struct {
 	con *sql.DB
 }
 
+type Token struct {
+	Token string
+	Station int
+}
+
 func OpenDb(filename string) (Persistence, error) {
 	db := Persistence{}
 	con, err := sql.Open("sqlite3", filename)
@@ -69,9 +74,10 @@ func (db *Persistence) Prepare() error {
 	return nil
 }
 
-/** Get the station, the token is assigned to. Return 0 if not token is found */
-func (db *Persistence) GetStationToken(token string) (int ,error) {
-	stmt, err := db.con.Prepare("SELECT `station` FROM `tokens` WHERE `token` = ? LIMIT 1")
+/** Get the station, the token is assigned to. Returns 0 if not token is found */
+func (db *Persistence) GetStationToken(token string) (int, error) {
+	// DEPRECATED. Please use GetToken!
+	stmt, err := db.con.Prepare("SELECT station` FROM `tokens` WHERE `token` = ? LIMIT 1")
 	if err != nil {
 		return 0, err
 	}
@@ -82,11 +88,73 @@ func (db *Persistence) GetStationToken(token string) (int ,error) {
 	}
 	defer rows.Close()
 	if rows.Next() {
-		var station int
-		rows.Scan(&station)
-		return station, nil
+		var ret int
+		rows.Scan(&ret)
+		return ret, nil
 	}
 	return 0, nil
+}
+
+
+/** Get the station, the token is assigned to. Returns Token.Station = 0 if not token is found */
+func (db *Persistence) GetToken(token string) (Token, error) {
+	ret := Token{Station:0}
+	stmt, err := db.con.Prepare("SELECT `token`,`station` FROM `tokens` WHERE `token` = ? LIMIT 1")
+	if err != nil {
+		return ret, err
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query(token)
+	if err != nil {
+		return ret, err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		rows.Scan(&ret.Token, &ret.Station)
+		return ret, nil
+	}
+	return ret, nil
+}
+
+
+func (db *Persistence) GetStationTokens(station int) ([]Token, error) {
+	ret := make([]Token, 0)
+	stmt, err := db.con.Prepare("SELECT `token`,`station` FROM `tokens` WHERE `station` = ? LIMIT 1")
+	if err != nil {
+		return ret, err
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query(station)
+	if err != nil {
+		return ret, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		tok := Token{}
+		rows.Scan(&tok.Token, &tok.Station)
+		ret = append(ret, tok)
+	}
+	return ret, nil
+}
+
+func (db *Persistence) InsertToken(token Token) (error) {
+	stmt, err := db.con.Prepare("INSERT OR IGNORE INTO `tokens` (`token`,`station`) VALUES (?,?);")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(token.Token, token.Station)
+	return err
+}
+
+func (db *Persistence) RemoveToken(token Token) (error) {
+	stmt, err := db.con.Prepare("DELETE FROM `tokens` WHERE `token` = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(token.Token)
+	return err
 }
 
 /** Inserts the given station and assign the ID to the given station parameter */

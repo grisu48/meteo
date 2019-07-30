@@ -25,6 +25,14 @@ func randomFloat32(min float32, max float32) float32 {
 	return min + rand.Float32()*(max-min)
 }
 
+func randomString(n int) string {
+	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
+}
 
 func fileExists(filename string) bool {
 	if _, err := os.Stat(filename); err == nil {
@@ -221,6 +229,61 @@ func TestDatapoints(t *testing.T) {
 	if dps[0] != dp1 { t.Error("Offset 1 doesn't returned dp[1]") }
 }
 
-func TestTokens(t *testing.T) {
-
+func checkToken(token Token) bool {
+	tok1, err := db.GetToken(token.Token)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Database error: ", err)
+		return false
+	}
+	return token == tok1
 }
+
+func TestTokens(t *testing.T) {
+	t.Log("Setting up database")
+	err := db.Prepare()
+	if err != nil {
+		t.Fatal("Error preparing database")
+	}
+
+	t.Log("Inserting test stations")
+	station1 := Station{Id:0, Name: "Station 1", Description:"First test station"}
+	station2 := Station{Id:0, Name: "Station 2", Description:"Second test station"}
+	err = db.InsertStation(&station1)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	err = db.InsertStation(&station2)
+	if err != nil { t.Fatal("Database error: ", err ) }
+
+	tok1 := Token{Token:randomString(32), Station:station1.Id}
+	err = db.InsertToken(tok1)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	tok2 := Token{Token:randomString(32), Station:station2.Id}
+	err = db.InsertToken(tok2)
+	if err != nil { t.Fatal("Database error: ", err ) }
+
+	tokens, err := db.GetStationTokens(station1.Id)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(tokens) != 1 { t.Error(fmt.Sprintf("Fetched %d tokens from station 1, but expected 1", len(tokens)))}
+	if !checkToken(tok1) { fmt.Errorf("Checktoken failed (token1) ")}
+	tokens, err = db.GetStationTokens(station2.Id)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(tokens) != 1 { t.Error(fmt.Sprintf("Fetched %d tokens from station 2, but expected 1", len(tokens)))}
+	if !checkToken(tok2) { fmt.Errorf("Checktoken failed (token2) ")}
+
+	// Test remove tokens
+	err = db.RemoveToken(tok1)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	tokens, err = db.GetStationTokens(station1.Id)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(tokens) != 0 { t.Error(fmt.Sprintf("Fetched %d tokens from station 1, but expected 0", len(tokens)))}
+	tokens, err = db.GetStationTokens(station2.Id)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(tokens) != 1 { t.Error(fmt.Sprintf("Fetched %d tokens from station 2, but expected 1", len(tokens)))}
+	err = db.InsertToken(tok1)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	tokens, err = db.GetStationTokens(station1.Id)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(tokens) != 1 { t.Error(fmt.Sprintf("Fetched %d tokens from station 1, but expected 1", len(tokens)))}
+	if !checkToken(tok1) { fmt.Errorf("Checktoken failed (token1) ")}
+	if !checkToken(tok2) { fmt.Errorf("Checktoken failed (token2) ")}
+}
+

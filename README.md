@@ -2,19 +2,28 @@
 
 [![Build Status](https://travis-ci.org/grisu48/meteo.svg?branch=master)](https://travis-ci.org/grisu48/meteo)
 
-Weather and environmental monitoring solution
+Lightweight environmental monitoring solution
 
-This project aims to provide a centralized enviromental and room monitoring system for different sensors.
-On a central server runs the server instance, that collects all the sensor values from different nodes.
+This project aims to provide a centralized environmental and room monitoring system for different sensors.
+The meteo-daemon (`meteod`) runs on a centralised server instance, that collect all sensor data from different sensor nodes.
+
 Client can attach to this server instance in order to read out the different readings of the sensors.
 
 # Server
 
-Requires `go >= 1.9.x`
+Requires `go >= 1.9.x` and the following repositories
+
+    go get "github.com/BurntSushi/toml"
+    go get "github.com/gorilla/mux"
+    go get github.com/mattn/go-sqlite3
 
 ## Configuration
 
 Currently manually. See `meteod.toml`
+
+## Storage
+
+`meteod` stores all data in a Sqlite3 database. By default `meteod.db` is taken, but the filename can be configured in `meteod.toml`.
 
 ## Security
 
@@ -34,8 +43,6 @@ There is currently a very simple CLI client available: `meteo`
 Requires `go >= 1.9.x`
 
     go get "github.com/BurntSushi/toml"
-    go get "github.com/gorilla/mux"
-    go get github.com/mattn/go-sqlite3
 
 ## Configuration
 

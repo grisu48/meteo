@@ -122,7 +122,9 @@ func TestStations(t *testing.T) {
 
 }
 
-func TestTokens(t *testing.T) {
+func TestDatapoints(t *testing.T) {
+	progressionPoints := 1000
+
 	t.Log("Setting up database")
 	err := db.Prepare()
 	if err != nil {
@@ -182,6 +184,43 @@ func TestTokens(t *testing.T) {
 	if len(dps) != 1 { t.Fatal(fmt.Sprintf("Station 1 contains %d datapoints, when only fetching 1", len(dps))) }
 	if dps[0] != dp { t.Error("Fetched datapoint doesn't match inserted datapoint") }
 
-	// TODO: Make a progression on station 2
-	// TODO: Make a StationQuery
+	t.Log("Make a random progression on station 2")
+	t0 := now-10000
+	dp = DataPoint{
+		Timestamp:   t0,
+		Station:     station2.Id,
+		Temperature: randomFloat32(5,30),
+		Humidity:    randomFloat32(40,80),
+		Pressure:    randomFloat32(101300-500,101300+500),
+	}
+	err = db.InsertDataPoint(dp)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	for i := 0; i<progressionPoints-1; i++ {
+		dp.Timestamp += int64(randomFloat32(1,10))
+		dp.Temperature += randomFloat32(-2,2)
+		dp.Humidity += randomFloat32(-1,1)
+		dp.Pressure += randomFloat32(-50, 50)
+		err = db.InsertDataPoint(dp)
+		if err != nil { t.Fatal("Database error: ", err ) }
+	}
+	t.Log("Fetching queries on station 2")
+	dps, err = db.QueryStation(station2.Id, now-10000, dp.Timestamp, int64(progressionPoints*2), 0)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != progressionPoints { t.Error(fmt.Sprintf("Querystation yielded %d points, but %d points are expected", len(dps), progressionPoints)) }
+	dp1 := dps[1]
+	dps, err = db.QueryStation(station2.Id, dps[2].Timestamp, dps[5].Timestamp, 10, 0)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != 4 { t.Error(fmt.Sprintf("Querystation[2] yielded %d points, but %d points are expected", len(dps), 4)) }
+
+	last, err := db.GetLastDataPoints(station2.Id, 1)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	t_l := last[0].Timestamp
+	dps, err = db.QueryStation(station2.Id, t0, t_l, 2, 1)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(dps) != 2 { t.Error(fmt.Sprintf("Querystation[3] yielded %d points, but %d points are expected", len(dps), 2)) }
+	if dps[0] != dp1 { t.Error("Offset 1 doesn't returned dp[1]") }
+}
+
+func TestTokens(t *testing.T) {
+
 }

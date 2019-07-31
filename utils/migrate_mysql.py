@@ -187,7 +187,7 @@ if __name__ == "__main__" :
 	db, sq = None, None
 	try :
 		print("Connecting to %s@%s/%s ... " % (db_username, db_hostname, db_database))
-		db = MyMeteo(db_hostname, db_username, db_password, db_database)
+		db = MyMeteo(db_hostname, db_database, db_username, db_password)
 		print("Database connected : %s " % db.db_version())
 		stations = db.stations()
 		print("Fetched %d stations:" % (len(stations)))

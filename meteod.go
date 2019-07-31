@@ -127,8 +127,9 @@ func isPlausible(dp jsonDataPoint) bool {
 func received(dp jsonDataPoint) bool {
 	if dp.Token == "" { return false }		// No token - Ignore
 
-	station, err := db.GetStationToken(dp.Token)
+	token, err := db.GetToken(dp.Token)
 	if err != nil { panic(err) }
+	station := token.Station
 	if station <= 0 { return false }	// Denied
 	
 	exists, err := db.ExistsStation(station)

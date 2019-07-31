@@ -77,7 +77,7 @@ func (db *Persistence) Prepare() error {
 /** Get the station, the token is assigned to. Returns 0 if not token is found */
 func (db *Persistence) GetStationToken(token string) (int, error) {
 	// DEPRECATED. Please use GetToken!
-	stmt, err := db.con.Prepare("SELECT station` FROM `tokens` WHERE `token` = ? LIMIT 1")
+	stmt, err := db.con.Prepare("SELECT `station` FROM `tokens` WHERE `token` = ? LIMIT 1;")
 	if err != nil {
 		return 0, err
 	}

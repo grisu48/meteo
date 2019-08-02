@@ -1,5 +1,6 @@
 PushDelay = 60
 Database = "meteod.db"
+MQTT = "user@localhost:1883"
 
 [Webserver]
 port = 8802

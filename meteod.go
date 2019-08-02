@@ -1,6 +1,12 @@
 package main
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"os"
+	"strings"
+)
 import "log"
 import "net/http"
 import "html/template"
@@ -14,6 +20,7 @@ import "github.com/gorilla/mux"
 
 type tomlConfig struct {
 	Database string  `toml:"Database"`
+	Mqtt string `toml:MQTT`
 	Webserver tomlWebserver `toml:"Webserver"`
 	PushDelay int64
 }
@@ -36,6 +43,91 @@ var cf tomlConfig
 var db Persistence
 
 
+// remote: [username[:password]@]hostname[:port]
+func attachMqtt(remote string) {
+	username := ""
+	password := ""
+	port := 1883
+	hostname := remote
+	topic := "meteo"
+
+	if strings.Contains(hostname, "@") {
+		i := strings.Index(hostname, "@")
+		username = hostname[:i]
+		hostname = hostname[i+1:]
+		if strings.Contains(username, ":") {
+			i = strings.Index(hostname, ":")
+			password = username[i+1:]
+			username = username[:i]
+		}
+	}
+	if strings.Contains(hostname, ":") {
+		i := strings.Index(hostname, ":")
+		port, _ = strconv.Atoi(hostname[i+1:])		// Swallow error her
+		hostname = hostname[:i]
+	}
+
+	opts := mqtt.NewClientOptions()
+	remote = fmt.Sprintf("tcp://%s:%d", hostname, port)
+	opts.AddBroker(remote)
+	if username != "" { opts.SetUsername(username) }
+	if password != "" { opts.SetPassword(password) }
+
+	fmt.Println("Attaching MQTT: " + remote + " ... ")
+	client := mqtt.NewClient(opts)
+	token := client.Connect()
+	for !token.WaitTimeout(5 * time.Second) {}
+	if err := token.Error(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error connecting MQTT: %s", err)
+		return
+	}
+	client.Subscribe(topic, 0, mqttReceive)
+}
+
+func mqttJsonParse(topic string, message string) (DataPoint, error) {
+	dp := DataPoint{}
+
+	// Get station id from topic
+	// XXX Improved handling, also for "subnodes" like meteo/2/lightning
+	i := strings.LastIndex(topic, "/")
+	if i < 0 { return dp, errors.New("Topic format mismatch") }
+	dp.Station, _ = strconv.Atoi(topic[i+1:])
+
+	// Parse json packets
+	var dat map[string]interface{}
+	if err := json.Unmarshal([]byte(message), &dat); err != nil {
+		return dp, err
+	}
+	// Get contents from json message
+	/*		// Consider adding a type for other nodes?
+	if dat["_type"].(string) != "location" {
+		return loc, errors.New("Illegal json type")
+	} else {
+	*/
+	dp.Timestamp = dat["timestamp"].(int64)
+	dp.Temperature = dat["t"].(float32)
+	dp.Temperature = dat["hum"].(float32)
+	dp.Temperature = dat["p"].(float32)
+
+	return dp, nil
+}
+
+func mqttReceive(client mqtt.Client, msg mqtt.Message) {
+	topic := msg.Topic()
+	payload := string(msg.Payload())
+	if topic == "" || payload == "" { return }
+	dp, err := mqttJsonParse(topic, payload)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "MQTT illegal packet: ", err)
+		return
+	}
+	if dp.Timestamp == 0 { return }		// Looks fishy
+
+	if !received(dp) {
+		fmt.Fprintln(os.Stderr, "Error handing received datapoint")
+	}
+}
+
 func main() {
 	var err error 
 
@@ -57,6 +149,9 @@ func main() {
 		panic(err)
 	}
 	fmt.Println("Connected to database")
+
+	// Attach mqtt, if configured
+	if cf.Mqtt != "" { go attachMqtt(cf.Mqtt) }
 
 	// Setup webserver
 	addr := cf.Webserver.Bindaddr + ":" + strconv.Itoa(cf.Webserver.Port)
@@ -88,8 +183,8 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
-func doDatapointPush(dp jsonDataPoint, station int) (bool, error) {
-	datapoints, err := db.GetLastDataPoints(station, 1)
+func doDatapointPush(dp DataPoint) (bool, error) {
+	datapoints, err := db.GetLastDataPoints(dp.Station, 1)
 	if err != nil { return false, err }
 	if len(datapoints) == 0 { return true, nil }
 	last := datapoints[0]
@@ -105,17 +200,17 @@ func doDatapointPush(dp jsonDataPoint, station int) (bool, error) {
 		return true,nil 
 	} else {
 		// Within the ignore interval, but check for significant deviations
-		if math.Abs((float64)(last.Temperature - dp.T)) > 0.5 { return true, nil }
-		if math.Abs((float64)(last.Pressure - dp.P)) > 100 { return true, nil }
-		if math.Abs((float64)(last.Humidity - dp.Hum)) > 2 { return true, nil }
+		if math.Abs((float64)(last.Temperature - dp.Temperature)) > 0.5 { return true, nil }
+		if math.Abs((float64)(last.Pressure - dp.Pressure)) > 100 { return true, nil }
+		if math.Abs((float64)(last.Humidity - dp.Humidity)) > 2 { return true, nil }
 	}
 	return false, nil
 }
 
-func isPlausible(dp jsonDataPoint) bool {
-	if dp.T < -100 || dp.T > 1000 { return false }
-	if dp.Hum < 0 || dp.Hum > 100 { return false }
-	p_mbar := dp.P / 100.0
+func isPlausible(dp DataPoint) bool {
+	if dp.Temperature < -100 || dp.Temperature > 1000 { return false }
+	if dp.Humidity < 0 || dp.Humidity > 100 { return false }
+	p_mbar := dp.Pressure / 100.0
 	if p_mbar < 10 { return false }
 	if p_mbar > 2000 { return false }		// We are not a submarine!
 	return true
@@ -124,45 +219,68 @@ func isPlausible(dp jsonDataPoint) bool {
 /* Function callback when received a datapoint. Return true if the datapoint is accepted
  * Accepted datapoint doesn't mean automatically pushed datapoint.
  */
-func received(dp jsonDataPoint) bool {
-	if dp.Token == "" { return false }		// No token - Ignore
+func receivedDpToken(dp jsonDataPoint) bool {
+	if dp.Token == "" {
+		return false
+	} // No token - Ignore
 
 	token, err := db.GetToken(dp.Token)
-	if err != nil { panic(err) }
+	if err != nil {
+		panic(err)
+	}
 	station := token.Station
-	if station <= 0 { return false }	// Denied
-	
+	if station <= 0 {
+		return false
+	} // Denied
+
 	exists, err := db.ExistsStation(station)
-	if err != nil { panic(err) }
+	if err != nil {
+		panic(err)
+	}
 	if !exists {
 		fmt.Printf("Station doesn't exists: %d\n", station)
 		return false
 	}
 
+	datapoint := DataPoint{
+		Timestamp:   dp.Timestamp,
+		Station:     token.Station,
+		Temperature: dp.T,
+		Humidity:    dp.Hum,
+		Pressure:    dp.P,
+	}
+
+	return received(datapoint)
+}
+
+func received(dp DataPoint) bool {
 	// Set timestamp if not set by sender
 	if dp.Timestamp == 0 {
 		dp.Timestamp = time.Now().Unix()
 	}
 
 	// Repair pressure unit, that could be in mbar but is expected in hPa
-	if dp.P < 10000 { dp.P *= 100 }
+	if dp.Pressure < 10000 { dp.Pressure *= 100 }
 
 	// Check ranges for plausability
 	if !isPlausible(dp) {
-		fmt.Printf("UNPLAUSIBLE: %d at %d, t = %f, hum = %f, p = %f\n", station, dp.Timestamp, dp.T, dp.Hum, dp.P)
+		fmt.Printf("UNPLAUSIBLE: %d at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 		return true
 	}
 
-	push, err := doDatapointPush(dp, station)
-	if err != nil { panic(err) }
+	push, err := doDatapointPush(dp)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error determining if datapoint is recent: ", err)
+		return false
+	}
 
 	if push {
-		db_dp := DataPoint{Timestamp: dp.Timestamp, Station: station, Temperature: dp.T, Humidity: dp.Hum, Pressure: dp.P}
+		db_dp := DataPoint{Timestamp: dp.Timestamp, Station: dp.Station, Temperature: dp.Temperature, Humidity: dp.Humidity, Pressure: dp.Pressure}
 		err := db.InsertDataPoint(db_dp)
 		if err != nil { panic(err) }
-		fmt.Printf("PUSH: %d at %d, t = %f, hum = %f, p = %f\n", station, dp.Timestamp, dp.T, dp.Hum, dp.P)
+		fmt.Printf("PUSH: %d at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 	} else {
-		fmt.Printf("RECV: %d at %d, t = %f, hum = %f, p = %f\n", station, dp.Timestamp, dp.T, dp.Hum, dp.P)
+		fmt.Printf("RECV: %d at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 	}
 	
 	return true
@@ -368,7 +486,7 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("Illegal json\n"))
 				return
 			}
-			ok := received(dp)
+			ok := receivedDpToken(dp)
 			if ok {
 				w.Write([]byte("OK\n"))
 			} else {

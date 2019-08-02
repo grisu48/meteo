@@ -15,7 +15,8 @@ Requires `go >= 1.9.x` and the following repositories
 
     go get "github.com/BurntSushi/toml"
     go get "github.com/gorilla/mux"
-    go get github.com/mattn/go-sqlite3
+    go get "github.com/mattn/go-sqlite3"
+    go get "github.com/eclipse/paho.mqtt.golang"
 
 ## Configuration
 

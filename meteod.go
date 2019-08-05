@@ -49,7 +49,7 @@ func attachMqtt(remote string) {
 	password := ""
 	port := 1883
 	hostname := remote
-	topic := "meteo"
+	topic := "meteo/#"
 
 	if strings.Contains(hostname, "@") {
 		i := strings.Index(hostname, "@")
@@ -104,10 +104,10 @@ func mqttJsonParse(topic string, message string) (DataPoint, error) {
 		return loc, errors.New("Illegal json type")
 	} else {
 	*/
-	dp.Timestamp = dat["timestamp"].(int64)
-	dp.Temperature = dat["t"].(float32)
-	dp.Temperature = dat["hum"].(float32)
-	dp.Temperature = dat["p"].(float32)
+	if dat["timestamp"] != nil { dp.Timestamp = dat["timestamp"].(int64) }
+	if dat["t"] != nil { dp.Temperature = float32(dat["t"].(float64)) }
+	if dat["hum"] != nil { dp.Temperature = float32(dat["hum"].(float64)) }
+	if dat["p"] != nil { dp.Temperature = float32(dat["p"].(float64)) }
 
 	return dp, nil
 }

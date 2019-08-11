@@ -9,13 +9,21 @@ The meteo-daemon (`meteod`) runs on a centralised server instance, that collect 
 
 Client can attach to this server instance in order to read out the different readings of the sensors.
 
-# Server
+# Building
 
 Requires `go >= 1.9.x` and the following repositories
 
     go get "github.com/BurntSushi/toml"
     go get "github.com/gorilla/mux"
-    go get github.com/mattn/go-sqlite3
+    go get "github.com/mattn/go-sqlite3"
+
+Then a simple `make` builds all programs (server, client, gateway)
+
+    make
+    # Install binaries to /usr/local/bin
+    sudo make install
+
+# Server
 
 ## Configuration
 

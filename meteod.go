@@ -39,9 +39,31 @@ type jsonDataPoint struct {
 	P float32
 }
 
+type mqttDataPoint struct {
+	Timestamp int64 `json:"timestamp"`
+	Station int `json:"node"`
+	Name string `json:"name"`
+	Temperature float32 `json:"t"`
+	Humidity float32 `json:"hum"`
+	Pressure float32 `json:"p"`
+}
+
+func (dp *mqttDataPoint) ToDataPoint() (DataPoint) {
+	return DataPoint{ Timestamp: dp.Timestamp, Station:dp.Station, Temperature:dp.Temperature, Humidity:dp.Humidity, Pressure:dp.Pressure }
+}
+
+func (dp *mqttDataPoint) FromDataPoint(src DataPoint) {
+	dp.Timestamp = src.Timestamp
+	dp.Station = src.Station
+	dp.Temperature = src.Temperature
+	dp.Humidity = src.Humidity
+	dp.Pressure = src.Pressure
+}
+
 var cf tomlConfig
 var db Persistence
-
+var mqttClient mqtt.Client
+var mqttDp mqttDataPoint			// Ignore this datapoint, as we are pushing it right now
 
 // remote: [username[:password]@]hostname[:port]
 func attachMqtt(remote string) {
@@ -74,29 +96,29 @@ func attachMqtt(remote string) {
 	if password != "" { opts.SetPassword(password) }
 
 	fmt.Println("Attaching MQTT: " + remote + " ... ")
-	client := mqtt.NewClient(opts)
-	token := client.Connect()
+	mqttClient = mqtt.NewClient(opts)
+	token := mqttClient.Connect()
 	for !token.WaitTimeout(5 * time.Second) {}
 	if err := token.Error(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting MQTT: %s", err)
 		return
 	}
-	client.Subscribe(topic, 0, mqttReceive)
+	mqttClient.Subscribe(topic, 0, mqttReceive)
 }
 
-func mqttJsonParse(topic string, message string) (DataPoint, string, error) {
-	dp := DataPoint{}
+func mqttJsonParse(topic string, message string) (mqttDataPoint, error) {
+	dp := mqttDataPoint{}
 
 	// Get station id from topic
 	// XXX Improved handling, also for "subnodes" like meteo/2/lightning
 	i := strings.LastIndex(topic, "/")
-	if i < 0 { return dp, "", errors.New("Topic format mismatch") }
+	if i < 0 { return dp, errors.New("Topic format mismatch") }
 	dp.Station, _ = strconv.Atoi(topic[i+1:])
 
 	// Parse json packets
 	var dat map[string]interface{}
 	if err := json.Unmarshal([]byte(message), &dat); err != nil {
-		return dp, "", err
+		return dp, err
 	}
 	// Get contents from json message
 	/*		// Consider adding a type for other nodes?
@@ -104,45 +126,79 @@ func mqttJsonParse(topic string, message string) (DataPoint, string, error) {
 		return loc, errors.New("Illegal json type")
 	} else {
 	*/
-	name := ""
-	if dat["timestamp"] != nil { dp.Timestamp = dat["timestamp"].(int64) }
+	if dat["timestamp"] != nil { dp.Timestamp = int64(dat["timestamp"].(float64)) }
 	if dat["t"] != nil { dp.Temperature = float32(dat["t"].(float64)) }
-	if dat["name"] != nil { name = dat["name"].(string) }
+	if dat["name"] != nil { dp.Name = dat["name"].(string) }
 	if dat["hum"] != nil { dp.Humidity = float32(dat["hum"].(float64)) }
 	if dat["p"] != nil { dp.Pressure = float32(dat["p"].(float64)) }
 
-	return dp, name, nil
+	return dp, nil
 }
 
 func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 	topic := msg.Topic()
 	payload := string(msg.Payload())
 	if topic == "" || payload == "" { return }
-	dp, name, err := mqttJsonParse(topic, payload)
+	dp, err := mqttJsonParse(topic, payload)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "MQTT illegal packet: ", err)
 		return
 	}
+	if dp == mqttDp { return }		// Ignore
 	if dp.Timestamp == 0 {
 		dp.Timestamp = time.Now().Unix()
 	}
 
+	// Check if station exists, otherwise create it
 	exists, err := db.ExistsStation(dp.Station)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Database error (ExistsStation): %s\n", err)
 		return
 	}
 	if !exists {
-		station := Station{Id:dp.Station, Name:name}
+		station := Station{Id:dp.Station, Name:dp.Name}
 		err = db.InsertStation(&station)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Database error (InsertStation): %s\n", err)
 			return
 		}
+		fmt.Printf("Created station \"%s\" [%d]\n", dp.Name, dp.Station)
 	}
 
-	if !received(dp) {
+	// Convert from JSON datapoint to DataPoint structure
+	if !received(dp.ToDataPoint()) {
 		fmt.Fprintln(os.Stderr, "Error handling received datapoint")
+	}
+}
+
+func mqttPublish(dp DataPoint) {
+	if mqttClient != nil {
+		// Create JSON packet
+		station, err := db.GetStation(dp.Station)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting station: %s\n", err)
+			return;
+		}
+
+		jsonDp := mqttDataPoint{}
+		jsonDp.FromDataPoint(dp)
+		jsonDp.Name = station.Name
+		converted, err := json.Marshal(jsonDp)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error marshalling json for MQTT: %s\n", err)
+			return
+		}
+
+		topic := fmt.Sprintf("meteo/%d", dp.Station)
+		payload := string(converted)
+		mqttDp.FromDataPoint(dp)
+		mqttDp.Name = station.Name
+		token := mqttClient.Publish(topic, 0, false, payload)
+		token.Wait()
+		if err = token.Error(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error publishing to MQTT: %s\n", err)
+		}
+
 	}
 }
 
@@ -268,7 +324,9 @@ func receivedDpToken(dp jsonDataPoint) bool {
 		Pressure:    dp.P,
 	}
 
-	return received(datapoint)
+	ret := received(datapoint)
+	mqttPublish(datapoint)
+	return ret
 }
 
 func received(dp DataPoint) bool {
@@ -503,7 +561,8 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 			err := decoder.Decode(&dp)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("Illegal json\n"))
+				msg := fmt.Sprintf("Illegal json received: %s\n", err)
+				w.Write([]byte(msg))
 				return
 			}
 			ok := receivedDpToken(dp)

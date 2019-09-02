@@ -30,6 +30,14 @@ Currently manually. See `meteod.toml` for information
 
 Pushing stations need a access `token`, that identifies where the data belongs to.
 
+MQTT is considered a trusted network. New station will be automatically added. If you want to have better control over the nodes, please use http instead
+
+## Testing
+
+For test surposes, a `exampleJson` file is created. Use it to push data to the server via
+
+    curl 'http://localhost:8802/station/5' -X POST -H "Content-Type: application/json" --data @exampleJson
+
 # Client
 
 There is currently a very simple CLI client available: `meteo`

@@ -58,4 +58,25 @@ The output is a commented CSV of the following format:
 </pre>
 </p>
 
+<a name="MQTT"><h3>MQTT</h3></a>
+
+<p><em>meteod</em> can be configured, to use MQTT.<br/>If a MQTT channel is configured, <em>meteod</em> connects to the broker and listens on the <em>meteo/#</em> channel for messages</p>
+
+<p>
+A typical message is JSON formatted and looks like the following
+<pre>
+{"node":5,"name":"Lightning","t":20.41,"hum":70.51,"p":95409.73}
+{"node":5,"name":"Lightning","t":20.41,"hum":70.48,"p":95410.53}
+{"node":1,"name":"Kitchen","t":27.97,"hum":48.60,"eCO2":400.00,"tVOC":0.00}
+</pre>
+</p>
+
+<p>
+If a MQTT broker has been defined and <em>meteod</em> received data via HTTP, it also pushes them as JSON to MQTT.
+</p>
+
+<p>
+MQTT is considered as trusted channel. If a new station appears via MQTT, <em>meteod</em> inserts the station into the database. For more control and protection against missuse, please use http!
+</p>
+
 </body>

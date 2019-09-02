@@ -84,19 +84,19 @@ func attachMqtt(remote string) {
 	client.Subscribe(topic, 0, mqttReceive)
 }
 
-func mqttJsonParse(topic string, message string) (DataPoint, error) {
+func mqttJsonParse(topic string, message string) (DataPoint, string, error) {
 	dp := DataPoint{}
 
 	// Get station id from topic
 	// XXX Improved handling, also for "subnodes" like meteo/2/lightning
 	i := strings.LastIndex(topic, "/")
-	if i < 0 { return dp, errors.New("Topic format mismatch") }
+	if i < 0 { return dp, "", errors.New("Topic format mismatch") }
 	dp.Station, _ = strconv.Atoi(topic[i+1:])
 
 	// Parse json packets
 	var dat map[string]interface{}
 	if err := json.Unmarshal([]byte(message), &dat); err != nil {
-		return dp, err
+		return dp, "", err
 	}
 	// Get contents from json message
 	/*		// Consider adding a type for other nodes?
@@ -104,27 +104,45 @@ func mqttJsonParse(topic string, message string) (DataPoint, error) {
 		return loc, errors.New("Illegal json type")
 	} else {
 	*/
+	name := ""
 	if dat["timestamp"] != nil { dp.Timestamp = dat["timestamp"].(int64) }
 	if dat["t"] != nil { dp.Temperature = float32(dat["t"].(float64)) }
-	if dat["hum"] != nil { dp.Temperature = float32(dat["hum"].(float64)) }
-	if dat["p"] != nil { dp.Temperature = float32(dat["p"].(float64)) }
+	if dat["name"] != nil { name = dat["name"].(string) }
+	if dat["hum"] != nil { dp.Humidity = float32(dat["hum"].(float64)) }
+	if dat["p"] != nil { dp.Pressure = float32(dat["p"].(float64)) }
 
-	return dp, nil
+	return dp, name, nil
 }
 
 func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 	topic := msg.Topic()
 	payload := string(msg.Payload())
 	if topic == "" || payload == "" { return }
-	dp, err := mqttJsonParse(topic, payload)
+	dp, name, err := mqttJsonParse(topic, payload)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "MQTT illegal packet: ", err)
 		return
 	}
-	if dp.Timestamp == 0 { return }		// Looks fishy
+	if dp.Timestamp == 0 {
+		dp.Timestamp = time.Now().Unix()
+	}
+
+	exists, err := db.ExistsStation(dp.Station)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Database error (ExistsStation): %s\n", err)
+		return
+	}
+	if !exists {
+		station := Station{Id:dp.Station, Name:name}
+		err = db.InsertStation(&station)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database error (InsertStation): %s\n", err)
+			return
+		}
+	}
 
 	if !received(dp) {
-		fmt.Fprintln(os.Stderr, "Error handing received datapoint")
+		fmt.Fprintln(os.Stderr, "Error handling received datapoint")
 	}
 }
 
@@ -273,6 +291,8 @@ func received(dp DataPoint) bool {
 		fmt.Fprintln(os.Stderr, "Error determining if datapoint is recent: ", err)
 		return false
 	}
+
+
 
 	if push {
 		db_dp := DataPoint{Timestamp: dp.Timestamp, Station: dp.Station, Temperature: dp.Temperature, Humidity: dp.Humidity, Pressure: dp.Pressure}

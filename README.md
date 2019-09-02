@@ -20,7 +20,7 @@ Requires `go >= 1.9.x` and the following repositories
 
 ## Configuration
 
-Currently manually. See `meteod.toml`
+Currently manually. See `meteod.toml` for information
 
 ## Storage
 

@@ -55,6 +55,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "Test file already exists: " + testDatabase)
 		os.Exit(1)
 	}
+	fmt.Printf("\tFilename: %s\n", testDatabase)
 	var err error
 	db, err = OpenDb(testDatabase)
 	if err != nil {
@@ -126,8 +127,14 @@ func TestStations(t *testing.T) {
 	if err != nil { t.Fatal("Database error: ", err ) }
 	if exists { t.Error("Station 1+2 reported as existing")}
 
-
-
+	t.Log("Inserting station with certain ID")
+	station3 := Station{Id:55, Name:"Station 55"}
+	err = db.InsertStation(&station3)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if station3.Id != 55 { t.Fatal("Inserting station_55 with id 55, but ID has been reset")}
+	if !checkStation(station3) {
+		t.Error("Comparison after inserting station 55 failed")
+	}
 }
 
 func TestDatapoints(t *testing.T) {

@@ -138,11 +138,16 @@ func (db *Persistence) RemoveToken(token Token) (error) {
 
 /** Inserts the given station and assign the ID to the given station parameter */
 func (db *Persistence) InsertStation(station *Station) error {
-	id, err := db.getHighestId("stations", "id")
-	if err != nil {
-		return err
+	id := station.Id
+	var err error
+
+	if id == 0 {
+		id, err = db.getHighestId("stations", "id")
+		if err != nil {
+			return err
+		}
+		id += 1
 	}
-	id += 1
 
 	// Create table
 	tablename := "station_" + strconv.Itoa(id)

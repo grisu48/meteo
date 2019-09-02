@@ -9,25 +9,18 @@ The meteo-daemon (`meteod`) runs on a centralised server instance, that collect 
 
 Client can attach to this server instance in order to read out the different readings of the sensors.
 
-# Building
+# Server
 
 Requires `go >= 1.9.x` and the following repositories
 
     go get "github.com/BurntSushi/toml"
     go get "github.com/gorilla/mux"
     go get "github.com/mattn/go-sqlite3"
-
-Then a simple `make` builds all programs (server, client, gateway)
-
-    make
-    # Install binaries to /usr/local/bin
-    sudo make install
-
-# Server
+    go get "github.com/eclipse/paho.mqtt.golang"
 
 ## Configuration
 
-Currently manually. See `meteod.toml`
+Currently manually. See `meteod.toml` for information
 
 ## Storage
 
@@ -36,6 +29,14 @@ Currently manually. See `meteod.toml`
 ## Security
 
 Pushing stations need a access `token`, that identifies where the data belongs to.
+
+MQTT is considered a trusted network. New station will be automatically added. If you want to have better control over the nodes, please use http instead
+
+## Testing
+
+For test surposes, a `exampleJson` file is created. Use it to push data to the server via
+
+    curl 'http://localhost:8802/station/5' -X POST -H "Content-Type: application/json" --data @exampleJson
 
 # Client
 

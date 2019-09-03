@@ -388,6 +388,11 @@ func receivedDpToken(dp jsonDataPoint) bool {
 		return false
 	} // No token - Ignore
 
+	// Set timestamp if not set by sender
+	if dp.Timestamp == 0 {
+		dp.Timestamp = time.Now().Unix()
+	}
+
 	token, err := db.GetToken(dp.Token)
 	if err != nil {
 		panic(err)
@@ -420,11 +425,6 @@ func receivedDpToken(dp jsonDataPoint) bool {
 }
 
 func received(dp DataPoint) bool {
-	// Set timestamp if not set by sender
-	if dp.Timestamp == 0 {
-		dp.Timestamp = time.Now().Unix()
-	}
-
 	// Repair pressure unit, that could be in mbar but is expected in hPa
 	if dp.Pressure < 10000 { dp.Pressure *= 100 }
 

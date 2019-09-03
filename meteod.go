@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"os"
@@ -30,6 +29,12 @@ type tomlWebserver struct {
 	Bindaddr string
 	QueryLimit int64
 }
+
+var cf tomlConfig
+var db Persistence
+
+
+
 
 type jsonDataPoint struct {
 	Token string
@@ -60,9 +65,7 @@ func (dp *mqttDataPoint) FromDataPoint(src DataPoint) {
 	dp.Pressure = src.Pressure
 }
 
-var cf tomlConfig
-var db Persistence
-var mqttClient mqtt.Client
+var mqttClient mqtt.Client			// If using MQTT, this is the MQTT client
 var mqttDp mqttDataPoint			// Ignore this datapoint, as we are pushing it right now
 
 // remote: [username[:password]@]hostname[:port]
@@ -85,7 +88,7 @@ func attachMqtt(remote string) {
 	}
 	if strings.Contains(hostname, ":") {
 		i := strings.Index(hostname, ":")
-		port, _ = strconv.Atoi(hostname[i+1:])		// Swallow error her
+		port, _ = strconv.Atoi(hostname[i+1:])		// Swallow error here
 		hostname = hostname[:i]
 	}
 
@@ -95,7 +98,7 @@ func attachMqtt(remote string) {
 	if username != "" { opts.SetUsername(username) }
 	if password != "" { opts.SetPassword(password) }
 
-	fmt.Println("Attaching MQTT: " + remote + " ... ")
+	log.Println("Attaching MQTT: " + remote + " ... ")
 	mqttClient = mqtt.NewClient(opts)
 	token := mqttClient.Connect()
 	for !token.WaitTimeout(5 * time.Second) {}
@@ -103,17 +106,17 @@ func attachMqtt(remote string) {
 		fmt.Fprintf(os.Stderr, "Error connecting MQTT: %s", err)
 		return
 	}
-	mqttClient.Subscribe(topic, 0, mqttReceive)
+	token = mqttClient.Subscribe(topic, 0, mqttReceive)
+	token.Wait()
+	if err := token.Error(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error subscribing to MQTT: %s", err)
+		return
+	}
+	log.Printf("MQTT: " + remote + " attached (listening to topic '%s')\n", topic)
 }
 
-func mqttJsonParse(topic string, message string) (mqttDataPoint, error) {
-	dp := mqttDataPoint{}
-
-	// Get station id from topic
-	// XXX Improved handling, also for "subnodes" like meteo/2/lightning
-	i := strings.LastIndex(topic, "/")
-	if i < 0 { return dp, errors.New("Topic format mismatch") }
-	dp.Station, _ = strconv.Atoi(topic[i+1:])
+func mqttJsonParse(nodeId int, message string) (mqttDataPoint, error) {
+	dp := mqttDataPoint{Station:nodeId}
 
 	// Parse json packets
 	var dat map[string]interface{}
@@ -139,35 +142,63 @@ func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 	topic := msg.Topic()
 	payload := string(msg.Payload())
 	if topic == "" || payload == "" { return }
-	dp, err := mqttJsonParse(topic, payload)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "MQTT illegal packet: ", err)
+
+	// Get station id from topic
+	i := strings.Index(topic, "/")
+	if i < 0 {
+		fmt.Printf("MQTT: Topic format mismatch: %s\n", topic)
 		return
 	}
-	if dp == mqttDp { return }		// Ignore
-	if dp.Timestamp == 0 {
-		dp.Timestamp = time.Now().Unix()
+	node_id := topic[i+1:]
+	node_type := ""
+	i = strings.Index(node_id, "/")
+	if i<0 {
+		node_type = ""
+	} else {
+		node_type = node_id[i+1:]
+		node_id = node_id[:i]
+	}
+	nodeId, err := strconv.Atoi(node_id)
+	if err != nil {
+		log.Printf("MQTT: Meteo node format mismatch: %s\n", topic)
+		return
 	}
 
-	// Check if station exists, otherwise create it
-	exists, err := db.ExistsStation(dp.Station)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Database error (ExistsStation): %s\n", err)
-		return
-	}
-	if !exists {
-		station := Station{Id:dp.Station, Name:dp.Name}
-		err = db.InsertStation(&station)
+	if node_type == "" || node_type == "meteo" {		// Default packet
+		dp, err := mqttJsonParse(nodeId, payload)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Database error (InsertStation): %s\n", err)
+			log.Println("MQTT illegal packet: ", err)
 			return
 		}
-		fmt.Printf("Created station \"%s\" [%d]\n", dp.Name, dp.Station)
-	}
+		if dp == mqttDp {
+			return
+		} // Ignore datapoint, as we have just published exactly this one
 
-	// Convert from JSON datapoint to DataPoint structure
-	if !received(dp.ToDataPoint()) {
-		fmt.Fprintln(os.Stderr, "Error handling received datapoint")
+		// Assign timestamp, if not given by message
+		if dp.Timestamp == 0 {
+			dp.Timestamp = time.Now().Unix()
+		}
+
+		// Check if station exists, otherwise create it
+		exists, err := db.ExistsStation(dp.Station)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database error (ExistsStation): %s\n", err)
+			return
+		}
+		if !exists {
+			station := Station{Id: dp.Station, Name: dp.Name}
+			err = db.InsertStation(&station)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Database error (InsertStation): %s\n", err)
+				return
+			}
+			log.Printf("Created station \"%s\" [%d]\n", dp.Name, dp.Station)
+		}
+
+		// Convert from JSON datapoint to DataPoint structure
+		if !received(dp.ToDataPoint()) {
+			log.Println("Error handling received datapoint")
+		}
 	}
 }
 
@@ -202,6 +233,9 @@ func mqttPublish(dp DataPoint) {
 	}
 }
 
+
+
+
 func main() {
 	var err error 
 
@@ -214,6 +248,56 @@ func main() {
 	toml.DecodeFile("/etc/meteod.toml", &cf)
 	toml.DecodeFile("meteod.toml", &cf)
 
+	// Parse program arguments
+	// Note: I am doing this by hand, because I don't wanted to have another dependency
+	// This might change in the future, when enough people have convinced me, this is a bad idea
+	for i:=1;i<len(os.Args);i++ {
+		arg := os.Args[i]
+		if len(arg) == 0 { continue }
+		if arg[0] == '-' {
+
+			if arg == "-h" || arg == "--help" {
+				fmt.Println("meteod - meteo server daemon")
+				fmt.Printf("Usage: %s [OPTIONS]\n\n", os.Args[0])
+				fmt.Println("OPTIONS")
+				fmt.Println("  -h, --help            Print this help message")
+				fmt.Println("  -p, --port PORT       Set webserver port")
+				fmt.Println("  -d, --db FILE         Set database file")
+				fmt.Println("  -c, --config FILE     Load config file FILE")
+				fmt.Println("                        This is an additional config file to the default ones")
+				fmt.Println("  -m, --mqtt MQTT       Connect to the given MQTT server.")
+				fmt.Println("                        Format: [user@]remote[:port]")
+				os.Exit(0)
+			} else if arg == "-p" || arg == "--port" {
+				i+=1
+				if i >= len(os.Args) { panic("Missing argument: port")}
+				cf.Webserver.Port, err = strconv.Atoi(os.Args[i])
+				if err != nil {panic("Illegal port given")}
+			} else if arg == "-d" || arg == "--db" {
+				i+=1
+				if i >= len(os.Args) { panic("Missing argument: db file")}
+				cf.Database = os.Args[i]
+			} else if arg == "-c" || arg == "--config" {
+				i+=1
+				if i >= len(os.Args) { panic("Missing argument: config file")}
+				toml.DecodeFile(os.Args[i], &cf)
+			} else if arg == "-m" || arg == "--mqtt" {
+				i+=1
+				if i >= len(os.Args) { panic("Missing argument: mqtt remote host")}
+				cf.Mqtt = os.Args[i]
+			} else {
+				fmt.Printf("Illegal argument: %s\n", arg)
+				os.Exit(1)
+			}
+
+		} else {
+			fmt.Printf("Illegal argument: %s\n", arg)
+			os.Exit(1)
+		}
+	}
+
+
+
 	// Connect database
 	db, err = OpenDb(cf.Database)
 	if err != nil {
@@ -222,14 +306,14 @@ func main() {
 	if err := db.Prepare(); err != nil {
 		panic(err)
 	}
-	fmt.Println("Connected to database")
+	log.Println("Database loaded")
 
 	// Attach mqtt, if configured
 	if cf.Mqtt != "" { go attachMqtt(cf.Mqtt) }
 
 	// Setup webserver
 	addr := cf.Webserver.Bindaddr + ":" + strconv.Itoa(cf.Webserver.Port)
-	fmt.Println("Serving http://" + addr + "")
+	log.Println("Serving http://" + addr + "")
 
     r := mux.NewRouter()
     r.HandleFunc("/", dashboardOverview)
@@ -285,8 +369,14 @@ func isPlausible(dp DataPoint) bool {
 	if dp.Temperature < -100 || dp.Temperature > 1000 { return false }
 	if dp.Humidity < 0 || dp.Humidity > 100 { return false }
 	p_mbar := dp.Pressure / 100.0
-	if p_mbar < 10 { return false }
-	if p_mbar > 2000 { return false }		// We are not a submarine!
+	if p_mbar != 0 {
+		if p_mbar < 10 {
+			return false
+		}
+		if p_mbar > 2000 {
+			return false
+		} // We are not a submarine!
+	}
 	return true
 }
 
@@ -312,7 +402,7 @@ func receivedDpToken(dp jsonDataPoint) bool {
 		panic(err)
 	}
 	if !exists {
-		fmt.Printf("Station doesn't exists: %d\n", station)
+		//fmt.Printf("Station doesn't exists: %d\n", station)
 		return false
 	}
 
@@ -346,7 +436,7 @@ func received(dp DataPoint) bool {
 
 	push, err := doDatapointPush(dp)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error determining if datapoint is recent: ", err)
+		fmt.Fprintln(os.Stderr, "Database error when determining if datapoint is recent: ", err)
 		return false
 	}
 
@@ -356,9 +446,9 @@ func received(dp DataPoint) bool {
 		db_dp := DataPoint{Timestamp: dp.Timestamp, Station: dp.Station, Temperature: dp.Temperature, Humidity: dp.Humidity, Pressure: dp.Pressure}
 		err := db.InsertDataPoint(db_dp)
 		if err != nil { panic(err) }
-		fmt.Printf("PUSH: %d at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
+		log.Printf("PUSH: [%d] at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 	} else {
-		fmt.Printf("RECV: %d at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
+		log.Printf("RECV: [%d] at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 	}
 	
 	return true

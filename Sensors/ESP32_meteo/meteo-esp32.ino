@@ -5,6 +5,7 @@
 
 #include <WebServer.h>
 
+
 /* ==== CONFIGURE HERE ====================================================== */
 
 #define SERIAL_BAUD 115200
@@ -12,7 +13,6 @@
 #define N_SAMPLES 2         // Average report over this samples
 #define SAMPLE_DELAY 5000   // Milliseconds between samples
 #define SAMPLE_ALPHA 0.75   // Sampling average alpha
-
 
 // TODO: Set your Wifi SSID and password
 
@@ -22,14 +22,13 @@
 // TODO: Configure your node here
 
 #define NODE_ID 0
-#define NODE_NAME "workroom"
+#define NODE_NAME "outdoors"
 
 // TODO: Set your MQTT server
 
 #define MQTT_REMOTE "192.168.1.1"
 #define MQTT_PORT 1883
 #define MQTT_CLIENTID "meteo-" NODE_NAME
-#define MQTT_TOPIC "home/" NODE_NAME
 
 /* ========================================================================== */
 
@@ -124,9 +123,11 @@ void reconnect_mqtt() {
 
 void report(float temp, float hum, float pres) {
   char message[256];
-  snprintf(message, 255, "{\"node\":%d,\"t\":%.2f,\"hum\":%.2f,\"p\":%.2f}", NODE_ID, temp, hum, pres);
+  char topic[64];
+  snprintf(topic, 64, "meteo/%d", NODE_ID);
+  snprintf(message, 255, "{\"id\":%d,\"name\":\"%s\",\"t\":%.2f,\"hum\":%.2f,\"p\":%.2f}", NODE_ID, NODE_NAME, temp, hum, pres);
   Serial.println(message);
-  client.publish(MQTT_TOPIC, message);
+  client.publish(topic, message);
 }
 
 void www_handle() {
@@ -143,7 +144,7 @@ void csv_handle() {
 
 void json_handle() {
   char json[256];
-  snprintf(json, 255, "{\"node\":%d,\"t\":%.2f,\"hum\":%.2f,\"p\":%.2f}\n", NODE_ID, temp, hum, pres);
+  snprintf(json, 255, "{\"node\":%d,\"name\":\"%s\",\"t\":%.2f,\"hum\":%.2f,\"p\":%.2f}\n", NODE_ID, NODE_NAME, temp, hum, pres);
   server.send(200, "text/json", json);
 }
 
@@ -175,3 +176,4 @@ void loop() {
   }
   delay(100);
 }
+

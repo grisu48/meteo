@@ -1,9 +1,9 @@
 PushDelay = 60
 Database = "meteod.db"
-MQTT = "user@localhost:1883"
+MQTT = "suse-meteod@asgard.home:1883"
 
 [Webserver]
 port = 8802
 Bindaddr = "127.0.0.1"
 #QueryLimit = 1000
-AllowEdit = false
+AllowEdit = true

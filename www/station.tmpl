@@ -15,6 +15,6 @@
     <tr><td>{{.Name}}</td><td>{{.Description}}</td><td>{{.T}} °C</td><td>{{.Hum}} rel. humidity</td><td>{{.P}} hPa</td></tr>
 </table>
 
-<p> <a href="../station/{{.Id}}">[Download CSV]</a></p>
-
-<p>View: <a href="../dashboard/{{.Id}}?timespan=day">[Day]</a><a href="../dashboard/{{.Id}}?timespan=week">[Week]</a><a href="../dashboard/{{.Id}}?timespan=month">[Month]</a><a href="../dashboard/{{.Id}}?timespan=year">[Year]</a></p>
+<FORM method="GET">
+<p>Goto <input type="date" name="date" value="{{.SelectedDate}}"> <input type="submit" value="Go"> | <a href="../dashboard/{{.Id}}?timespan=day">[Day]</a> <a href="../dashboard/{{.Id}}?timespan=week">[Week]</a> <a href="../dashboard/{{.Id}}?timespan=month">[Month]</a> <a href="../dashboard/{{.Id}}?timespan=year">[Year]</a></p>
+</FORM>

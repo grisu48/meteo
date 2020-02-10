@@ -618,7 +618,7 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 		params := r.URL.Query()
 		limit := v_i(params["limit"], 1000)
 		if limit < 0 || limit > 1000 { limit = 1000 }
-
+		
 		// Print station and datapoints
 		datapoints, err := db.GetLastDataPoints(station.Id, limit)
 		fmt.Fprintf(w, "## Station %d: '%s' in %s, %s\n", station.Id, station.Name, station.Location, station.Description)
@@ -735,6 +735,7 @@ type DashboardStation struct {
 	T float32
 	Hum float32
 	P float32
+	SelectedDate string
 }
 
 type DashboardDataPoint struct {
@@ -857,6 +858,7 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params := getVars(r.URL.Query())
+	selectedDate := params["date"]
 	
 
 	s, err := db.GetStation(id)
@@ -865,9 +867,10 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Bad id\n"))
 		return
 	}
-	station := DashboardStation{}
+	station := DashboardStation{SelectedDate:selectedDate}
 	station.fromStation(s)
 	station.fetch()		// Ignore errors when fetching latest datapoint
+
 
 	t, err := template.ParseFiles("www/station.tmpl")
 	err = t.Execute(w, station)
@@ -883,13 +886,22 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 	timespan := params["timespan"]
 	now := time.Now().Unix()
 	t_max := now
-	t_min := now - 60*60*24		// Default: last 24h
-	if timespan == "week" {
-		t_min = now - 60*60*24*7
-	} else if timespan == "month" {
-		t_min = now - 60*60*24*7*30
-	} else if timespan == "year" {
-		t_min = now - 60*60*24*7*365
+	t_min := now - 60*60*24			// Default: last 24h
+	if selectedDate != "" {			// Date overwrites timespan
+		// Swallow error. User will notice if the date is not OK
+		t, _ := time.Parse("2006-01-02", selectedDate)
+		t_min = t.Unix()
+		t_max = t_min + 60*60*24
+	} else {
+		if timespan == "" || timespan == "day" {
+			t_min = now - 60*60*24		// Default: last 24h
+		} else if timespan == "week" {
+			t_min = now - 60*60*24*7
+		} else if timespan == "month" {
+			t_min = now - 60*60*24*7*30
+		} else if timespan == "year" {
+			t_min = now - 60*60*24*7*365
+		}
 	}
 	// TODO: Limit and offset directive
 	dps, err := db.QueryStation(station.Id, t_min, t_max, 100000, 0)

@@ -1,4 +1,0 @@
-Device = "/dev/ttyUSB0"
-Baud = 115200
-Remote = "http://127.0.0.1:8802"
-Token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

@@ -64,6 +64,21 @@ Currently manually. See `meteod.toml`
 
 # Nodes/Sensors
 
-Currently I have some Adafruit sensors, a skeleton code for Raspberry Pi, a JeeNode RoomNode (that is not utilized anymore) and some EPS8266 projects.
+Current `meteo` sensors are [ESP32](https://www.espressif.com/en/products/hardware/esp32/overview) based nodes with a [BME280](https://www.bosch-sensortec.com/products/environmental-sensors/humidity-sensors-bme280/) sensor, but in principal every node that is able to push data via `MQTT` can be attached to the server.
 
-This whole project is ongoing work, so nothing is production ready yet, as I'm still experimenting with lots of sensors.
+See the [EPS32](Sensors/ESP32) folder in Sensors for the current supported `node`
+
+## MQTT packets
+
+Every node that publishes `MQTT` packets in the given format is accepted.
+
+    # Node ID: 1, replace in topic and payload
+    
+    ## meteo packets
+    TOPIC:    meteo/1
+    PAYLOAD:  {"id":1,"name":"Node","t":23.36,"hum":44.56,"p":99720.89}
+    
+    ## lightning packet
+    TOPIC:    meteo/lightning/1
+    PAYLOAD:  {"node":1,"timestamp":0,"distance":12.1}
+    # if the timestamp is 0, the server replaces it with it's current time

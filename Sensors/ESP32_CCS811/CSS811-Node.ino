@@ -14,9 +14,10 @@
 
 #define SERIAL_BAUD 115200
 #define LED_BUILTIN 2
+#define CSS811_WAKE_PIN 23
 #define PUSH_DELAY 5000   // Milliseconds between data push
 
-// TODO: Configure your Wifi here
+// TODO: Insert Wifi credentials
 #define WIFI_SSID ""
 #define WIFI_PASSWORD ""
 
@@ -39,10 +40,24 @@ typedef struct ccs811_t {
 } ccs811_t;
 ccs811_t ccs811;
 
+
+static void led_toggle(const bool is_on) {
+  if (is_on)
+    digitalWrite(LED_BUILTIN, HIGH);
+  else
+    digitalWrite(LED_BUILTIN, LOW);
+}
+
 void setup() {
   Serial.begin(SERIAL_BAUD);
   while(!Serial) {} // Wait for serial port
-  
+  pinMode(LED_BUILTIN, OUTPUT);
+  led_toggle(false);
+
+
+  // Initialize CSS811
+  pinMode(CSS811_WAKE_PIN, OUTPUT);
+  digitalWrite(CSS811_WAKE_PIN, LOW);
   if(!ccs.begin()){
     Serial.println("ERR: CCS811 failed");
     while(1);
@@ -89,8 +104,11 @@ void loop() {
   if(timestamp > next_push) {
     next_push = timestamp+PUSH_DELAY;
     push_mqtt();
-  }
-  delay(100);
+    led_toggle(true);
+    delay(200);
+    led_toggle(false);
+  } else
+    delay(100);
 }
 
 

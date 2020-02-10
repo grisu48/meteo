@@ -28,6 +28,7 @@ type tomlWebserver struct {
 	Port     int
 	Bindaddr string
 	QueryLimit int64
+	AllowEdit bool
 }
 
 var cf tomlConfig
@@ -928,41 +929,48 @@ func dashboardStationEdit(w http.ResponseWriter, r *http.Request) {
 	station := DashboardStation{}
 	station.fromStation(s)
 	station.fetch()		// Ignore errors when fetching latest datapoint
-
-	// POST request sets the data
-	if r.Method == "POST" {
-		if err = r.ParseForm(); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Internal server error"))
-			return
-		}
-		name := r.FormValue("name")
-        location := r.FormValue("location")
-        desc := r.FormValue("desc")
-        
-        dbStation := Station{Id:station.Id, Name:name, Location:location, Description:desc }
-        err = db.UpdateStation(dbStation)
-        if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Internal server error"))
-			return
-        } else {
-			// Redirect them to the station page
-			w.Write([]byte(fmt.Sprintf("<head><meta http-equiv=\"refresh\" content=\"0; url=../%d\" /></head><body></body>", station.Id)))
-		}
-		
-	} else if r.Method == "GET" {
-		// Assume GET request
-		t, err := template.ParseFiles("www/station_edit.tmpl")
-		err = t.Execute(w, station)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Internal server error"))
-			return
+	
+	// Check if we are allowed to perform edits
+		if cf.Webserver.AllowEdit {
+		// POST request sets the data
+		if r.Method == "POST" {
+			if err = r.ParseForm(); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				return
+			}
+			name := r.FormValue("name")
+		    location := r.FormValue("location")
+		    desc := r.FormValue("desc")
+		    
+		    dbStation := Station{Id:station.Id, Name:name, Location:location, Description:desc }
+		    err = db.UpdateStation(dbStation)
+		    if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				return
+		    } else {
+				// Redirect them to the station page
+				w.Write([]byte(fmt.Sprintf("<head><meta http-equiv=\"refresh\" content=\"0; url=../%d\" /></head><body></body>", station.Id)))
+			}
+			
+		} else if r.Method == "GET" {
+			// Assume GET request
+			t, err := template.ParseFiles("www/station_edit.tmpl")
+			err = t.Execute(w, station)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				return
+			}
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Unsupported method"))
 		}
 	} else {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Unsupported method"))
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("Administratively prohibitted"))
+		
 	}
 }
 

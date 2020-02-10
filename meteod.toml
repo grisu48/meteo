@@ -6,3 +6,4 @@ MQTT = "user@localhost:1883"
 port = 8802
 Bindaddr = "127.0.0.1"
 #QueryLimit = 1000
+AllowEdit = false

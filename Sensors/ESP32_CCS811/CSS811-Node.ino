@@ -21,10 +21,11 @@
 #define WIFI_SSID ""
 #define WIFI_PASSWORD ""
 
-#define NODE_ID 11
-#define NODE_NAME "Kitchen-CCS811"
-
-#define MQTT_REMOTE "192.168.0.43"
+// TODO: Define Node ID and name
+#define NODE_ID 1
+#define NODE_NAME ""
+// TODO MQTT (mosquitto) server
+#define MQTT_REMOTE "192.168.0.100"
 #define MQTT_PORT 1883
 #define MQTT_CLIENTID "meteo-" NODE_NAME
 

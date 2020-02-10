@@ -235,6 +235,7 @@ func mqttPublish(dp DataPoint) {
 
 
 
+/**** MAIN ********************************************************************/
 
 func main() {
 	var err error 
@@ -320,6 +321,7 @@ func main() {
 	r.Handle("/asset/{filename}", http.StripPrefix("/asset/", http.FileServer(http.Dir("www/asset"))))
 	r.HandleFunc("/dashboard", dashboardOverview)
 	r.HandleFunc("/dashboard/{id:[0-9]+}", dashboardStation)
+	r.HandleFunc("/dashboard/{id:[0-9]+}/edit", dashboardStationEdit)
 	r.HandleFunc("/api.html", func(w http.ResponseWriter, r *http.Request) {
     	http.ServeFile(w, r, "www/api.html")
 	})
@@ -844,6 +846,7 @@ func convertDatapoints(dps []DataPoint) ([]DashboardDataPoint) {
 	return ret
 }
 
+
 func dashboardStation(w http.ResponseWriter, r *http.Request) {	
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -906,6 +909,62 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("</body>"))
 }
 
+
+func dashboardStationEdit(w http.ResponseWriter, r *http.Request) {	
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Illegal id\n"))
+		return
+	}
+
+	s, err := db.GetStation(id)
+	if s.Id == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad id\n"))
+		return
+	}
+	station := DashboardStation{}
+	station.fromStation(s)
+	station.fetch()		// Ignore errors when fetching latest datapoint
+
+	// POST request sets the data
+	if r.Method == "POST" {
+		if err = r.ParseForm(); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal server error"))
+			return
+		}
+		name := r.FormValue("name")
+        location := r.FormValue("location")
+        desc := r.FormValue("desc")
+        
+        dbStation := Station{Id:station.Id, Name:name, Location:location, Description:desc }
+        err = db.UpdateStation(dbStation)
+        if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal server error"))
+			return
+        } else {
+			// Redirect them to the station page
+			w.Write([]byte(fmt.Sprintf("<head><meta http-equiv=\"refresh\" content=\"0; url=../%d\" /></head><body></body>", station.Id)))
+		}
+		
+	} else if r.Method == "GET" {
+		// Assume GET request
+		t, err := template.ParseFiles("www/station_edit.tmpl")
+		err = t.Execute(w, station)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal server error"))
+			return
+		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Unsupported method"))
+	}
+}
 
 func stationReadingsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)

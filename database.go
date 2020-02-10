@@ -223,6 +223,16 @@ func (db *Persistence) GetStation(id int) (Station, error) {
 	}
 }
 
+func (db *Persistence) UpdateStation(station Station) (error) {
+	stmt, err := db.con.Prepare("UPDATE `stations` SET `name`=?,`location`=?,`description`=? WHERE `id` = ?")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(station.Name, station.Location, station.Description, station.Id)
+	return err
+}
+
 func (db *Persistence) GetLastDataPoints(station int, limit int) ([]DataPoint, error) {
 	datapoints := make([]DataPoint, 0)
 	tablename := "station_" + strconv.Itoa(station)

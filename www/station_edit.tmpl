@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>meteo</title>
+    <script src="../../asset/Chart.js"></script>
+    <LINK href="../../asset/meteo.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<h1>meteo | Station</h1>
+
+<p><a href="../../dashboard">[Dashboard]</a> <a href="../../api.html">[Request API]</a> | <a href="../{{.Id}}">[Back to station]</a></p>
+
+<h2>Edit station</h2>
+
+<FORM ACTION="edit" METHOD="POST">
+
+<table border="1">
+    <tr><td>Name</td><td><input type="text" name="name" value="{{.Name}}"></td></tr>
+    <tr><td>Description</td><td><input type="text" name="desc" value="{{.Description}}"></td></tr>
+    <tr><td>Location</td><td><input type="text" name="location" value="{{.Location}}"></td></tr>
+</table>
+
+<p><input type="submit" value="Edit"><input type="reset" value="Reset"></p>
+
+</FORM>

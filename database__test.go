@@ -135,6 +135,22 @@ func TestStations(t *testing.T) {
 	if !checkStation(station3) {
 		t.Error("Comparison after inserting station 55 failed")
 	}
+	
+	t.Log("Updating station information")
+	station3.Name = "Station 55_1"
+	station3.Location = "Nowhere"
+	station3.Description = "Updated description"
+	err = db.UpdateStation(station3)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	station3_clone, err := db.GetStation(station3.Id)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if station3 != station3_clone {
+		t.Error("Comparison after updating station failed")
+	}
+	if station3_clone.Name != "Station 55_1" { t.Error("Update station name failed") }
+	if station3_clone.Location != "Nowhere" { t.Error("Update station location failed") }
+	if station3_clone.Description != "Updated description" { t.Error("Update station description failed") }
+	
 }
 
 func TestDatapoints(t *testing.T) {

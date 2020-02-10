@@ -139,29 +139,46 @@ func mqttJsonParse(nodeId int, message string) (mqttDataPoint, error) {
 	return dp, nil
 }
 
+func mqttJsonLightningParse(nodeId int, message string) (Lightning, error) {
+	dp := Lightning{Station:nodeId}
+
+	// Parse json packets
+	var dat map[string]interface{}
+	if err := json.Unmarshal([]byte(message), &dat); err != nil {
+		return dp, err
+	}
+	if dat["timestamp"] != nil { dp.Timestamp = int64(dat["timestamp"].(float64)) }
+	if dat["distance"] != nil { dp.Distance = float32(dat["distance"].(float64)) }
+	return dp, nil
+}
+
 func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 	topic := msg.Topic()
 	payload := string(msg.Payload())
 	if topic == "" || payload == "" { return }
 
 	// Get station id from topic
-	i := strings.Index(topic, "/")
+	i := strings.Index(topic, "meteo/")
 	if i < 0 {
-		fmt.Printf("MQTT: Topic format mismatch: %s\n", topic)
+		fmt.Printf("MQTT: meteo topic not found\n")
 		return
 	}
-	node_id := topic[i+1:]
-	node_type := ""
-	i = strings.Index(node_id, "/")
-	if i<0 {
+	topic = topic[i+6:]
+	var (node_type string
+		nodeId int
+		err error)
+	if len(topic) > 10 && topic[0:10] == "lightning/" {
+		node_type = "lightning"
+		nodeId, err = strconv.Atoi(topic[10:])
+	} else if len(topic) > 6 && topic[0:6] == "meteo/" {
+		node_type = "meteo"
+		nodeId, err = strconv.Atoi(topic[6:])
+	} else {		// Default. Assume meteo
 		node_type = ""
-	} else {
-		node_type = node_id[i+1:]
-		node_id = node_id[:i]
+		nodeId, err = strconv.Atoi(topic)
 	}
-	nodeId, err := strconv.Atoi(node_id)
 	if err != nil {
-		log.Printf("MQTT: Meteo node format mismatch: %s\n", topic)
+		log.Printf("MQTT: Meteo node id format mismatch: %s\n", topic)
 		return
 	}
 
@@ -200,6 +217,22 @@ func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 		if !received(dp.ToDataPoint()) {
 			log.Println("Error handling received datapoint")
 		}
+	} else if node_type == "lightning" {		// Lightning packet
+		lightning, err := mqttJsonLightningParse(nodeId, payload)
+		if err != nil {
+			log.Println("MQTT illegal packet: ", err)
+			return
+		}
+		if lightning.Timestamp <= 0 {
+			lightning.Timestamp = time.Now().Unix()
+		}
+		err = db.InsertLightning(lightning)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Database error (InsertLightning): %s\n", err)
+			return
+		}
+		log.Printf("Lightning! (Station %d, %f km)\n", lightning.Station, lightning.Distance)
+		
 	}
 }
 
@@ -326,6 +359,7 @@ func main() {
 	r.HandleFunc("/api.html", func(w http.ResponseWriter, r *http.Request) {
     	http.ServeFile(w, r, "www/api.html")
 	})
+	r.HandleFunc("/lightnings", lightningsHandler)
 	r.HandleFunc("/health", HealthCheckHandler)
 	r.HandleFunc("/version", defaultHandler)
 	r.HandleFunc("/stations", stationsHandler)
@@ -746,6 +780,15 @@ type DashboardDataPoint struct {
 	Pressure    float32
 }
 
+type DashboardLightning struct {
+	Station int
+	StationName string
+	Timestamp int64
+	Distance float32
+	DateTime string
+	Ago string
+}
+
 func (s *DashboardStation) fromStation(station Station) {
 	s.Id = station.Id
 	s.Name = station.Name
@@ -766,7 +809,6 @@ func (s *DashboardStation) fetch() (bool, error) {
 	}
 	return false, nil
 }
-
 func dashboardOverview(w http.ResponseWriter, r *http.Request) {	
 	dbstations, err := db.GetStations()
 	if err != nil {
@@ -791,6 +833,76 @@ func dashboardOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Write([]byte("</body>"))
 }
+
+func getStationMap() (map[int]string, error) {	
+	ret := make(map[int]string)
+	dbStations, err := db.GetStations()
+	if err != nil { return ret, err }
+	for _, v := range(dbStations) {
+		ret[v.Id] = v.Name
+	}
+	return ret, nil
+}
+
+func agoString(deltaT int64) string {
+	if deltaT <= 60 {
+		return fmt.Sprintf("%2d seconds ago", deltaT)
+	} else {
+		minutes := deltaT/60
+		seconds := deltaT-minutes*60
+		if minutes < 60 {
+			return fmt.Sprintf("%02d:%02d ago", minutes,seconds)
+		} else {
+			hours := minutes/60
+			minutes -= hours*60
+			if hours < 24 {
+				return fmt.Sprintf("%02d:%02d:%02d ago", hours,minutes,seconds)
+			} else {
+				days := hours/24
+				hours -= days*24
+				if days < 3 {
+					return fmt.Sprintf("%2d days, %2d hours ago", days,hours)
+				} else {
+					return fmt.Sprintf("%d days ago", days)
+				}
+			}
+		}
+	}
+}
+
+func lightningsHandler(w http.ResponseWriter, r *http.Request) {	
+	dps, err := db.GetLightnings(100, 0)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Server error"))
+		panic(err)
+	}
+	stations, err := getStationMap()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Server error"))
+		panic(err)
+	}
+	
+	lightnings := make([]DashboardLightning, 0)
+	now := time.Now().Unix()
+	for _, v := range(dps) {
+		deltaT := now - v.Timestamp
+		t := time.Unix(v.Timestamp, 0)
+		lightning := DashboardLightning{Station: v.Station, StationName: stations[v.Station], Timestamp:v.Timestamp, Ago:agoString(deltaT), DateTime:t.Format("2006-01-02-15:04:05"),  Distance:v.Distance}
+		lightnings = append(lightnings, lightning)
+	}
+	
+	
+	t, err := template.ParseFiles("www/lightnings.tmpl")
+	err = t.Execute(w, lightnings)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+		return
+	}
+}
+
 
 func getVars(v map[string][]string) map[string]string {
 	ret := make(map[string]string)

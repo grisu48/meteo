@@ -32,6 +32,12 @@ type Token struct {
 	Station int
 }
 
+type Lightning struct {
+	Station int
+	Timestamp int64
+	Distance float32
+}
+
 func OpenDb(filename string) (Persistence, error) {
 	db := Persistence{}
 	con, err := sql.Open("sqlite3", filename)
@@ -67,6 +73,10 @@ func (db *Persistence) Prepare() error {
 		return err
 	}
 	_, err = db.con.Exec("CREATE TABLE IF NOT EXISTS `tokens` (`token` VARCHAR(32) PRIMARY KEY, `station` INT);")
+	if err != nil {
+		return err
+	}
+	_, err = db.con.Exec("CREATE TABLE IF NOT EXISTS `lightnings` (`station` INT, `timestamp` INT, `distance` REAL, PRIMARY KEY(`station`,`timestamp`));")
 	if err != nil {
 		return err
 	}
@@ -292,4 +302,36 @@ func (db *Persistence) InsertDataPoint(dp DataPoint) error {
 	defer stmt.Close()
 	_, err = stmt.Exec(dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 	return err
+}
+
+
+/** Inserts the given lightning to the database */
+func (db *Persistence) InsertLightning(light Lightning) error {
+	stmt, err := db.con.Prepare("INSERT OR IGNORE INTO `lightnings` (`station`,`timestamp`,`distance`) VALUES (?,?,?);")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(light.Station, light.Timestamp, light.Distance)
+	return err
+}
+
+func (db *Persistence) GetLightnings(limit int, offset int) ([]Lightning, error) {
+	ret := make([]Lightning, 0)
+	stmt, err := db.con.Prepare("SELECT `station`,`timestamp`,`distance` FROM `lightnings` ORDER BY `timestamp` DESC LIMIT ? OFFSET ?")
+	if err != nil {
+		return ret, err
+	}
+	defer stmt.Close()
+	rows, err := stmt.Query(limit, offset)
+	if err != nil {
+		return ret, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		lightning := Lightning{}
+		rows.Scan(&lightning.Station, &lightning.Timestamp, &lightning.Distance)
+		ret = append(ret, lightning)
+	}
+	return ret, err
 }

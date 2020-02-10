@@ -154,7 +154,7 @@ func TestStations(t *testing.T) {
 }
 
 func TestDatapoints(t *testing.T) {
-	progressionPoints := 1000
+	progressionPoints := 100
 
 	t.Log("Setting up database")
 	err := db.Prepare()
@@ -310,3 +310,60 @@ func TestTokens(t *testing.T) {
 	if !checkToken(tok2) { fmt.Errorf("Checktoken failed (token2) ")}
 }
 
+
+func TestLightnings(t *testing.T) {
+	seriesPoints := 100
+	
+	lightnings, err := db.GetLightnings(1000, 0)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(lightnings) != 0 { t.Error("Nonempty lightning table") }
+	
+	now := time.Now().Unix()
+	
+	t.Log("Inserting first lightning")
+	lightning := Lightning{Timestamp:now,Station:1,Distance:0}
+	err = db.InsertLightning(lightning)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	lightnings, err = db.GetLightnings(1000, 0)
+	if len(lightnings) != 1 { t.Error("Failed to fetch first lightning") }
+	if lightnings[0] != lightning { t.Error("First lightning mismatched") }
+	
+	t.Log("Inserting lightning at same time")
+	err = db.InsertLightning(Lightning{Timestamp:now,Station:2,Distance:1.024})
+	if err != nil { t.Fatal("Database error: ", err ) }
+	lightnings, err = db.GetLightnings(1000, 0)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(lightnings) != 2 { t.Error("Failed to fetch second lightning") }
+	// Although now explicitly required for now the lightnings preserve the last-in first-out order, so this is fine
+	if lightnings[1].Timestamp != now { t.Error("Second lightning Timestamp mismatched") }
+	if lightnings[1].Station != 2 { t.Error("Second lightning Station mismatched") }
+	if lightnings[1].Distance != 1.024 { t.Error("Second lightning Distance mismatched") }
+	
+	
+	
+	t.Log("Inserting lightning series")
+	for i:=0;i<seriesPoints;i++ {
+		err = db.InsertLightning(Lightning{Timestamp:now+int64(i),Station:3,Distance:5.0+float32(i)*0.1})
+		if err != nil { t.Fatal("Database error: ", err ) }
+	}
+	// Test to fetch all
+	lightnings, err = db.GetLightnings(seriesPoints+2, 0)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(lightnings) != seriesPoints+2 { t.Errorf("Fetching %d lightnings returned %d", seriesPoints+2, len(lightnings)) }
+
+	// Test only the given last subseries
+	lightnings, err = db.GetLightnings(seriesPoints, 0)
+	if err != nil { t.Fatal("Database error: ", err ) }
+	if len(lightnings) != seriesPoints { t.Errorf("Fetching %d lightnings returned %d", seriesPoints, len(lightnings)) }
+	for i:=0;i<seriesPoints;i++ {
+		lightning := lightnings[i]
+		
+		i = seriesPoints-i-1		// i is here in reverse order
+		timestamp := now+int64(i)							// Expected timestamp
+		distance := float32(5.0+float32(i)*0.1)				// Expected distance
+		fmt.Printf("%d %d %f\n", timestamp, 3, distance)
+		if lightning.Station != 3 { t.Errorf("Lightning series Station mismatched (%d != %d)", lightning.Station, 3) }
+		if lightning.Timestamp != timestamp { t.Errorf("Lightning series Timestamp mismatched (%d != %d)", lightning.Timestamp, timestamp) }
+		if lightning.Distance != distance { t.Errorf("Lightning series Distance mismatched (%f != %f)", lightning.Distance, distance) }
+	}
+}

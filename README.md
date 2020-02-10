@@ -30,18 +30,6 @@ Currently manually. See `meteod.toml` for information
 
 `meteod` stores all data in a Sqlite3 database. By default `meteod.db` is taken, but the filename can be configured in `meteod.toml`.
 
-## Security
-
-Pushing stations need a access `token`, that identifies where the data belongs to.
-
-MQTT is considered a trusted network. New station will be automatically added. If you want to have better control over the nodes, please use http instead
-
-## Testing
-
-For test surposes, a `exampleJson` file is created. Use it to push data to the server via
-
-    $ curl 'http://localhost:8802/station/5' -X POST -H "Content-Type: application/json" --data @exampleJson
-
 # Client
 
 There is currently a very simple CLI client available: `meteo`
@@ -70,6 +58,8 @@ See the [EPS32](Sensors/ESP32) folder in Sensors for the current supported `node
 
 ## MQTT packets
 
+MQTT is considered as trusted network in `meteod`. New station will be automatically added. If you want to have better access control, please use http and disable `MQTT` in your config file.
+
 Every node that publishes `MQTT` packets in the given format is accepted.
 
     # Node ID: 1, replace in topic and payload
@@ -82,3 +72,15 @@ Every node that publishes `MQTT` packets in the given format is accepted.
     TOPIC:    meteo/lightning/1
     PAYLOAD:  {"node":1,"timestamp":0,"distance":12.1}
     # if the timestamp is 0, the server replaces it with it's current time
+
+## Data-Push via HTTP
+
+To push data via HTTP, you need a access `token`. The token identifies where the data belongs to.
+
+The data is expected to be in the following `json` format
+
+    { "token":"test", "T":32.0, "Hum": 33.1, "P":1013.5 }
+
+Example-`curl` script to push data to station 5
+
+    $ curl 'http://localhost:8802/station/5' -X POST -H "Content-Type: application/json" --data { "token":"test", "T":32.0, "Hum": 33.1, "P":1013.5 }

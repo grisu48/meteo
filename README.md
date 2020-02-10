@@ -18,6 +18,10 @@ Requires `go >= 1.9.x` and the following repositories
     go get "github.com/mattn/go-sqlite3"
     go get "github.com/eclipse/paho.mqtt.golang"
 
+A quick way of installing the requirements is
+
+    $ make req                      # Installs requirements
+
 ## Configuration
 
 Currently manually. See `meteod.toml` for information
@@ -36,7 +40,7 @@ MQTT is considered a trusted network. New station will be automatically added. I
 
 For test surposes, a `exampleJson` file is created. Use it to push data to the server via
 
-    curl 'http://localhost:8802/station/5' -X POST -H "Content-Type: application/json" --data @exampleJson
+    $ curl 'http://localhost:8802/station/5' -X POST -H "Content-Type: application/json" --data @exampleJson
 
 # Client
 
@@ -47,11 +51,12 @@ There is currently a very simple CLI client available: `meteo`
     $ meteo http://meteo-service.local/
       *   1 meteo-cluster          2019-05-14-17:24:01   22.51C|23.00 %rel| 95337hPa
 
-## Requirements
+## Build
 
-Requires `go >= 1.9.x`
+Requires `go >= 1.9.x` and `"github.com/BurntSushi/toml"`
 
-    go get "github.com/BurntSushi/toml"
+    $ make req-meteo
+    $ make meteo
 
 ## Configuration
 

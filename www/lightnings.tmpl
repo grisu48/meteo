@@ -9,7 +9,9 @@
 <body>
 <h1>meteo | Lightnings</h1>
 
-<p><a href="dashboard">[Dashboard]</a> <a href="lightnings">[Lightnings]</a> <a href="api.html">[Request API]</a></p>
+<p><a href="dashboard">[Dashboard]</a> <a href="lightnings">[Lightnings]</a> <a href="ombrometers">[Ombrometers]</a> <a href="api.html">[Request API]</a></p>
+
+<p>Displays the last recorded lightnings. Page is automatically refreshed every 5 seconds</p>
 
 {{if not .}}
 <p>No lightnings detected so far</p>
@@ -21,3 +23,4 @@
 {{end}}
 </table>
 {{end}}
+</html>

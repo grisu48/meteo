@@ -1,61 +1,59 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"html/template"
+	"io/ioutil"
+	"log"
+	"math"
+	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/BurntSushi/toml"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/gorilla/mux"
 )
-import "log"
-import "net/http"
-import "html/template"
-import "strconv"
-import "encoding/json"
-import "io/ioutil"
-import "time"
-import "math"
-import "github.com/BurntSushi/toml"
-import "github.com/gorilla/mux"
 
 type tomlConfig struct {
-	Database string  `toml:"Database"`
-	Mqtt string `toml:MQTT`
+	Database  string        `toml:"Database"`
+	Mqtt      string        `toml:MQTT`
 	Webserver tomlWebserver `toml:"Webserver"`
 	PushDelay int64
 }
 
 type tomlWebserver struct {
-	Port     int
-	Bindaddr string
+	Port       int
+	Bindaddr   string
 	QueryLimit int64
-	AllowEdit bool
+	AllowEdit  bool
 }
 
 var cf tomlConfig
 var db Persistence
 
-
-
-
 type jsonDataPoint struct {
-	Token string
+	Token     string
 	Timestamp int64
-	T float32
-	Hum float32
-	P float32
+	T         float32
+	Hum       float32
+	P         float32
 }
 
 type mqttDataPoint struct {
-	Timestamp int64 `json:"timestamp"`
-	Station int `json:"node"`
-	Name string `json:"name"`
+	Timestamp   int64   `json:"timestamp"`
+	Station     int     `json:"node"`
+	Name        string  `json:"name"`
 	Temperature float32 `json:"t"`
-	Humidity float32 `json:"hum"`
-	Pressure float32 `json:"p"`
+	Humidity    float32 `json:"hum"`
+	Pressure    float32 `json:"p"`
 }
 
-func (dp *mqttDataPoint) ToDataPoint() (DataPoint) {
-	return DataPoint{ Timestamp: dp.Timestamp, Station:dp.Station, Temperature:dp.Temperature, Humidity:dp.Humidity, Pressure:dp.Pressure }
+func (dp *mqttDataPoint) ToDataPoint() DataPoint {
+	return DataPoint{Timestamp: dp.Timestamp, Station: dp.Station, Temperature: dp.Temperature, Humidity: dp.Humidity, Pressure: dp.Pressure}
 }
 
 func (dp *mqttDataPoint) FromDataPoint(src DataPoint) {
@@ -66,8 +64,8 @@ func (dp *mqttDataPoint) FromDataPoint(src DataPoint) {
 	dp.Pressure = src.Pressure
 }
 
-var mqttClient mqtt.Client			// If using MQTT, this is the MQTT client
-var mqttDp mqttDataPoint			// Ignore this datapoint, as we are pushing it right now
+var mqttClient mqtt.Client // If using MQTT, this is the MQTT client
+var mqttDp mqttDataPoint   // Ignore this datapoint, as we are pushing it right now
 
 // remote: [username[:password]@]hostname[:port]
 func attachMqtt(remote string) {
@@ -89,20 +87,25 @@ func attachMqtt(remote string) {
 	}
 	if strings.Contains(hostname, ":") {
 		i := strings.Index(hostname, ":")
-		port, _ = strconv.Atoi(hostname[i+1:])		// Swallow error here
+		port, _ = strconv.Atoi(hostname[i+1:]) // Swallow error here
 		hostname = hostname[:i]
 	}
 
 	opts := mqtt.NewClientOptions()
 	remote = fmt.Sprintf("tcp://%s:%d", hostname, port)
 	opts.AddBroker(remote)
-	if username != "" { opts.SetUsername(username) }
-	if password != "" { opts.SetPassword(password) }
+	if username != "" {
+		opts.SetUsername(username)
+	}
+	if password != "" {
+		opts.SetPassword(password)
+	}
 
 	log.Println("Attaching MQTT: " + remote + " ... ")
 	mqttClient = mqtt.NewClient(opts)
 	token := mqttClient.Connect()
-	for !token.WaitTimeout(5 * time.Second) {}
+	for !token.WaitTimeout(5 * time.Second) {
+	}
 	if err := token.Error(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting MQTT: %s", err)
 		return
@@ -113,11 +116,11 @@ func attachMqtt(remote string) {
 		fmt.Fprintf(os.Stderr, "Error subscribing to MQTT: %s", err)
 		return
 	}
-	log.Printf("MQTT: " + remote + " attached (listening to topic '%s')\n", topic)
+	log.Printf("MQTT: "+remote+" attached (listening to topic '%s')\n", topic)
 }
 
 func mqttJsonParse(nodeId int, message string) (mqttDataPoint, error) {
-	dp := mqttDataPoint{Station:nodeId}
+	dp := mqttDataPoint{Station: nodeId}
 
 	// Parse json packets
 	var dat map[string]interface{}
@@ -130,32 +133,48 @@ func mqttJsonParse(nodeId int, message string) (mqttDataPoint, error) {
 		return loc, errors.New("Illegal json type")
 	} else {
 	*/
-	if dat["timestamp"] != nil { dp.Timestamp = int64(dat["timestamp"].(float64)) }
-	if dat["t"] != nil { dp.Temperature = float32(dat["t"].(float64)) }
-	if dat["name"] != nil { dp.Name = dat["name"].(string) }
-	if dat["hum"] != nil { dp.Humidity = float32(dat["hum"].(float64)) }
-	if dat["p"] != nil { dp.Pressure = float32(dat["p"].(float64)) }
+	if dat["timestamp"] != nil {
+		dp.Timestamp = int64(dat["timestamp"].(float64))
+	}
+	if dat["t"] != nil {
+		dp.Temperature = float32(dat["t"].(float64))
+	}
+	if dat["name"] != nil {
+		dp.Name = dat["name"].(string)
+	}
+	if dat["hum"] != nil {
+		dp.Humidity = float32(dat["hum"].(float64))
+	}
+	if dat["p"] != nil {
+		dp.Pressure = float32(dat["p"].(float64))
+	}
 
 	return dp, nil
 }
 
 func mqttJsonLightningParse(nodeId int, message string) (Lightning, error) {
-	dp := Lightning{Station:nodeId}
+	dp := Lightning{Station: nodeId}
 
 	// Parse json packets
 	var dat map[string]interface{}
 	if err := json.Unmarshal([]byte(message), &dat); err != nil {
 		return dp, err
 	}
-	if dat["timestamp"] != nil { dp.Timestamp = int64(dat["timestamp"].(float64)) }
-	if dat["distance"] != nil { dp.Distance = float32(dat["distance"].(float64)) }
+	if dat["timestamp"] != nil {
+		dp.Timestamp = int64(dat["timestamp"].(float64))
+	}
+	if dat["distance"] != nil {
+		dp.Distance = float32(dat["distance"].(float64))
+	}
 	return dp, nil
 }
 
 func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 	topic := msg.Topic()
 	payload := string(msg.Payload())
-	if topic == "" || payload == "" { return }
+	if topic == "" || payload == "" {
+		return
+	}
 
 	// Get station id from topic
 	i := strings.Index(topic, "meteo/")
@@ -164,16 +183,18 @@ func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 	topic = topic[i+6:]
-	var (node_type string
-		nodeId int
-		err error)
+	var (
+		node_type string
+		nodeId    int
+		err       error
+	)
 	if len(topic) > 10 && topic[0:10] == "lightning/" {
 		node_type = "lightning"
 		nodeId, err = strconv.Atoi(topic[10:])
 	} else if len(topic) > 6 && topic[0:6] == "meteo/" {
 		node_type = "meteo"
 		nodeId, err = strconv.Atoi(topic[6:])
-	} else {		// Default. Assume meteo
+	} else { // Default. Assume meteo
 		node_type = ""
 		nodeId, err = strconv.Atoi(topic)
 	}
@@ -182,7 +203,7 @@ func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	if node_type == "" || node_type == "meteo" {		// Default packet
+	if node_type == "" || node_type == "meteo" { // Default packet
 		dp, err := mqttJsonParse(nodeId, payload)
 		if err != nil {
 			log.Println("MQTT illegal packet: ", err)
@@ -217,7 +238,7 @@ func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 		if !received(dp.ToDataPoint()) {
 			log.Println("Error handling received datapoint")
 		}
-	} else if node_type == "lightning" {		// Lightning packet
+	} else if node_type == "lightning" { // Lightning packet
 		lightning, err := mqttJsonLightningParse(nodeId, payload)
 		if err != nil {
 			log.Println("MQTT illegal packet: ", err)
@@ -232,7 +253,7 @@ func mqttReceive(client mqtt.Client, msg mqtt.Message) {
 			return
 		}
 		log.Printf("Lightning! (Station %d, %f km)\n", lightning.Station, lightning.Distance)
-		
+
 	}
 }
 
@@ -242,7 +263,7 @@ func mqttPublish(dp DataPoint) {
 		station, err := db.GetStation(dp.Station)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting station: %s\n", err)
-			return;
+			return
 		}
 
 		jsonDp := mqttDataPoint{}
@@ -267,18 +288,16 @@ func mqttPublish(dp DataPoint) {
 	}
 }
 
-
-
 /**** MAIN ********************************************************************/
 
 func main() {
-	var err error 
+	var err error
 
 	// Default config values
-	cf.PushDelay = 60		// 60 Seconds
+	cf.PushDelay = 60 // 60 Seconds
 	cf.Database = "meteod.db"
 	cf.Webserver.Port = 8802
-	cf.Webserver.QueryLimit = 50000		// Be genereous by default
+	cf.Webserver.QueryLimit = 50000 // Be genereous by default
 	// Read config
 	toml.DecodeFile("/etc/meteod.toml", &cf)
 	toml.DecodeFile("meteod.toml", &cf)
@@ -286,9 +305,11 @@ func main() {
 	// Parse program arguments
 	// Note: I am doing this by hand, because I don't wanted to have another dependency
 	// This might change in the future, when enough people have convinced me, this is a bad idea
-	for i:=1;i<len(os.Args);i++ {
+	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
-		if len(arg) == 0 { continue }
+		if len(arg) == 0 {
+			continue
+		}
 		if arg[0] == '-' {
 
 			if arg == "-h" || arg == "--help" {
@@ -304,21 +325,31 @@ func main() {
 				fmt.Println("                        Format: [user@]remote[:port]")
 				os.Exit(0)
 			} else if arg == "-p" || arg == "--port" {
-				i+=1
-				if i >= len(os.Args) { panic("Missing argument: port")}
+				i += 1
+				if i >= len(os.Args) {
+					panic("Missing argument: port")
+				}
 				cf.Webserver.Port, err = strconv.Atoi(os.Args[i])
-				if err != nil {panic("Illegal port given")}
+				if err != nil {
+					panic("Illegal port given")
+				}
 			} else if arg == "-d" || arg == "--db" {
-				i+=1
-				if i >= len(os.Args) { panic("Missing argument: db file")}
+				i += 1
+				if i >= len(os.Args) {
+					panic("Missing argument: db file")
+				}
 				cf.Database = os.Args[i]
 			} else if arg == "-c" || arg == "--config" {
-				i+=1
-				if i >= len(os.Args) { panic("Missing argument: config file")}
+				i += 1
+				if i >= len(os.Args) {
+					panic("Missing argument: config file")
+				}
 				toml.DecodeFile(os.Args[i], &cf)
 			} else if arg == "-m" || arg == "--mqtt" {
-				i+=1
-				if i >= len(os.Args) { panic("Missing argument: mqtt remote host")}
+				i += 1
+				if i >= len(os.Args) {
+					panic("Missing argument: mqtt remote host")
+				}
 				cf.Mqtt = os.Args[i]
 			} else {
 				fmt.Printf("Illegal argument: %s\n", arg)
@@ -331,8 +362,6 @@ func main() {
 		}
 	}
 
-
-
 	// Connect database
 	db, err = OpenDb(cf.Database)
 	if err != nil {
@@ -344,22 +373,28 @@ func main() {
 	log.Println("Database loaded")
 
 	// Attach mqtt, if configured
-	if cf.Mqtt != "" { go attachMqtt(cf.Mqtt) }
+	if cf.Mqtt != "" {
+		go attachMqtt(cf.Mqtt)
+	}
 
 	// Setup webserver
 	addr := cf.Webserver.Bindaddr + ":" + strconv.Itoa(cf.Webserver.Port)
 	log.Println("Serving http://" + addr + "")
 
-    r := mux.NewRouter()
-    r.HandleFunc("/", dashboardOverview)
+	r := mux.NewRouter()
+	r.HandleFunc("/", dashboardOverview)
 	r.Handle("/asset/{filename}", http.StripPrefix("/asset/", http.FileServer(http.Dir("www/asset"))))
 	r.HandleFunc("/dashboard", dashboardOverview)
 	r.HandleFunc("/dashboard/{id:[0-9]+}", dashboardStation)
 	r.HandleFunc("/dashboard/{id:[0-9]+}/edit", dashboardStationEdit)
 	r.HandleFunc("/api.html", func(w http.ResponseWriter, r *http.Request) {
-    	http.ServeFile(w, r, "www/api.html")
+		http.ServeFile(w, r, "www/api.html")
 	})
 	r.HandleFunc("/lightnings", lightningsHandler)
+	r.HandleFunc("/ombrometers", ombrometersHandler)
+	r.HandleFunc("/ombrometers/create", ombrometersCreateHandler)
+	r.HandleFunc("/ombrometer/{id:[0-9]+}", ombrometerHandler)
+	r.HandleFunc("/ombrometer/{id:[0-9]+}/edit", ombrometerEditHandler)
 	r.HandleFunc("/health", HealthCheckHandler)
 	r.HandleFunc("/version", defaultHandler)
 	r.HandleFunc("/stations", stationsHandler)
@@ -374,37 +409,53 @@ func main() {
 	r.HandleFunc("/latest", readingsHandler)
 	r.HandleFunc("/readings", readingsHandler)
 	r.HandleFunc("/query", queryHandler)
-    http.Handle("/", r)
+	http.Handle("/", r)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
 func doDatapointPush(dp DataPoint) (bool, error) {
 	datapoints, err := db.GetLastDataPoints(dp.Station, 1)
-	if err != nil { return false, err }
-	if len(datapoints) == 0 { return true, nil }
+	if err != nil {
+		return false, err
+	}
+	if len(datapoints) == 0 {
+		return true, nil
+	}
 	last := datapoints[0]
 
 	now := time.Now().Unix()
 	lastTimestamp := last.Timestamp
 	diff := now - lastTimestamp
-	if diff < 0 { diff = -diff }
+	if diff < 0 {
+		diff = -diff
+	}
 
 	// XXX Check time range maybe
 
 	if diff > cf.PushDelay {
-		return true,nil 
+		return true, nil
 	} else {
 		// Within the ignore interval, but check for significant deviations
-		if math.Abs((float64)(last.Temperature - dp.Temperature)) > 0.5 { return true, nil }
-		if math.Abs((float64)(last.Pressure - dp.Pressure)) > 100 { return true, nil }
-		if math.Abs((float64)(last.Humidity - dp.Humidity)) > 2 { return true, nil }
+		if math.Abs((float64)(last.Temperature-dp.Temperature)) > 0.5 {
+			return true, nil
+		}
+		if math.Abs((float64)(last.Pressure-dp.Pressure)) > 100 {
+			return true, nil
+		}
+		if math.Abs((float64)(last.Humidity-dp.Humidity)) > 2 {
+			return true, nil
+		}
 	}
 	return false, nil
 }
 
 func isPlausible(dp DataPoint) bool {
-	if dp.Temperature < -100 || dp.Temperature > 1000 { return false }
-	if dp.Humidity < 0 || dp.Humidity > 100 { return false }
+	if dp.Temperature < -100 || dp.Temperature > 1000 {
+		return false
+	}
+	if dp.Humidity < 0 || dp.Humidity > 100 {
+		return false
+	}
 	p_mbar := dp.Pressure / 100.0
 	if p_mbar != 0 {
 		if p_mbar < 10 {
@@ -463,7 +514,9 @@ func receivedDpToken(dp jsonDataPoint) bool {
 
 func received(dp DataPoint) bool {
 	// Repair pressure unit, that could be in mbar but is expected in hPa
-	if dp.Pressure < 10000 { dp.Pressure *= 100 }
+	if dp.Pressure < 10000 {
+		dp.Pressure *= 100
+	}
 
 	// Check ranges for plausability
 	if !isPlausible(dp) {
@@ -477,23 +530,21 @@ func received(dp DataPoint) bool {
 		return false
 	}
 
-
-
 	if push {
 		db_dp := DataPoint{Timestamp: dp.Timestamp, Station: dp.Station, Temperature: dp.Temperature, Humidity: dp.Humidity, Pressure: dp.Pressure}
 		err := db.InsertDataPoint(db_dp)
-		if err != nil { panic(err) }
+		if err != nil {
+			panic(err)
+		}
 		log.Printf("PUSH: [%d] at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 	} else {
 		log.Printf("RECV: [%d] at %d, t = %f, hum = %f, p = %f\n", dp.Station, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 	}
-	
+
 	return true
 }
 
-
-
-func v_str(values []string, emptyValue string) (string) {
+func v_str(values []string, emptyValue string) string {
 	if len(values) == 0 {
 		return emptyValue
 	} else {
@@ -501,35 +552,57 @@ func v_str(values []string, emptyValue string) (string) {
 	}
 }
 
-func v_i(values []string, emptyValue int) (int) {
-	if len(values) == 0 { return emptyValue }
+func v_i(values []string, emptyValue int) int {
+	if len(values) == 0 {
+		return emptyValue
+	}
 	// Take the first that works
 	for _, v := range values {
 		l, err := strconv.ParseInt(v, 10, 32)
-		if err == nil { return int(l) }
+		if err == nil {
+			return int(l)
+		}
 	}
 	return emptyValue
 }
 
-func v_l(values []string, emptyValue int64) (int64) {
-	if len(values) == 0 { return emptyValue }
+func v_l(values []string, emptyValue int64) int64 {
+	if len(values) == 0 {
+		return emptyValue
+	}
 	// Take the first that works
 	for _, v := range values {
 		l, err := strconv.ParseInt(v, 10, 64)
-		if err == nil { return l }
+		if err == nil {
+			return l
+		}
 	}
 	return emptyValue
 }
 
 /* ==== Webserver =========================================================== */
 
-func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
-    // A very simple health check.
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte(`{"alive": true}`))
+func simpleTemplateHandler(w http.ResponseWriter, r *http.Request, filename string) {
+	t, err := template.ParseFiles(filename)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+		panic(err)
+	}
+	err = t.Execute(w, nil)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+		panic(err)
+	}
 }
 
+func HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	// A very simple health check.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"alive": true}`))
+}
 
 func defaultHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "meteo Server\n")
@@ -543,7 +616,7 @@ func stationsHandler(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("Server error"))
 			panic(err)
 		} else {
-			fmt.Fprintf(w,"# Id,Name,Location,Description\n")
+			fmt.Fprintf(w, "# Id,Name,Location,Description\n")
 			for _, station := range stations {
 				fmt.Fprintf(w, "%d,%s,%s,%s\n", station.Id, station.Name, station.Location, station.Description)
 			}
@@ -558,7 +631,7 @@ func stationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func readingsHandler(w http.ResponseWriter, r *http.Request) {	
+func readingsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		stations, err := db.GetStations()
 		if err != nil {
@@ -576,7 +649,7 @@ func readingsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				if len(dps) > 0 {
 					dp := dps[0]
-					fmt.Fprintf(w, "%d,%d,%.2f,%.2f,%.2f\n", station.Id, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)					
+					fmt.Fprintf(w, "%d,%d,%.2f,%.2f,%.2f\n", station.Id, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 				}
 			}
 		}
@@ -590,7 +663,7 @@ func readingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func readingsHandlerCsv(w http.ResponseWriter, r *http.Request) {	
+func readingsHandlerCsv(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		stations, err := db.GetStations()
 		if err != nil {
@@ -611,7 +684,7 @@ func readingsHandlerCsv(w http.ResponseWriter, r *http.Request) {
 				}
 				if len(dps) > 0 {
 					dp := dps[0]
-					fmt.Fprintf(w, "%d,%d,%.2f,%.2f,%.2f\n", station.Id, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)					
+					fmt.Fprintf(w, "%d,%d,%.2f,%.2f,%.2f\n", station.Id, dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 				}
 			}
 		}
@@ -651,8 +724,10 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 		// Get parameters
 		params := r.URL.Query()
 		limit := v_i(params["limit"], 1000)
-		if limit < 0 || limit > 1000 { limit = 1000 }
-		
+		if limit < 0 || limit > 1000 {
+			limit = 1000
+		}
+
 		// Print station and datapoints
 		datapoints, err := db.GetLastDataPoints(station.Id, limit)
 		fmt.Fprintf(w, "## Station %d: '%s' in %s, %s\n", station.Id, station.Name, station.Location, station.Description)
@@ -661,7 +736,6 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 		for _, dp := range datapoints {
 			fmt.Fprintf(w, "%d,%.2f,%.2f,%.2f\n", dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 		}
-		
 
 	} else if r.Method == "POST" { // Push data
 		// Determine type
@@ -670,14 +744,16 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 		if contentType == "application/x-www-form-urlencoded" {
 			// Plaintext
 			body, err := ioutil.ReadAll(r.Body)
-			if err != nil { panic(err) }
+			if err != nil {
+				panic(err)
+			}
 			s_body := string(body)
-			
+
 			if len(s_body) == 0 {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("Empty header\n"))
 			}
-			
+
 			// XXX Reserved for future usage
 
 			w.WriteHeader(http.StatusBadRequest)
@@ -709,14 +785,14 @@ func stationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func queryHandler(w http.ResponseWriter, r *http.Request) {	
+func queryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		values := r.URL.Query()
 		id, err := strconv.Atoi(v_str(values["id"], ""))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Bad id\n"))
-			return	
+			return
 		}
 
 		station, err := db.GetStation(id)
@@ -728,7 +804,7 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 		if station.Id == 0 {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Station not found\n"))
-			return	
+			return
 		}
 
 		limit := v_l(values["limit"], cf.Webserver.QueryLimit)
@@ -737,8 +813,12 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 		t_max := v_l(values["tmax"], time.Now().Unix())
 
 		// Make values sane
-		if limit < 0 || limit > cf.Webserver.QueryLimit { limit = cf.Webserver.QueryLimit }
-		if offset < 0 { offset = 0 }
+		if limit < 0 || limit > cf.Webserver.QueryLimit {
+			limit = cf.Webserver.QueryLimit
+		}
+		if offset < 0 {
+			offset = 0
+		}
 
 		datapoints, err := db.QueryStation(id, t_min, t_max, limit, offset)
 		if err != nil {
@@ -754,7 +834,6 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "%d,%.2f,%.2f,%.2f\n", dp.Timestamp, dp.Temperature, dp.Humidity, dp.Pressure)
 		}
 
-
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Bad request\n"))
@@ -762,13 +841,13 @@ func queryHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type DashboardStation struct {
-	Id int
-	Name string
-	Description string
-	Location string
-	T float32
-	Hum float32
-	P float32
+	Id           int
+	Name         string
+	Description  string
+	Location     string
+	T            float32
+	Hum          float32
+	P            float32
 	SelectedDate string
 }
 
@@ -781,12 +860,12 @@ type DashboardDataPoint struct {
 }
 
 type DashboardLightning struct {
-	Station int
+	Station     int
 	StationName string
-	Timestamp int64
-	Distance float32
-	DateTime string
-	Ago string
+	Timestamp   int64
+	Distance    float32
+	DateTime    string
+	Ago         string
 }
 
 func (s *DashboardStation) fromStation(station Station) {
@@ -797,10 +876,12 @@ func (s *DashboardStation) fromStation(station Station) {
 }
 
 /** Fetch latest points from database
-    returns true if points has been fetched, false if not points are available */
+  returns true if points has been fetched, false if not points are available */
 func (s *DashboardStation) fetch() (bool, error) {
 	dps, err := db.GetLastDataPoints(s.Id, 1)
-	if err != nil { return false, err }
+	if err != nil {
+		return false, err
+	}
 	if len(dps) > 0 {
 		s.T = dps[0].Temperature
 		s.Hum = dps[0].Humidity
@@ -809,22 +890,22 @@ func (s *DashboardStation) fetch() (bool, error) {
 	}
 	return false, nil
 }
-func dashboardOverview(w http.ResponseWriter, r *http.Request) {	
+func dashboardOverview(w http.ResponseWriter, r *http.Request) {
 	dbstations, err := db.GetStations()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Server error"))
 		panic(err)
 	}
-	
+
 	stations := make([]DashboardStation, 0)
 	for _, s := range dbstations {
-		station := DashboardStation{Id:s.Id, Name: s.Name, Description:s.Description, Location: s.Location}
+		station := DashboardStation{Id: s.Id, Name: s.Name, Description: s.Description, Location: s.Location}
 		_, err = station.fetch()
-		
+
 		stations = append(stations, station)
 	}
-	
+
 	t, err := template.ParseFiles("www/dashboard.tmpl")
 	err = t.Execute(w, stations)
 	if err != nil {
@@ -834,11 +915,13 @@ func dashboardOverview(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("</body>"))
 }
 
-func getStationMap() (map[int]string, error) {	
+func getStationMap() (map[int]string, error) {
 	ret := make(map[int]string)
 	dbStations, err := db.GetStations()
-	if err != nil { return ret, err }
-	for _, v := range(dbStations) {
+	if err != nil {
+		return ret, err
+	}
+	for _, v := range dbStations {
 		ret[v.Id] = v.Name
 	}
 	return ret, nil
@@ -848,20 +931,20 @@ func agoString(deltaT int64) string {
 	if deltaT <= 60 {
 		return fmt.Sprintf("%2d seconds ago", deltaT)
 	} else {
-		minutes := deltaT/60
-		seconds := deltaT-minutes*60
+		minutes := deltaT / 60
+		seconds := deltaT - minutes*60
 		if minutes < 60 {
-			return fmt.Sprintf("%02d:%02d ago", minutes,seconds)
+			return fmt.Sprintf("%02d:%02d ago", minutes, seconds)
 		} else {
-			hours := minutes/60
-			minutes -= hours*60
+			hours := minutes / 60
+			minutes -= hours * 60
 			if hours < 24 {
-				return fmt.Sprintf("%02d:%02d:%02d ago", hours,minutes,seconds)
+				return fmt.Sprintf("%02d:%02d:%02d ago", hours, minutes, seconds)
 			} else {
-				days := hours/24
-				hours -= days*24
+				days := hours / 24
+				hours -= days * 24
 				if days < 3 {
-					return fmt.Sprintf("%2d days, %2d hours ago", days,hours)
+					return fmt.Sprintf("%2d days, %2d hours ago", days, hours)
 				} else {
 					return fmt.Sprintf("%d days ago", days)
 				}
@@ -870,7 +953,159 @@ func agoString(deltaT int64) string {
 	}
 }
 
-func lightningsHandler(w http.ResponseWriter, r *http.Request) {	
+func ombrometersCreateHandler(w http.ResponseWriter, r *http.Request) {
+	// Check if we are allowed to perform edits
+	if cf.Webserver.AllowEdit {
+		var err error
+
+		if r.Method == "POST" {
+			if err := r.ParseForm(); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				return
+			}
+			name := r.FormValue("name")
+			location := r.FormValue("location")
+			desc := r.FormValue("desc")
+
+			dbStation := Station{Name: name, Location: location, Description: desc}
+			err = db.InsertOmbrometer(&dbStation)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				return
+			}
+			// Redirect to ombrometers page
+			w.Write([]byte(fmt.Sprintf("<head><meta http-equiv=\"refresh\" content=\"0; url=../ombrometers\" /></head><body></body>")))
+		} else {
+			simpleTemplateHandler(w, r, "www/ombrometer_create.tmpl")
+		}
+	} else {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("Administratively prohibitted"))
+	}
+}
+
+func ombrometersHandler(w http.ResponseWriter, r *http.Request) {
+	ombrometers, err := db.GetOmbrometers()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Server error"))
+		panic(err)
+	}
+
+	t, err := template.ParseFiles("www/ombrometers.tmpl")
+	err = t.Execute(w, ombrometers)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal server error"))
+		return
+	}
+}
+
+func ombrometerEditHandler(w http.ResponseWriter, r *http.Request) {
+	// Check if we are allowed to perform edits
+	if cf.Webserver.AllowEdit {
+		// Get ID
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad id\n"))
+			return
+		}
+		ombrometer, err := db.getOmbrometer(id)
+		if err != nil || ombrometer.Id == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad id\n"))
+			return
+		}
+
+		if r.Method == "GET" {
+			t, err := template.ParseFiles("www/ombrometer_edit.tmpl")
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				panic(err)
+			}
+			err = t.Execute(w, ombrometer)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				panic(err)
+			}
+		} else if r.Method == "POST" {
+			if err = r.ParseForm(); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				return
+			}
+			name := r.FormValue("name")
+			location := r.FormValue("location")
+			desc := r.FormValue("desc")
+
+			dbStation := Station{Id: ombrometer.Id, Name: name, Location: location, Description: desc}
+			err = db.UpdateOmbrometer(dbStation)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal server error"))
+				return
+			} else {
+				// Redirect them to the station page
+				w.Write([]byte(fmt.Sprintf("<head><meta http-equiv=\"refresh\" content=\"0; url=../%d\" /></head><body></body>", ombrometer.Id)))
+			}
+		}
+	} else {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("Administratively prohibitted"))
+	}
+}
+
+func ombrometerHandler(w http.ResponseWriter, r *http.Request) {
+	// Get ID
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad id\n"))
+		return
+	}
+	ombrometer, err := db.getOmbrometer(id)
+	if err != nil || ombrometer.Id == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad id\n"))
+		return
+	}
+
+	if r.Method == "GET" {
+		data, err := db.GetOmbrometerReadings(ombrometer.Id, 100)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal server error"))
+			panic(err)
+		}
+		values := map[string]interface{}{
+			"Ombrometer": ombrometer,
+			"Data":       data,
+		}
+		t, err := template.ParseFiles("www/ombrometer.tmpl")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal server error"))
+			panic(err)
+		}
+		err = t.Execute(w, values)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal server error"))
+			panic(err)
+		}
+	} else if r.Method == "POST" {
+		// TODO: Get readings
+	}
+}
+
+func lightningsHandler(w http.ResponseWriter, r *http.Request) {
 	dps, err := db.GetLightnings(100, 0)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -883,17 +1118,16 @@ func lightningsHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Server error"))
 		panic(err)
 	}
-	
+
 	lightnings := make([]DashboardLightning, 0)
 	now := time.Now().Unix()
-	for _, v := range(dps) {
+	for _, v := range dps {
 		deltaT := now - v.Timestamp
 		t := time.Unix(v.Timestamp, 0)
-		lightning := DashboardLightning{Station: v.Station, StationName: stations[v.Station], Timestamp:v.Timestamp, Ago:agoString(deltaT), DateTime:t.Format("2006-01-02-15:04:05"),  Distance:v.Distance}
+		lightning := DashboardLightning{Station: v.Station, StationName: stations[v.Station], Timestamp: v.Timestamp, Ago: agoString(deltaT), DateTime: t.Format("2006-01-02-15:04:05"), Distance: v.Distance}
 		lightnings = append(lightnings, lightning)
 	}
-	
-	
+
 	t, err := template.ParseFiles("www/lightnings.tmpl")
 	err = t.Execute(w, lightnings)
 	if err != nil {
@@ -903,17 +1137,18 @@ func lightningsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 func getVars(v map[string][]string) map[string]string {
 	ret := make(map[string]string)
 	for k, w := range v {
-		if len(w) > 0 { ret[k] = w[0] }
+		if len(w) > 0 {
+			ret[k] = w[0]
+		}
 	}
 	return ret
 }
 
 /** Convert datapoints to dashboard datapoints and also shrink down to at most 1825 (365*5) datapoints */
-func convertDatapoints(dps []DataPoint) ([]DashboardDataPoint) {
+func convertDatapoints(dps []DataPoint) []DashboardDataPoint {
 	nMax := 1825
 	ret := make([]DashboardDataPoint, 0)
 
@@ -921,12 +1156,12 @@ func convertDatapoints(dps []DataPoint) ([]DashboardDataPoint) {
 	if len(dps) > nMax {
 		dp0, dpN := dps[0], dps[len(dps)-1]
 		deltaT := (dpN.Timestamp - dp0.Timestamp) / int64(nMax)
-		j := 0	// Current index
-		for i:=0;i<nMax;i++ {		// Slices
-			t_min := dp0.Timestamp + deltaT * int64(i)
+		j := 0                      // Current index
+		for i := 0; i < nMax; i++ { // Slices
+			t_min := dp0.Timestamp + deltaT*int64(i)
 			t_max := t_min + deltaT
-			
-			ddp := DashboardDataPoint{Timestamp:t_min + deltaT/2}
+
+			ddp := DashboardDataPoint{Timestamp: t_min + deltaT/2}
 			// Merge items
 			counter := 0
 			for j < len(dps) && dps[j].Timestamp <= t_max {
@@ -947,7 +1182,7 @@ func convertDatapoints(dps []DataPoint) ([]DashboardDataPoint) {
 
 	} else {
 		for _, dp := range dps {
-			ddp := DashboardDataPoint{Timestamp:dp.Timestamp, Temperature:dp.Temperature, Humidity:dp.Humidity, Pressure:dp.Pressure}
+			ddp := DashboardDataPoint{Timestamp: dp.Timestamp, Temperature: dp.Temperature, Humidity: dp.Humidity, Pressure: dp.Pressure}
 			// Parse time
 			t := time.Unix(dp.Timestamp, 0)
 			ddp.Time = t.Format("2006-01-02-15:04:05")
@@ -955,13 +1190,10 @@ func convertDatapoints(dps []DataPoint) ([]DashboardDataPoint) {
 		}
 	}
 
-
-
 	return ret
 }
 
-
-func dashboardStation(w http.ResponseWriter, r *http.Request) {	
+func dashboardStation(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
 	if err != nil {
@@ -971,7 +1203,6 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 	}
 	params := getVars(r.URL.Query())
 	selectedDate := params["date"]
-	
 
 	s, err := db.GetStation(id)
 	if s.Id == 0 {
@@ -979,10 +1210,9 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Bad id\n"))
 		return
 	}
-	station := DashboardStation{SelectedDate:selectedDate}
+	station := DashboardStation{SelectedDate: selectedDate}
 	station.fromStation(s)
-	station.fetch()		// Ignore errors when fetching latest datapoint
-
+	station.fetch() // Ignore errors when fetching latest datapoint
 
 	t, err := template.ParseFiles("www/station.tmpl")
 	err = t.Execute(w, station)
@@ -991,22 +1221,20 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Internal server error"))
 		return
 	}
-	
-
 
 	// Get data according to defined timespan
 	timespan := params["timespan"]
 	now := time.Now().Unix()
 	t_max := now
-	t_min := now - 60*60*24			// Default: last 24h
-	if selectedDate != "" {			// Date overwrites timespan
+	t_min := now - 60*60*24 // Default: last 24h
+	if selectedDate != "" { // Date overwrites timespan
 		// Swallow error. User will notice if the date is not OK
 		t, _ := time.Parse("2006-01-02", selectedDate)
 		t_min = t.Unix()
 		t_max = t_min + 60*60*24
 	} else {
 		if timespan == "" || timespan == "day" {
-			t_min = now - 60*60*24		// Default: last 24h
+			t_min = now - 60*60*24 // Default: last 24h
 		} else if timespan == "week" {
 			t_min = now - 60*60*24*7
 		} else if timespan == "month" {
@@ -1034,28 +1262,27 @@ func dashboardStation(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("</body>"))
 }
 
-
-func dashboardStationEdit(w http.ResponseWriter, r *http.Request) {	
-	vars := mux.Vars(r)
-	id, err := strconv.Atoi(vars["id"])
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Illegal id\n"))
-		return
-	}
-
-	s, err := db.GetStation(id)
-	if s.Id == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Bad id\n"))
-		return
-	}
-	station := DashboardStation{}
-	station.fromStation(s)
-	station.fetch()		// Ignore errors when fetching latest datapoint
-	
+func dashboardStationEdit(w http.ResponseWriter, r *http.Request) {
 	// Check if we are allowed to perform edits
-		if cf.Webserver.AllowEdit {
+	if cf.Webserver.AllowEdit {
+		vars := mux.Vars(r)
+		id, err := strconv.Atoi(vars["id"])
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Illegal id\n"))
+			return
+		}
+
+		s, err := db.GetStation(id)
+		if s.Id == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad id\n"))
+			return
+		}
+		station := DashboardStation{}
+		station.fromStation(s)
+		station.fetch() // Ignore errors when fetching latest datapoint
+
 		// POST request sets the data
 		if r.Method == "POST" {
 			if err = r.ParseForm(); err != nil {
@@ -1064,20 +1291,20 @@ func dashboardStationEdit(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			name := r.FormValue("name")
-		    location := r.FormValue("location")
-		    desc := r.FormValue("desc")
-		    
-		    dbStation := Station{Id:station.Id, Name:name, Location:location, Description:desc }
-		    err = db.UpdateStation(dbStation)
-		    if err != nil {
+			location := r.FormValue("location")
+			desc := r.FormValue("desc")
+
+			dbStation := Station{Id: station.Id, Name: name, Location: location, Description: desc}
+			err = db.UpdateStation(dbStation)
+			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				w.Write([]byte("Internal server error"))
 				return
-		    } else {
+			} else {
 				// Redirect them to the station page
 				w.Write([]byte(fmt.Sprintf("<head><meta http-equiv=\"refresh\" content=\"0; url=../%d\" /></head><body></body>", station.Id)))
 			}
-			
+
 		} else if r.Method == "GET" {
 			// Assume GET request
 			t, err := template.ParseFiles("www/station_edit.tmpl")
@@ -1092,9 +1319,8 @@ func dashboardStationEdit(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("Unsupported method"))
 		}
 	} else {
-			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte("Administratively prohibitted"))
-		
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("Administratively prohibitted"))
 	}
 }
 
@@ -1113,7 +1339,6 @@ func stationReadingsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	if r.Method == "GET" {
 		dps, err := db.GetLastDataPoints(s.Id, 1)
 		if err != nil {
@@ -1122,7 +1347,7 @@ func stationReadingsHandler(w http.ResponseWriter, r *http.Request) {
 			panic(err)
 		}
 		filename := fmt.Sprintf("current_%02d.csv", s.Id)
-		w.Header().Set("Content-Disposition", "attachment; filename=" + filename)
+		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
 		w.Header().Set("Content-Type", "text/csv")
 		w.Write([]byte("# [Unixtimestamp],[deg C],[% rel],[hPa]\n"))
 		if len(dps) > 0 {
@@ -1175,8 +1400,7 @@ func stationQueryCsv(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Bad id\n"))
 		return
 	}
-	
-	
+
 	var t_min time.Time
 	var t_max time.Time
 	if month < 0 && day < 0 {
@@ -1206,17 +1430,25 @@ func stationQueryCsv(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filename := fmt.Sprintf("station_%02d-%04d", s.Id, year)
-	if month > 0 { filename += fmt.Sprintf("-%02d", month) }
-	if day > 0 { filename += fmt.Sprintf("-%02d", day) }
+	if month > 0 {
+		filename += fmt.Sprintf("-%02d", month)
+	}
+	if day > 0 {
+		filename += fmt.Sprintf("-%02d", day)
+	}
 	filename += ".csv"
-	w.Header().Set("Content-Disposition", "attachment; filename=" + filename)
+	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
 	w.Header().Set("Content-Type", "text/csv")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf("# Query station %s (id: %d) - %s\n", s.Name, s.Id, s.Description)))
 	w.Write([]byte(fmt.Sprintf("# Location %s\n", s.Location)))
 	w.Write([]byte(fmt.Sprintf("# Year: %d\n", year)))
-	if month > 0 {w.Write([]byte(fmt.Sprintf("# Month: %d\n", month)))}
-	if day > 0 {w.Write([]byte(fmt.Sprintf("# Day: %d\n", day)))}
+	if month > 0 {
+		w.Write([]byte(fmt.Sprintf("# Month: %d\n", month)))
+	}
+	if day > 0 {
+		w.Write([]byte(fmt.Sprintf("# Day: %d\n", day)))
+	}
 	w.Write([]byte(fmt.Sprintf("# Datapoints: %d\n\n", len(dps))))
 	w.Write([]byte("# Timestamp,Temperature,Humidity,Pressure\n"))
 	w.Write([]byte("# [Unixtimestamp],[deg C],[% rel],[hPa]\n\n"))

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>meteo</title>
+    <LINK href="asset/meteo.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<h1>meteo | Ombrometers</h1>
+
+<p><a href="dashboard">[Dashboard]</a> <a href="lightnings">[Lightnings]</a> <a href="ombrometers">[Ombrometers]</a> <a href="api.html">[Request API]</a> | <a href="ombrometers/create">[Create ombrometer]</a></p>
+
+
+{{if not .}}
+<p>No ombrometer stations so far</p>
+{{else}}
+<table border="1">
+	<tr><td><b>Station</b></td><td><b>Description</b></td><td><b>Location</b></td></tr>
+{{range .}}
+    <tr><td><a href="ombrometer/{{.Id}}">{{.Name}}</a></td><td>{{.Description}}</td><td>{{.Location}}</td></tr>
+{{end}}
+</table>
+{{end}}
+</html>

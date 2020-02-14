@@ -16,6 +16,9 @@ req:
 # requirements for meteo (client)
 req-meteo:
 	go get "github.com/BurntSushi/toml"
+req-gateway:
+	go get "github.com/BurntSushi/toml"
+	go get "github.com/jacobsa/go-serial/serial"
 
 
 ## === Builds =============================================================== ##

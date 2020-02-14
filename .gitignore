@@ -44,8 +44,6 @@
 # Build files
 build
 build/
-meteo
-meteod
 
 ## Custom config files
 *.toml

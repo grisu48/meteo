@@ -1,4 +1,4 @@
-package main
+package meteo
 
 import (
 	"database/sql"
@@ -408,7 +408,7 @@ func (db *Persistence) UpdateOmbrometer(station Station) error {
 	return err
 }
 
-func (db *Persistence) getOmbrometer(id int) (Station, error) {
+func (db *Persistence) GetOmbrometer(id int) (Station, error) {
 	station := Station{}
 
 	stmt, err := db.con.Prepare("SELECT `id`,`name`,`location`,`description` FROM `ombrometers` WHERE `id` = ? LIMIT 1")

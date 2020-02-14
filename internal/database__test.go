@@ -1,4 +1,4 @@
-package main
+package meteo
 
 import (
 	"fmt"
@@ -605,7 +605,7 @@ func TestOmbrometers(t *testing.T) {
 	if err != nil {
 		t.Fatal("Database error: ", err)
 	}
-	ombro2, err := db.getOmbrometer(ombrometer2.Id)
+	ombro2, err := db.GetOmbrometer(ombrometer2.Id)
 	if err != nil {
 		t.Fatal("Database error: ", err)
 	}

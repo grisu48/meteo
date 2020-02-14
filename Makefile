@@ -1,5 +1,3 @@
-SUBDIRS := gateway
-
 default: all
 all: meteo meteod $(SUBDIRS)
 
@@ -22,15 +20,17 @@ req-meteo:
 
 ## === Builds =============================================================== ##
 
-meteo: meteo.go
-	go build meteo.go
-meteod: meteod.go database.go
-	go build meteod.go database.go
+meteo: cmd/meteo/meteo.go
+	go build $<
+meteod: cmd/meteod/meteod.go
+	go build $<
+gateway: cmd/gateway/gateway.go
+	go build $<
 
 ## === Tests ================================================================ ##
 
-test:	meteod.go database.go database__test.go
-	go test -v database__test.go database.go
+test:	internal/database.go
+	go test -v ./...
 
 $(SUBDIRS):
 	$(MAKE) -C $@

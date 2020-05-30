@@ -1,0 +1,9 @@
+{
+  "domain": "meteo",
+  "name": "meteo",
+  "documentation": "github.com/grisu48/meteo",
+  "dependencies": ["mqtt"],
+  "codeowners": [],
+  "requirements": []
+}
+

@@ -100,3 +100,7 @@ func TestStations(t *testing.T) {
 		return
 	}
 }
+
+func TestDatapoints(t *testing.T) {
+	// TODO: Write this.
+}

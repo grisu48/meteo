@@ -101,6 +101,10 @@ func OpenDatabase(dir string) (Database, error) {
 	return db, nil
 }
 
+func (db *Database) stationFilename(station int) string {
+	return fmt.Sprintf("%s%sstation_%d.dat", db.dir, string(os.PathSeparator), station)
+}
+
 // Read stations from the database file
 func (db *Database) Read() error {
 	file, err := os.OpenFile(db.db_filename, os.O_RDONLY, 0600)
@@ -173,4 +177,25 @@ func (db *Database) Write() error {
 
 func (db *Database) Close() error {
 	return nil
+}
+
+// Appends the given datapoint to the database. Ensure the timestamp is always increasing, as we will not check for this here
+func (db *Database) AppendData(dp DataPoint) error {
+	filename := db.stationFilename(dp.Station)
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	// Build line to be written
+	line := fmt.Sprintf("%d", dp.Timestamp)
+	for _, v := range dp.Data {
+		line += "," + fmt.Sprintf("%f", v)
+	}
+	line += "\n"
+	// Write line to file
+	if _, err := file.Write([]byte(line)); err != nil {
+		return err
+	}
+	return file.Sync()
 }

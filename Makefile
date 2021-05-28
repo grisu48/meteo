@@ -1,5 +1,5 @@
 default: all
-all: meteo meteod $(SUBDIRS)
+all: meteo meteod influxgateway $(SUBDIRS)
 
 install: all
 	install meteo /usr/local/bin/
@@ -24,11 +24,13 @@ req-gateway:
 ## === Builds =============================================================== ##
 
 meteo: cmd/meteo/meteo.go
-	go build $<
+	go build $^
 meteod: cmd/meteod/meteod.go
-	go build $<
+	go build $^
 gateway: cmd/gateway/gateway.go
-	go build $<
+	go build $^
+influxgateway: cmd/influxgateway/meteo-mqtt-influxdb.go cmd/influxgateway/influxdb.go cmd/influxgateway/mqtt.go
+	go build -o meteo-influx-gateway $^
 
 ## === Tests ================================================================ ##
 

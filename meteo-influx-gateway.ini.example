@@ -1,0 +1,8 @@
+[mqtt]
+remote = "127.0.0.1"
+
+[influxdb]
+remote = "http://127.0.0.1:8086"
+username = "meteo"
+password = "meteo"
+database = "meteo"

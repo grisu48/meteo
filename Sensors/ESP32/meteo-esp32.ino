@@ -18,15 +18,16 @@
 
 #define WIFI_SSID ""
 #define WIFI_PASSWORD ""
+#define WIFI_RECONNECT_DELAY 10000        // Reconnection delay in milliseconds
 
 // TODO: Configure your node here
 
-#define NODE_ID 0
+#define NODE_ID 1
 #define NODE_NAME "outdoors"
 
 // TODO: Set your MQTT server
 
-#define MQTT_REMOTE "192.168.1.1"
+#define MQTT_REMOTE "192.168.0.1"
 #define MQTT_PORT 1883
 #define MQTT_CLIENTID "meteo-" NODE_NAME
 
@@ -44,10 +45,7 @@ WebServer server(80);
 static float temp(0), hum(0), pres(0);
 
 static void led_toggle(const bool is_on) {
-  if (is_on)
-    digitalWrite(LED_BUILTIN, HIGH);
-  else
-    digitalWrite(LED_BUILTIN, LOW);
+	digitalWrite(LED_BUILTIN, is_on?HIGH:LOW);
 }
 
 
@@ -56,7 +54,7 @@ void setup() {
   while(!Serial) {} // Wait for serial port
   
   // initialize digital pin LED_BUILTIN as an output.
-  pinMode(LED_BUILTIN, OUTPUT);  
+  pinMode(LED_BUILTIN, OUTPUT);
   led_toggle(false);
 
   // Init BME280
@@ -91,8 +89,9 @@ void setup() {
         Serial.println("ERR: Wifi");
         delay(5000);
         continue;
-    } else
+    } else {
       break;
+    }
   }
   Serial.print("Wifi OK "); Serial.println(WiFi.localIP());
   client.setServer(MQTT_REMOTE, MQTT_PORT);
@@ -132,7 +131,7 @@ void report(float temp, float hum, float pres) {
 
 void www_handle() {
   char html[512];
-  snprintf(html, 512, "<!DOCTYPE html>\n<html>\n<body><h1>ESP32 Meteo Node</h1>\n<table><tr><td>Node</td><td>%d <b>%s</b></td></tr> <tr><td>Temperature</td><td>%.2f deg C</td><tr><td>Humidity</td><td>%.2f %% rel</td><tr><td>Pressure</td><td>%.2f hPa</td> </tr> </table>\n<p>Readings: <a href=\"/csv\">[csv]</a> <a href=\"/json\">[json]</a></p></body></html>", NODE_ID, NODE_NAME, temp, hum, pres);
+  snprintf(html, 512, "<!DOCTYPE html>\n<html>\n<body><h1>ESP32 Meteo Node</h1>\n<table><tr><td>Node</td><td>%d <b>%s</b></td></tr> <tr><td>Temperature</td><td>%.2f deg C</td></tr> <tr><td>Humidity</td><td>%.2f %% rel</td></tr> <tr><td>Pressure</td><td>%.2f hPa</td></tr> <tr><td>Pressure</td><td>%.2f hPa</td></tr> </table>\n<p>Readings: <a href=\"/csv\">[csv]</a> <a href=\"/json\">[json]</a></p></body></html>", NODE_ID, NODE_NAME, temp, hum, pres);
   server.send(200, "text/html", html);
 }
 
@@ -148,13 +147,36 @@ void json_handle() {
   server.send(200, "text/json", json);
 }
 
+void wifi_reconnect() {
+  Serial.print("Wifi reconnect ... ");
+  WiFi.disconnect();
+  WiFi.reconnect();
+  // XXX: Test if this is somehow behaving weird
+  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.println("failed");
+  } else {
+    Serial.println("ok");
+  }
+}
+
 void loop() {
+  // wifi reconnect, if required
+  if (WiFi.status() != WL_CONNECTED) {
+  	// But don't spam reconnections
+  	static unsigned long previousMillis = 0;
+  	const unsigned long currentMillis = millis();
+  	if (currentMillis - previousMillis >= WIFI_RECONNECT_DELAY) {
+      wifi_reconnect();
+      previousMillis = currentMillis;
+	}
+  }
+  
+  // mqtt reconnect
   if (!client.connected()) { reconnect_mqtt(); }
   client.loop();
   server.handleClient();
 
-
-
+  // Sensor readout
   const long timestamp = millis();
   static long next_sample = timestamp + SAMPLE_DELAY;
   if(timestamp > next_sample) {
@@ -176,4 +198,3 @@ void loop() {
   }
   delay(100);
 }
-

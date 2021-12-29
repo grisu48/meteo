@@ -1,9 +1,0 @@
-PushDelay = 60
-Database = "meteod.db"
-MQTT = "suse-meteod@asgard.home:1883"
-
-[Webserver]
-port = 8802
-Bindaddr = "127.0.0.1"
-#QueryLimit = 1000
-AllowEdit = true

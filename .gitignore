@@ -44,8 +44,6 @@
 # Build files
 build
 build/
-/meteo
-/meteod
 /meteo-influx-gateway
 
 ## Custom config files

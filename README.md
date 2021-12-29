@@ -4,51 +4,7 @@
 
 Lightweight environmental monitoring solution
 
-This project aims to provide a centralized environmental and room monitoring system for different sensors.
-The meteo-daemon (`meteod`) runs on a centralised server instance, that collect all sensor data from different sensor nodes.
-
-Client can attach to this server instance in order to read out the different readings of the sensors.
-
-# Server
-
-Requires `go >= 1.9.x` and the following repositories
-
-    go get "github.com/BurntSushi/toml"
-    go get "github.com/gorilla/mux"
-    go get "github.com/mattn/go-sqlite3"
-    go get "github.com/eclipse/paho.mqtt.golang"
-
-A quick way of installing the requirements is
-
-    $ make req                      # Installs requirements
-
-## Configuration
-
-Currently manually. See `meteod.toml` for information
-
-## Storage
-
-`meteod` stores all data in a Sqlite3 database. By default `meteod.db` is taken, but the filename can be configured in `meteod.toml`.
-
-# Client
-
-There is currently a very simple CLI client available: `meteo`
-
-    meteo REMOTE
-    
-    $ meteo http://meteo-service.local/
-      *   1 meteo-cluster          2019-05-14-17:24:01   22.51C|23.00 %rel| 95337hPa
-
-## Build
-
-Requires `go >= 1.9.x` and `"github.com/BurntSushi/toml"`
-
-    $ make req-meteo
-    $ make meteo
-
-## Configuration
-
-Currently manually. See `meteod.toml`
+This project aims to provide a centralized environmental and room monitoring system for different sensors using mqtt. Data storage is supported via a `meteo-influxdb` gateway.
 
 # Nodes/Sensors
 
@@ -73,14 +29,22 @@ Every node that publishes `MQTT` packets in the given format is accepted.
     PAYLOAD:  {"node":1,"timestamp":0,"distance":12.1}
     # if the timestamp is 0, the server replaces it with it's current time
 
-## Data-Push via HTTP
+# meteo-influx-gateway
 
-To push data via HTTP, you need a access `token`. The token identifies where the data belongs to.
+The provided `meteo-influx-gateway` is a program to collect meteo data points from mqtt and push them to a influxdb database. This gateway is written in go and needs to be build
 
-The data is expected to be in the following `json` format
+    go build ./...
 
-    { "token":"test", "T":32.0, "Hum": 33.1, "P":1013.5 }
+The gateway is configured via a [simple INI file](meteo-influx-gateway.ini.example):
 
-Example-`curl` script to push data to station 5
+```ini
+[mqtt]
+remote = "127.0.0.1"
 
-    $ curl 'http://localhost:8802/station/5' -X POST -H "Content-Type: application/json" --data { "token":"test", "T":32.0, "Hum": 33.1, "P":1013.5 }
+[influxdb]
+remote = "http://127.0.0.1:8086"
+username = "meteo"
+password = "meteo"
+database = "meteo"
+```
+

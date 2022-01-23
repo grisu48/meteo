@@ -33,8 +33,8 @@
 /* ========================================================================== */
 
 BME280I2C
-    bme; // Default : forced mode, standby time = 1000 ms
-         // Oversampling = pressure ×1, temperature ×1, humidity ×1, filter off,
+bme; // Default : forced mode, standby time = 1000 ms
+     // Oversampling = pressure ×1, temperature ×1, humidity ×1, filter off,
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -91,7 +91,7 @@ void setup() {
 
 void wifi_connect() {
   while (true) {
-    Serial.println("Wifi...");
+    Serial.println("Wifi ...");
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     if (WiFi.waitForConnectResult() != WL_CONNECTED) {
       Serial.println("ERR: Wifi");
@@ -115,7 +115,23 @@ void wifi_got_ip(WiFiEvent_t event, WiFiEventInfo_t info) {
 void wifi_disconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
   Serial.print("WiFi lost: ");
   Serial.println(info.disconnected.reason);
-  wifi_connect();
+  Serial.println("Wifi reconnect (via event) ... ");
+  WiFi.disconnect();
+  WiFi.reconnect();
+}
+
+void wifi_reconnect() {
+  // Note: Wifi reconnect happens over events. This is only a last resort
+  if ((WiFi.status() != WL_CONNECTED)) {
+    static unsigned long previous = 0;
+    const unsigned long current = millis();
+    if (current - previous >= WIFI_RECONNECT_DELAY) {
+      Serial.println("Wifi reconnect (via loop) ... ");
+      WiFi.disconnect();
+      WiFi.reconnect();
+      previous = current;
+    }
+  }
 }
 
 int read_bme280(float &temp, float &hum, float &pres) {
@@ -125,15 +141,23 @@ int read_bme280(float &temp, float &hum, float &pres) {
   return 0;
 }
 
-void reconnect_mqtt() {
-  while (!client.connected()) {
+bool reconnect_mqtt() {
+  int retries = 5;
+  while (!client.connected() && retries-- > 0) {
+    // Don't retry if wifi is down
+    if (WiFi.status() != WL_CONNECTED)
+      return false;
+
     if (client.connect(MQTT_CLIENTID)) {
+      if (client.connected())
+        return true;
     } else {
       Serial.print("MQTT connect failed: error code ");
       Serial.print(client.state());
-      delay(5000); // wait 5 seconds to not flood the network
     }
+    delay(5000);
   }
+  return client.connected();
 }
 
 void report(float temp, float hum, float pres) {
@@ -149,22 +173,23 @@ void report(float temp, float hum, float pres) {
 
 void www_handle() {
   char html[512];
-  snprintf(
-      html, 512,
-      "<!DOCTYPE html>\n<html>\n<body><h1>ESP32 Meteo "
-      "Node</h1>\n<table><tr><td>Node</td><td>%d <b>%s</b></td></tr> "
-      "<tr><td>Temperature</td><td>%.2f deg C</td></tr> "
-      "<tr><td>Humidity</td><td>%.2f %% rel</td></tr> "
-      "<tr><td>Pressure</td><td>%.2f hPa</td></tr> "
-      "<tr><td>Pressure</td><td>%.2f hPa</td></tr> </table>\n<p>Readings: <a "
-      "href=\"/csv\">[csv]</a> <a href=\"/json\">[json]</a></p></body></html>",
-      NODE_ID, NODE_NAME, temp, hum, pres);
+  snprintf(html, 511,
+           "<!DOCTYPE html>\n<html>\n<body><h1>ESP32 Meteo "
+           "Node</h1>\n<table><tr><td>Node</td><td>%d <b>%s</b></td></tr> "
+           "<tr><td>Temperature</td><td>%.2f deg C</td></tr> "
+           "<tr><td>Humidity</td><td>%.2f %% rel</td></tr> "
+           "<tr><td>Pressure</td><td>%.2f hPa</td></tr> "
+           "</table>\n<p>Readings: <a "
+           "href=\"/csv\">csv</a> <a href=\"/json\">json</a></p></body></html>",
+           NODE_ID, NODE_NAME, temp, hum, pres);
+  html[511] = '\0';
   server.send(200, "text/html", html);
 }
 
 void csv_handle() {
-  char csv[32];
-  snprintf(csv, 32, "%.2f,%.2f,%.2f\n", temp, hum, pres);
+  char csv[64];
+  snprintf(csv, 63, "%.2f,%.2f,%.2f\n", temp, hum, pres);
+  csv[63] = '\0';
   server.send(200, "text/csv", csv);
 }
 
@@ -173,10 +198,14 @@ void json_handle() {
   snprintf(json, 255,
            "{\"node\":%d,\"name\":\"%s\",\"t\":%.2f,\"hum\":%.2f,\"p\":%.2f}\n",
            NODE_ID, NODE_NAME, temp, hum, pres);
+  json[255] = '\0';
   server.send(200, "text/json", json);
 }
 
 void loop() {
+  // Note: Wifi reconnect handled via events. This is only an additional check
+  wifi_reconnect();
+
   // mqtt reconnect
   if (!client.connected()) {
     reconnect_mqtt();

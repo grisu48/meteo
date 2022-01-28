@@ -1,5 +1,6 @@
 [mqtt]
 remote = "127.0.0.1"
+clientid = "meteo-influx-gateway"
 
 [influxdb]
 remote = "http://127.0.0.1:8086"

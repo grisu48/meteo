@@ -16,6 +16,7 @@ import (
 // Config is the internal singleton configuration for this program
 type Config struct {
 	MqttHost       string `ini:"mqtt,remote"`
+	MqttClientID   string `ini:"mqtt,clientid"`
 	InfluxHost     string `ini:"influxdb,remote"`
 	InfluxUsername string `ini:"influxdb,username"`
 	InfluxPassword string `ini:"influxdb,password"`
@@ -33,6 +34,10 @@ func (c *Config) loadIni(filename string) error {
 	mqtthost := mqtt.Key("remote").String()
 	if mqtthost != "" {
 		c.MqttHost = mqtthost
+	}
+	mqttclientid := mqtt.Key("clientid").String()
+	if mqttclientid != "" {
+		c.MqttClientID = mqttclientid
 	}
 	influx := cfg.Section("influxdb")
 	influxhost := influx.Key("remote").String()
@@ -137,8 +142,9 @@ func printUsage() {
 	fmt.Println("OPTIONS")
 	fmt.Println("  -h,--help             Display this help message")
 	fmt.Println("  -c,--config FILE      Load config file")
-	fmt.Println("  -v, --verbose         Verbose output")
+	fmt.Println("  -v, --verbose         Verbose mode")
 	fmt.Println("  --mqtt MQTT           Set mqtt server")
+	fmt.Println("  --mqtt-client-id ID   Set mqtt client id")
 	fmt.Println("  --influx HOST         Set influxdb hostname")
 	fmt.Println("  --username USER       Set influxdb username")
 	fmt.Println("  --password PASS       Set influxdb password")
@@ -201,6 +207,13 @@ func main() {
 				}
 				i++
 				config.MqttHost = args[i]
+			} else if arg == "--mqtt-client-id" {
+				if last {
+					fmt.Fprintf(os.Stderr, "Missing argument: mqtt-client-id remote\n")
+					os.Exit(1)
+				}
+				i++
+				config.MqttClientID = args[i]
 			} else if arg == "--influx" {
 				if last {
 					fmt.Fprintf(os.Stderr, "Missing argument: influx remote\n")
@@ -247,19 +260,18 @@ func main() {
 		os.Exit(1)
 	} else {
 		if config.Verbose {
-			fmt.Printf("influxdb connected: v%s - Ping: %d ms\n", version, ping.Milliseconds())
+			fmt.Printf("influxdb connected: v%s (Ping: %d ms)\n", version, ping.Milliseconds())
 		}
 	}
 
 	// Connect to mqtt server
-	if mqtt, err := ConnectMQTT(config.MqttHost, 1883); err != nil {
+	mqtt := MQTT{}
+	mqtt.ClientID = config.MqttClientID
+	mqtt.Verbose = config.Verbose
+	mqtt.Callback = received
+	if err := mqtt.Connect(config.MqttHost, 1883); err != nil {
 		fmt.Fprintf(os.Stderr, "mqtt error: %s\n", err)
 		os.Exit(1)
-	} else {
-		mqtt.Subscribe("meteo/#", received)
-		if config.Verbose {
-			fmt.Println("mqtt connected: " + config.MqttHost)
-		}
 	}
 	fmt.Println("meteo-mqtt-influx gateway is up and running")
 

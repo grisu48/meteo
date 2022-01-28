@@ -7,17 +7,20 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+// MqttReceive is the message receive callback
 type MqttReceive func(msg mqtt.Message)
 
+// MQTT client structure
 type MQTT struct {
 	client mqtt.Client
 }
 
-func ConnectMQTT(remote string, port int) (MQTT, error) {
+// ConnectMQTT connects to a given MQTT server
+func ConnectMQTT(address string, port int) (MQTT, error) {
 	var ret MQTT
 	opts := mqtt.NewClientOptions()
-	remote = fmt.Sprintf("tcp://%s:%d", remote, port)
-	opts.AddBroker(remote)
+	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", address, port))
+	opts.KeepAlive = 30
 	opts.AutoReconnect = true
 
 	ret.client = mqtt.NewClient(opts)
@@ -27,6 +30,7 @@ func ConnectMQTT(remote string, port int) (MQTT, error) {
 	return ret, token.Error()
 }
 
+// Subscribe to a given topic with the given callback function
 func (mq *MQTT) Subscribe(topic string, callback MqttReceive) error {
 	token := mq.client.Subscribe(topic, 0, func(client mqtt.Client, msg mqtt.Message) {
 		callback(msg)

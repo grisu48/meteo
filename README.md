@@ -1,6 +1,10 @@
 # meteo
 
-[![Build Status](https://travis-ci.org/grisu48/meteo.svg?branch=master)](https://travis-ci.org/grisu48/meteo)
+***
+
+**This project has been moved to [codeberg.org/grisu48/meteo](https://codeberg.org/grisu48/meteo). This repository is an Archive.**
+
+***
 
 Lightweight environmental monitoring solution
 
